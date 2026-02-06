@@ -9,7 +9,8 @@
     "lint": "eslint",
     "generate:content": "tsx scripts/generate-content.ts",
     "generate:quiz": "tsx scripts/generate-quiz.ts",
-    "generate:flashcards": "tsx scripts/generate-flashcards.ts"
+    "generate:flashcards": "tsx scripts/generate-flashcards.ts",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.37",
