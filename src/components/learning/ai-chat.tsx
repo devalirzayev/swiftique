@@ -26,7 +26,11 @@ export function AIChat({
   onClose,
 }: AIChatProps) {
   const [input, setInput] = useState("");
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36)
+  );
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -112,7 +116,10 @@ export function AIChat({
   };
 
   const handleNewChat = useCallback(() => {
-    const newId = crypto.randomUUID();
+    const newId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
     setSessionId(newId);
     setMessages([]);
     setHistoryRefreshKey((k) => k + 1);
