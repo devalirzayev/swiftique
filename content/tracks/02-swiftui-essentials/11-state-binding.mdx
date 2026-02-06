@@ -1,0 +1,526 @@
+---
+title: "@State & @Binding"
+description: "Local state management and two-way data flow"
+sectionId: "2.4-state-management"
+sectionTitle: "State Management"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# @State & @Binding in SwiftUI
+
+## Introduction
+
+SwiftUI takes a radically different approach to UI development compared to UIKit: it's declarative and data-driven. Your views are functions of state, and when state changes, SwiftUI automatically updates the UI. Two property wrappers are fundamental to this model: `@State` and `@Binding`.
+
+**`@State`** creates a source of truth for simple value types owned by a view. When the state changes, SwiftUI re-renders that view.
+
+**`@Binding`** creates a two-way connection to a state owned by another view. It allows child views to read and write a value without owning it.
+
+Think of `@State` as declaring "I own this data" and `@Binding` as saying "Someone else owns this data, but I need to read and modify it."
+
+## Why This Matters
+
+Without proper state management, your UI won't update when data changes. SwiftUI needs to know what data to watch. These property wrappers tell SwiftUI: "When this value changes, re-render the views that depend on it."
+
+## @State: Owned Local State
+
+Use `@State` for simple value types (Bool, Int, String, structs) that a view owns privately.
+
+### Basic Example
+
+```swift
+struct CounterView: View {
+    @State private var count = 0
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(count)")
+            Button("Increment") {
+                count += 1
+            }
+        }
+    }
+}
+```
+
+When you tap the button, `count` changes, triggering SwiftUI to re-evaluate `body` and update the UI.
+
+### Key Points About @State
+
+1. **Always mark as `private`**: State is owned by the view and shouldn't be accessed from outside.
+2. **Value types only**: Use for Int, String, Bool, structs, arrays, etc. Not for reference types (classes).
+3. **SwiftUI manages storage**: The actual value is stored outside your view struct, surviving view recreation.
+
+```swift
+struct ToggleExample: View {
+    @State private var isOn = false
+    @State private var username = ""
+    
+    var body: some View {
+        Form {
+            Toggle("Enable notifications", isOn: $isOn)
+            TextField("Username", text: $username)
+            
+            if isOn {
+                Text("Notifications enabled for \(username)")
+            }
+        }
+    }
+}
+```
+
+Notice the `$` prefix? That's creating a **binding** to the state, which we'll cover next.
+
+## The $ Prefix: Creating Bindings
+
+The `$` prefix on a `@State` property creates a `Binding` to that state. This allows you to pass two-way access to child views or controls.
+
+```swift
+struct ParentView: View {
+    @State private var isEnabled = false
+    
+    var body: some View {
+        VStack {
+            // Pass binding to child view
+            ToggleControl(isOn: $isEnabled)
+            
+            Text("Status: \(isEnabled ? "ON" : "OFF")")
+        }
+    }
+}
+
+struct ToggleControl: View {
+    @Binding var isOn: Bool
+    
+    var body: some View {
+        Toggle("Switch", isOn: $isOn)
+    }
+}
+```
+
+## @Binding: Shared State Access
+
+`@Binding` creates a two-way connection to a value owned elsewhere. The child view can read and modify the value, but doesn't own it.
+
+### Complete Example
+
+```swift
+struct SettingsView: View {
+    @State private var volume: Double = 50
+    @State private var isMuted = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Volume: \(Int(volume))")
+            
+            // Pass bindings to child views
+            VolumeSlider(volume: $volume)
+            MuteButton(isMuted: $isMuted)
+            
+            if isMuted {
+                Text("Sound is muted")
+                    .foregroundColor(.red)
+            }
+        }
+        .padding()
+    }
+}
+
+struct VolumeSlider: View {
+    @Binding var volume: Double
+    
+    var body: some View {
+        VStack {
+            Slider(value: $volume, in: 0...100)
+            Text("Adjust volume")
+                .font(.caption)
+        }
+    }
+}
+
+struct MuteButton: View {
+    @Binding var isMuted: Bool
+    
+    var body: some View {
+        Button(isMuted ? "Unmute" : "Mute") {
+            isMuted.toggle()
+        }
+        .buttonStyle(.borderedProminent)
+    }
+}
+```
+
+### When to Use @Binding
+
+- Child views need to modify parent's state
+- Creating reusable components that work with external data
+- Breaking down complex views into smaller, manageable pieces
+
+## Advanced Patterns
+
+### Custom Bindings
+
+You can create computed bindings with custom get and set logic:
+
+```swift
+struct TemperatureView: View {
+    @State private var celsius: Double = 20
+    
+    var fahrenheitBinding: Binding<Double> {
+        Binding(
+            get: { celsius * 9/5 + 32 },
+            set: { celsius = ($0 - 32) * 5/9 }
+        )
+    }
+    
+    var body: some View {
+        VStack {
+            Text("Celsius: \(celsius, specifier: "%.1f")°C")
+            Text("Fahrenheit: \(celsius * 9/5 + 32, specifier: "%.1f")°F")
+            
+            Slider(value: fahrenheitBinding, in: 32...212)
+                .padding()
+        }
+    }
+}
+```
+
+### Constant Bindings
+
+For previews or when you need a binding but don't care about writes:
+
+```swift
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ToggleControl(isOn: .constant(true))
+    }
+}
+```
+
+### Binding to Optional Values
+
+Working with optionals requires care:
+
+```swift
+struct OptionalTextFieldView: View {
+    @State private var optionalText: String?
+    
+    var body: some View {
+        VStack {
+            // Create binding with default value
+            TextField("Enter text", text: Binding(
+                get: { optionalText ?? "" },
+                set: { optionalText = $0.isEmpty ? nil : $0 }
+            ))
+            
+            Text("Value: \(optionalText ?? "nil")")
+        }
+        .padding()
+    }
+}
+```
+
+## Common Mistakes
+
+### Mistake 1: Not Using @State for Mutable Data
+
+```swift
+// ❌ Wrong - UI won't update
+struct BrokenCounter: View {
+    var count = 0  // Not @State
+    
+    var body: some View {
+        Button("Count: \(count)") {
+            count += 1  // Won't compile (and wouldn't work anyway)
+        }
+    }
+}
+
+// ✅ Correct
+struct WorkingCounter: View {
+    @State private var count = 0
+    
+    var body: some View {
+        Button("Count: \(count)") {
+            count += 1
+        }
+    }
+}
+```
+
+### Mistake 2: Making @State Public
+
+```swift
+// ❌ Wrong - breaks encapsulation
+struct BadView: View {
+    @State var publicState = 0  // Should be private
+    
+    var body: some View {
+        Text("\(publicState)")
+    }
+}
+
+// ✅ Correct
+struct GoodView: View {
+    @State private var privateState = 0
+    
+    var body: some View {
+        Text("\(privateState)")
+    }
+}
+```
+
+### Mistake 3: Using @State for Reference Types
+
+```swift
+// ❌ Wrong - use @StateObject instead
+class DataModel: ObservableObject {
+    @Published var value = 0
+}
+
+struct BadStateClass: View {
+    @State private var model = DataModel()  // Don't do this
+    
+    var body: some View {
+        Text("\(model.value)")
+    }
+}
+
+// ✅ Correct - use @StateObject for classes
+struct GoodStateObject: View {
+    @StateObject private var model = DataModel()
+    
+    var body: some View {
+        Text("\(model.value)")
+    }
+}
+```
+
+### Mistake 4: Forgetting the $ When Binding
+
+```swift
+struct ParentView: View {
+    @State private var text = ""
+    
+    var body: some View {
+        VStack {
+            // ❌ Wrong - passes String value, not binding
+            // TextField("Name", text: text)  // Won't compile
+            
+            // ✅ Correct - passes binding
+            TextField("Name", text: $text)
+        }
+    }
+}
+```
+
+### Mistake 5: Initializing @Binding Directly
+
+```swift
+// ❌ Wrong - @Binding isn't initialized this way
+struct BrokenChild: View {
+    @Binding var value = 0  // Won't compile
+    
+    var body: some View {
+        Text("\(value)")
+    }
+}
+
+// ✅ Correct - no default value, set via initializer
+struct WorkingChild: View {
+    @Binding var value: Int
+    
+    var body: some View {
+        Text("\(value)")
+    }
+}
+
+// Usage:
+struct ParentView: View {
+    @State private var number = 0
+    
+    var body: some View {
+        WorkingChild(value: $number)
+    }
+}
+```
+
+## Edge Cases
+
+### Multiple Bindings to Same State
+
+Multiple child views can share bindings to the same state:
+
+```swift
+struct MultiBindingView: View {
+    @State private var sharedValue = 50.0
+    
+    var body: some View {
+        VStack {
+            Slider(value: $sharedValue, in: 0...100)
+            Slider(value: $sharedValue, in: 0...100)
+            Text("Both sliders control the same value: \(sharedValue, specifier: "%.0f")")
+        }
+    }
+}
+```
+
+### Binding to Computed Properties
+
+You can't directly bind to computed properties, but you can create custom bindings:
+
+```swift
+struct Person {
+    var firstName: String
+    var lastName: String
+    
+    var fullName: String {
+        "\(firstName) \(lastName)"
+    }
+}
+
+struct PersonEditor: View {
+    @State private var person = Person(firstName: "John", lastName: "Doe")
+    
+    var body: some View {
+        Form {
+            TextField("First Name", text: $person.firstName)
+            TextField("Last Name", text: $person.lastName)
+            Text("Full Name: \(person.fullName)")
+        }
+    }
+}
+```
+
+### Binding to Array Elements
+
+Accessing array elements with bindings requires careful indexing:
+
+```swift
+struct TodoList: View {
+    @State private var items = ["Task 1", "Task 2", "Task 3"]
+    
+    var body: some View {
+        List {
+            ForEach(items.indices, id: \.self) { index in
+                TextField("Task", text: $items[index])
+            }
+        }
+    }
+}
+```
+
+## Performance Considerations
+
+SwiftUI is smart about updating only the views that depend on changed state. However:
+
+1. **Keep @State local and minimal**: Don't make everything @State. Only mutable data that affects the UI needs it.
+
+2. **Break down large views**: Instead of one view with many @State properties, split into smaller views each managing their own state.
+
+```swift
+// ❌ One large view with lots of state
+struct MonolithicForm: View {
+    @State private var name = ""
+    @State private var email = ""
+    @State private var age = 18
+    @State private var agreed = false
+    @State private var country = ""
+    @State private var city = ""
+    // ... dozens more
+    
+    var body: some View {
+        // Huge form...
+    }
+}
+
+// ✅ Better - break into smaller components
+struct ModularForm: View {
+    var body: some View {
+        Form {
+            PersonalInfoSection()
+            LocationSection()
+            AgreementSection()
+        }
+    }
+}
+
+struct PersonalInfoSection: View {
+    @State private var name = ""
+    @State private var email = ""
+    @State private var age = 18
+    
+    var body: some View {
+        Section("Personal Info") {
+            TextField("Name", text: $name)
+            TextField("Email", text: $email)
+            Stepper("Age: \(age)", value: $age, in: 13...120)
+        }
+    }
+}
+```
+
+## Testing with @Binding
+
+For unit tests and previews, use `.constant()`:
+
+```swift
+struct CounterButton: View {
+    @Binding var count: Int
+    
+    var body: some View {
+        Button("Count: \(count)") {
+            count += 1
+        }
+    }
+}
+
+struct CounterButton_Previews: PreviewProvider {
+    static var previews: some View {
+        VStack {
+            CounterButton(count: .constant(0))
+            CounterButton(count: .constant(42))
+        }
+    }
+}
+```
+
+## When to Use What
+
+- **@State**: View owns simple value types (Bool, Int, String, struct)
+- **@Binding**: Child view needs read/write access to parent's @State
+- **@StateObject**: View owns a reference type (class conforming to ObservableObject)
+- **@ObservedObject**: View observes but doesn't own a reference type
+- **@EnvironmentObject**: Deep view hierarchy needs shared reference type
+
+For most local UI state like toggles, text fields, and counters, `@State` and `@Binding` are exactly what you need.
+
+## Official Documentation
+
+- [State and Data Flow (Apple Documentation)](https://developer.apple.com/documentation/swiftui/state-and-data-flow)
+- [@State Property Wrapper](https://developer.apple.com/documentation/swiftui/state)
+- [@Binding Property Wrapper](https://developer.apple.com/documentation/swiftui/binding)
+
+## Summary Table
+
+| Feature | @State | @Binding |
+|---------|--------|----------|
+| **Purpose** | Own and manage local state | Reference state owned elsewhere |
+| **Ownership** | View owns the data | Another view owns the data |
+| **Data Types** | Value types (struct, enum, Int, String, Bool) | Any type (matches the original @State) |
+| **Mutability** | Can read and write | Can read and write |
+| **Visibility** | Should be `private` | Can be internal/public (part of API) |
+| **Initialization** | Provide default value | No default value, passed from parent |
+| **When to Use** | Local UI state (toggles, counters, text) | Child needs to modify parent's state |
+| **Creating** | `@State private var value = 0` | `@Binding var value: Int` |
+| **Passing** | Pass with `$` prefix to create binding | Receive from parent: `Child(value: $parentState)` |
+| **Storage** | SwiftUI manages storage externally | References parent's @State storage |
+| **Lifecycle** | Lives as long as view exists | Lives as long as source exists |
+| **Common Mistakes** | Making public, using for classes | Forgetting `$` when passing, trying to initialize with default |
+
+---
+
+Understanding `@State` and `@Binding` is fundamental to SwiftUI development. Master these concepts, and you'll have solid foundation for building reactive, data-driven UIs. As your apps grow in complexity, you'll add `@StateObject`, `@ObservedObject`, and `@EnvironmentObject` to your toolkit, but `@State` and `@Binding` remain the building blocks of SwiftUI's declarative approach.

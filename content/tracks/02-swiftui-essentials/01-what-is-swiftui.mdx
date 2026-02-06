@@ -1,0 +1,558 @@
+---
+title: "What is SwiftUI?"
+description: "Declarative UI framework, how it differs from UIKit"
+sectionId: "2.1-introduction"
+sectionTitle: "Introduction to SwiftUI"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# What is SwiftUI?
+
+SwiftUI is Apple's declarative UI framework for building user interfaces across all Apple platforms. Released in 2019, it represents a fundamental shift in how developers create iOS, macOS, watchOS, and tvOS applications. Instead of imperatively describing *how* to build and update your UI (as with UIKit), you declare *what* your UI should look like for any given state, and SwiftUI handles the rest.
+
+## Why SwiftUI Matters
+
+SwiftUI addresses several pain points that UIKit developers have wrestled with for years:
+
+- **Less code**: UI construction requires significantly fewer lines
+- **Live previews**: See your UI update in real-time without running the simulator
+- **Cross-platform**: Write once, deploy across Apple's entire ecosystem
+- **Modern Swift features**: Built from the ground up to leverage Swift's type system
+- **Automatic updates**: UI automatically reflects state changes without manual intervention
+
+## Declarative vs. Imperative: The Core Difference
+
+The fundamental difference between SwiftUI and UIKit lies in their programming paradigm.
+
+### UIKit (Imperative)
+
+```swift
+// UIKit approach
+class ViewController: UIViewController {
+    let label = UILabel()
+    var counter = 0
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Step 1: Create and configure
+        label.text = "Count: \(counter)"
+        label.frame = CGRect(x: 100, y: 100, width: 200, height: 40)
+        view.addSubview(label)
+        
+        // Step 2: Add button
+        let button = UIButton(frame: CGRect(x: 100, y: 150, width: 200, height: 40))
+        button.setTitle("Increment", for: .normal)
+        button.addTarget(self, action: #selector(incrementTapped), for: .touchUpInside)
+        view.addSubview(button)
+    }
+    
+    @objc func incrementTapped() {
+        counter += 1
+        // Step 3: Manually update UI
+        label.text = "Count: \(counter)"
+    }
+}
+```
+
+### SwiftUI (Declarative)
+
+```swift
+// SwiftUI approach
+struct ContentView: View {
+    @State private var counter = 0
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(counter)")
+            Button("Increment") {
+                counter += 1
+            }
+        }
+    }
+}
+```
+
+Notice how SwiftUI code:
+1. Describes what the UI *is*, not how to build it
+2. Automatically updates when `counter` changes (thanks to `@State`)
+3. Requires no manual view lifecycle management
+4. Uses a natural, readable syntax
+
+## SwiftUI's Building Blocks
+
+### Views and the View Protocol
+
+Everything you see in SwiftUI is a `View`. The `View` protocol requires only one thing: a `body` property that returns some `View`.
+
+```swift
+struct MyCustomView: View {
+    var body: some View {
+        Text("Hello, SwiftUI!")
+    }
+}
+```
+
+The `some View` return type uses Swift's opaque types feature, allowing SwiftUI to optimize performance while keeping return types flexible.
+
+### View Modifiers
+
+Modifiers transform views by returning new modified versions. They're chainable and order-dependent:
+
+```swift
+struct StyledTextView: View {
+    var body: some View {
+        Text("Welcome")
+            .font(.title)
+            .foregroundColor(.blue)
+            .padding()
+            .background(Color.yellow)
+            .cornerRadius(10)
+    }
+}
+```
+
+**Common mistake**: Modifier order matters. This produces different results:
+
+```swift
+// Border is applied to the padded area (larger)
+Text("Hello")
+    .padding()
+    .border(Color.red)
+
+// Padding is applied outside the border (border is smaller)
+Text("Hello")
+    .border(Color.red)
+    .padding()
+```
+
+### Layout Containers
+
+SwiftUI provides several containers for arranging views:
+
+```swift
+struct LayoutExamples: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Vertical Stack")
+            
+            HStack {
+                Text("Horizontal")
+                Text("Stack")
+            }
+            
+            ZStack {
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: 100, height: 100)
+                Text("Overlay")
+                    .foregroundColor(.white)
+            }
+        }
+    }
+}
+```
+
+## State Management
+
+State management is where SwiftUI truly shines. Understanding property wrappers is crucial.
+
+### @State
+
+Use `@State` for simple, view-local state:
+
+```swift
+struct CounterView: View {
+    @State private var count = 0
+    @State private var isOn = false
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(count)")
+            Button("Increment") {
+                count += 1
+            }
+            Toggle("Switch", isOn: $isOn)
+        }
+    }
+}
+```
+
+**Important**: Always mark `@State` properties as `private` to indicate they're owned by this view.
+
+### @Binding
+
+Use `@Binding` to create two-way connections between views:
+
+```swift
+struct ParentView: View {
+    @State private var username = ""
+    
+    var body: some View {
+        VStack {
+            Text("Hello, \(username)")
+            ChildView(username: $username)
+        }
+    }
+}
+
+struct ChildView: View {
+    @Binding var username: String
+    
+    var body: some View {
+        TextField("Enter name", text: $username)
+    }
+}
+```
+
+The `$` prefix creates a binding to the state variable, allowing the child to read *and* write the value.
+
+### @ObservableObject and @StateObject
+
+For more complex state, use reference types conforming to `ObservableObject`:
+
+```swift
+class UserSettings: ObservableObject {
+    @Published var username = ""
+    @Published var notificationsEnabled = true
+    @Published var theme = "Light"
+}
+
+struct SettingsView: View {
+    @StateObject private var settings = UserSettings()
+    
+    var body: some View {
+        Form {
+            TextField("Username", text: $settings.username)
+            Toggle("Notifications", isOn: $settings.notificationsEnabled)
+            Picker("Theme", selection: $settings.theme) {
+                Text("Light").tag("Light")
+                Text("Dark").tag("Dark")
+            }
+        }
+    }
+}
+```
+
+**Key difference**:
+- `@StateObject` creates and owns the object (use in the view that creates it)
+- `@ObservedObject` observes an object passed in (use in child views)
+
+> **Modern Alternative (iOS 17+):** The `@Observable` macro simplifies this pattern significantly — no `@Published` wrappers needed, and views only update when properties they actually read change. This is covered in detail in the [Observation Framework](/tracks/02-swiftui-essentials/12-observable) lesson.
+
+```swift
+struct ParentView: View {
+    @StateObject private var settings = UserSettings()
+    
+    var body: some View {
+        ChildView(settings: settings)
+    }
+}
+
+struct ChildView: View {
+    @ObservedObject var settings: UserSettings
+    
+    var body: some View {
+        Text(settings.username)
+    }
+}
+```
+
+## Lists and Navigation
+
+SwiftUI makes lists and navigation straightforward:
+
+```swift
+struct Task: Identifiable {
+    let id = UUID()
+    var title: String
+    var completed: Bool
+}
+
+struct TaskListView: View {
+    @State private var tasks = [
+        Task(title: "Learn SwiftUI", completed: false),
+        Task(title: "Build an app", completed: false)
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(tasks) { task in
+                    NavigationLink(destination: TaskDetailView(task: task)) {
+                        HStack {
+                            Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                            Text(task.title)
+                        }
+                    }
+                }
+                .onDelete(perform: deleteTasks)
+            }
+            .navigationTitle("Tasks")
+        }
+    }
+    
+    func deleteTasks(at offsets: IndexSet) {
+        tasks.remove(atOffsets: offsets)
+    }
+}
+
+struct TaskDetailView: View {
+    let task: Task
+    
+    var body: some View {
+        Text(task.title)
+            .navigationTitle("Task Detail")
+    }
+}
+```
+
+**Common mistake**: Forgetting that `ForEach` requires elements to be `Identifiable` or explicitly providing an `id`:
+
+```swift
+// If your type isn't Identifiable:
+ForEach(items, id: \.self) { item in
+    Text(item)
+}
+```
+
+## SwiftUI vs UIKit: When to Use Each
+
+### Use SwiftUI When:
+
+- Starting a new project targeting iOS 14+
+- Building simple to moderately complex UIs
+- Prototyping or creating MVPs quickly
+- Cross-platform development is a priority
+- Your team is comfortable with declarative programming
+
+### Use UIKit When:
+
+- Supporting iOS versions below 13
+- Requiring fine-grained control over rendering
+- Working with extensive legacy codebases
+- Needing mature third-party libraries unavailable in SwiftUI
+- Performance is critical for complex custom views
+
+### Mixing Both
+
+You can integrate SwiftUI and UIKit using `UIViewRepresentable` and `UIHostingController`:
+
+```swift
+// Using UIKit in SwiftUI
+struct ActivityIndicator: UIViewRepresentable {
+    @Binding var isAnimating: Bool
+    
+    func makeUIView(context: Context) -> UIActivityIndicatorView {
+        let view = UIActivityIndicatorView(style: .large)
+        return view
+    }
+    
+    func updateUIView(_ uiView: UIActivityIndicatorView, context: Context) {
+        if isAnimating {
+            uiView.startAnimating()
+        } else {
+            uiView.stopAnimating()
+        }
+    }
+}
+
+// Using SwiftUI in UIKit
+class MyViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        let swiftUIView = ContentView()
+        let hostingController = UIHostingController(rootView: swiftUIView)
+        
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        hostingController.didMove(toParent: self)
+    }
+}
+```
+
+## Common Pitfalls and Edge Cases
+
+### 1. View Identity and Animation Issues
+
+SwiftUI uses view identity to track changes. Changing identity mid-animation causes glitches:
+
+```swift
+// ❌ Problematic - changes view identity
+if isLoggedIn {
+    ProfileView()
+} else {
+    LoginView()
+}
+
+// ✅ Better - maintains identity with modifier
+LoginView()
+    .opacity(isLoggedIn ? 0 : 1)
+    .overlay(
+        ProfileView()
+            .opacity(isLoggedIn ? 1 : 0)
+    )
+```
+
+### 2. Unnecessary View Updates
+
+Avoid complex calculations directly in `body`:
+
+```swift
+// ❌ Expensive calculation runs every render
+var body: some View {
+    Text("Result: \(expensiveCalculation())")
+}
+
+// ✅ Cache the result
+@State private var result = 0
+
+var body: some View {
+    Text("Result: \(result)")
+        .onAppear {
+            result = expensiveCalculation()
+        }
+}
+```
+
+### 3. Force Unwrapping Optionals
+
+SwiftUI doesn't handle `nil` gracefully in view building:
+
+```swift
+// ❌ Crashes if user is nil
+var body: some View {
+    Text(user!.name)
+}
+
+// ✅ Handle optionals properly
+var body: some View {
+    if let user = user {
+        Text(user.name)
+    } else {
+        Text("No user")
+    }
+}
+
+// ✅ Or use nil coalescing
+var body: some View {
+    Text(user?.name ?? "Guest")
+}
+```
+
+### 4. @State in Initializer
+
+Don't set `@State` properties in the initializer:
+
+```swift
+// ❌ Wrong
+struct ContentView: View {
+    @State private var name: String
+    
+    init(name: String) {
+        self.name = name  // This doesn't work as expected
+    }
+    
+    var body: some View {
+        Text(name)
+    }
+}
+
+// ✅ Correct
+struct ContentView: View {
+    @State private var name: String
+    
+    init(name: String) {
+        _name = State(initialValue: name)
+    }
+    
+    var body: some View {
+        Text(name)
+    }
+}
+```
+
+## PreviewProvider for Rapid Development
+
+One of SwiftUI's killer features is live previews:
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        Text("Hello, World!")
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            // Preview on different devices
+            ContentView()
+                .previewDevice("iPhone 14 Pro")
+            
+            ContentView()
+                .previewDevice("iPad Pro (11-inch)")
+            
+            // Preview in dark mode
+            ContentView()
+                .preferredColorScheme(.dark)
+            
+            // Preview with different sizes
+            ContentView()
+                .previewLayout(.sizeThatFits)
+                .padding()
+        }
+    }
+}
+```
+
+## Performance Considerations
+
+SwiftUI is generally performant, but watch for:
+
+1. **Expensive body computations**: SwiftUI calls `body` frequently
+2. **Large lists without lazy loading**: Use `LazyVStack` or `LazyHStack`
+3. **Unnecessary state changes**: Each change triggers a re-render
+
+```swift
+// ✅ Use lazy stacks for long lists
+ScrollView {
+    LazyVStack {
+        ForEach(0..<1000) { index in
+            Text("Row \(index)")
+        }
+    }
+}
+```
+
+## Resources and Official Documentation
+
+- [SwiftUI Documentation](https://developer.apple.com/documentation/swiftui/) - Apple's official reference
+- [SwiftUI Tutorials](https://developer.apple.com/tutorials/swiftui) - Step-by-step guides from Apple
+- [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) - Design best practices
+- [WWDC Sessions](https://developer.apple.com/videos/) - Annual conference videos covering SwiftUI updates
+
+## Summary Table
+
+| Aspect | SwiftUI | UIKit |
+|--------|---------|-------|
+| **Paradigm** | Declarative | Imperative |
+| **Code Volume** | Less code for same functionality | More verbose |
+| **Learning Curve** | Steeper initially, easier long-term | Gentler start, more complex patterns |
+| **State Management** | Built-in property wrappers | Manual delegation/KVO/NotificationCenter |
+| **Preview System** | Live canvas previews | Requires simulator/device |
+| **iOS Version Support** | iOS 13+ (practical: iOS 14+) | All iOS versions |
+| **Cross-Platform** | Native support for all Apple platforms | Separate frameworks per platform |
+| **Performance** | Generally excellent, some edge cases | Highly optimized, full control |
+| **Customization** | Limited to provided APIs | Complete control over rendering |
+| **Third-Party Support** | Growing ecosystem | Mature, extensive libraries |
+| **Animation** | Simple, automatic | Manual, more control |
+| **Layout System** | Automatic with stacks | Constraints or manual frames |
+| **Testing** | Still maturing | Well-established patterns |
+| **Industry Adoption** | Increasing rapidly | Standard for existing apps |
+
+SwiftUI represents the future of Apple platform development. While UIKit remains essential for supporting older iOS versions and complex custom requirements, SwiftUI's declarative approach, live previews, and automatic state management make it the preferred choice for new projects. The framework continues to mature with each iOS release, addressing earlier limitations and expanding capabilities.

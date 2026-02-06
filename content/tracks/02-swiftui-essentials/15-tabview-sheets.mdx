@@ -1,0 +1,682 @@
+---
+title: "TabView & Sheets"
+description: "Tab-based navigation, modal sheets, popovers, and alerts"
+sectionId: "2.5-navigation"
+sectionTitle: "Navigation"
+order: 15
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# TabView & Sheets: Essential Navigation Patterns in SwiftUI
+
+Navigation is fundamental to iOS app design, and SwiftUI provides powerful, declarative tools for managing it. In this article, you'll learn about `TabView` for tab-based navigation and various presentation styles including sheets, popovers, and alerts. These patterns allow users to move between different sections of your app and interact with temporary content.
+
+## Why These Patterns Matter
+
+Tab bars are ubiquitous in iOS apps—think of the Music, Clock, or App Store apps. They provide constant access to top-level sections of your application. Sheets, popovers, and alerts serve a different purpose: presenting focused, temporary content that requires user attention or input without leaving the current context.
+
+Understanding these patterns is essential because:
+
+- **TabView** structures your app's primary navigation hierarchy
+- **Sheets** present modal content that demands completion or dismissal
+- **Popovers** (iPad-specific) display contextual information
+- **Alerts** communicate important messages and gather simple decisions
+
+Let's explore each concept with practical examples.
+
+## TabView: Tab-Based Navigation
+
+A `TabView` displays multiple child views with a tab bar at the bottom, allowing users to switch between them. Each tab can contain an entire navigation hierarchy.
+
+### Basic TabView Implementation
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        TabView {
+            HomeView()
+                .tabItem {
+                    Label("Home", systemImage: "house")
+                }
+            
+            SearchView()
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+            
+            ProfileView()
+                .tabItem {
+                    Label("Profile", systemImage: "person")
+                }
+        }
+    }
+}
+
+struct HomeView: View {
+    var body: some View {
+        NavigationStack {
+            Text("Home Screen")
+                .navigationTitle("Home")
+        }
+    }
+}
+
+struct SearchView: View {
+    var body: some View {
+        NavigationStack {
+            Text("Search Screen")
+                .navigationTitle("Search")
+        }
+    }
+}
+
+struct ProfileView: View {
+    var body: some View {
+        NavigationStack {
+            Text("Profile Screen")
+                .navigationTitle("Profile")
+        }
+    }
+}
+```
+
+### Programmatic Tab Selection
+
+You can control which tab is selected using a state binding:
+
+```swift
+struct ContentView: View {
+    @State private var selectedTab = 0
+    
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            HomeView()
+                .tabItem {
+                    Label("Home", systemImage: "house")
+                }
+                .tag(0)
+            
+            SearchView()
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+                .tag(1)
+            
+            ProfileView()
+                .tabItem {
+                    Label("Profile", systemImage: "person")
+                }
+                .tag(2)
+        }
+    }
+}
+```
+
+**Key Points:**
+- Each view must have a unique `.tag()` value matching the type of your selection binding
+- You can programmatically switch tabs by changing `selectedTab`
+- The selection binding is optional; omit it if you don't need programmatic control
+
+### Styling TabView
+
+```swift
+TabView {
+    // ... tab content
+}
+.accentColor(.purple) // Changes selected tab color (deprecated in iOS 15+)
+.tint(.purple) // Preferred in iOS 15+
+```
+
+### Common TabView Mistakes
+
+**1. Missing or Mismatched Tags**
+
+```swift
+// ❌ Wrong: Tags don't match selection type
+@State private var selectedTab: Int = 0
+
+TabView(selection: $selectedTab) {
+    HomeView()
+        .tabItem { Label("Home", systemImage: "house") }
+        .tag("home") // String tag with Int selection - won't work!
+}
+
+// ✅ Correct: Matching types
+@State private var selectedTab: String = "home"
+
+TabView(selection: $selectedTab) {
+    HomeView()
+        .tabItem { Label("Home", systemImage: "house") }
+        .tag("home")
+}
+```
+
+**2. Too Many Tabs**
+
+iOS automatically creates a "More" tab when you exceed 5 tabs on iPhone. While this works, it's poor UX. Consider redesigning your navigation if you need more than 5 tabs.
+
+**3. Nested TabViews**
+
+Never nest `TabView` within another `TabView`. This creates a confusing user experience and is against iOS design guidelines.
+
+## Sheets: Modal Presentation
+
+Sheets present content modally, covering the current view. They're ideal for tasks that require user input or present self-contained content that must be completed or dismissed.
+
+### Basic Sheet Implementation
+
+```swift
+struct ContentView: View {
+    @State private var showingSheet = false
+    
+    var body: some View {
+        Button("Show Sheet") {
+            showingSheet = true
+        }
+        .sheet(isPresented: $showingSheet) {
+            SheetView()
+        }
+    }
+}
+
+struct SheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            Text("This is a sheet")
+                .navigationTitle("Sheet")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+    }
+}
+```
+
+**Key Concepts:**
+- The sheet appears when `showingSheet` becomes `true`
+- Use `@Environment(\.dismiss)` to dismiss the sheet programmatically
+- Users can also dismiss by swiping down (default behavior)
+
+### Sheet with Item Binding
+
+Instead of a boolean, you can present a sheet based on an optional item:
+
+```swift
+struct ContentView: View {
+    @State private var selectedUser: User?
+    
+    var body: some View {
+        List(users) { user in
+            Button(user.name) {
+                selectedUser = user
+            }
+        }
+        .sheet(item: $selectedUser) { user in
+            UserDetailView(user: user)
+        }
+    }
+}
+
+struct User: Identifiable {
+    let id = UUID()
+    let name: String
+}
+
+let users = [
+    User(name: "Alice"),
+    User(name: "Bob"),
+    User(name: "Charlie")
+]
+```
+
+The sheet automatically presents when `selectedUser` is non-nil and dismisses when it becomes `nil`.
+
+### Sheet Presentation Detents (iOS 16+)
+
+Control how far a sheet expands:
+
+```swift
+struct ContentView: View {
+    @State private var showingSheet = false
+    
+    var body: some View {
+        Button("Show Sheet") {
+            showingSheet = true
+        }
+        .sheet(isPresented: $showingSheet) {
+            SheetView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+```
+
+Available detents:
+- `.medium` - Approximately half screen height
+- `.large` - Full screen height
+- `.height(CGFloat)` - Custom fixed height
+- `.fraction(CGFloat)` - Custom fractional height (0.0 to 1.0)
+
+```swift
+.sheet(isPresented: $showingSheet) {
+    SheetView()
+        .presentationDetents([.height(200), .medium, .large])
+        .presentationDragIndicator(.hidden)
+}
+```
+
+### Presentation Customization (iOS 16+)
+
+```swift
+.sheet(isPresented: $showingSheet) {
+    SheetView()
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(.enabled) // Allow interaction with content behind
+        .presentationCornerRadius(20)
+        .interactiveDismissDisabled() // Prevent swipe to dismiss
+}
+```
+
+### Full Screen Cover
+
+For truly immersive content that covers everything, including the status bar:
+
+```swift
+struct ContentView: View {
+    @State private var showingFullScreen = false
+    
+    var body: some View {
+        Button("Show Full Screen") {
+            showingFullScreen = true
+        }
+        .fullScreenCover(isPresented: $showingFullScreen) {
+            FullScreenView()
+        }
+    }
+}
+
+struct FullScreenView: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack {
+                Text("Full Screen Content")
+                    .foregroundColor(.white)
+                
+                Button("Dismiss") {
+                    dismiss()
+                }
+                .foregroundColor(.white)
+            }
+        }
+    }
+}
+```
+
+**Important:** Full screen covers don't support swipe-to-dismiss by default, so always provide an explicit dismiss button.
+
+### Common Sheet Mistakes
+
+**1. Multiple Sheet Modifiers**
+
+```swift
+// ❌ Wrong: Only the last sheet will work
+Button("Action") { }
+    .sheet(isPresented: $showingSheet1) { Sheet1View() }
+    .sheet(isPresented: $showingSheet2) { Sheet2View() }
+
+// ✅ Correct: Use different state variables on different views or use item-based presentation
+VStack {
+    Button("Sheet 1") { showingSheet1 = true }
+        .sheet(isPresented: $showingSheet1) { Sheet1View() }
+    
+    Button("Sheet 2") { showingSheet2 = true }
+        .sheet(isPresented: $showingSheet2) { Sheet2View() }
+}
+```
+
+**2. Forgetting Dismiss Mechanism**
+
+Always provide a way to dismiss sheets, especially full screen covers:
+
+```swift
+// ❌ Wrong: No way to dismiss
+.fullScreenCover(isPresented: $showing) {
+    Text("Stuck here forever!")
+}
+
+// ✅ Correct: Include dismiss button
+.fullScreenCover(isPresented: $showing) {
+    NavigationStack {
+        Text("Can escape!")
+            .toolbar {
+                Button("Done") { showing = false }
+            }
+    }
+}
+```
+
+## Popovers
+
+Popovers display content in a floating window anchored to a specific UI element. On iPad, they appear as actual popovers; on iPhone, they typically present as sheets.
+
+```swift
+struct ContentView: View {
+    @State private var showingPopover = false
+    
+    var body: some View {
+        Button("Show Popover") {
+            showingPopover = true
+        }
+        .popover(isPresented: $showingPopover) {
+            PopoverContent()
+        }
+    }
+}
+
+struct PopoverContent: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Popover Content")
+                .font(.headline)
+            
+            Text("This appears as a popover on iPad and a sheet on iPhone.")
+                .multilineTextAlignment(.center)
+                .padding()
+        }
+        .frame(width: 300, height: 200)
+    }
+}
+```
+
+### Popover with Attachment Anchor
+
+Control where the popover attaches:
+
+```swift
+Button("Show Popover") {
+    showingPopover = true
+}
+.popover(isPresented: $showingPopover, 
+         attachmentAnchor: .point(.top),
+         arrowEdge: .bottom) {
+    PopoverContent()
+}
+```
+
+### Popover Arrow Direction
+
+```swift
+.popover(isPresented: $showingPopover, arrowEdge: .leading) {
+    PopoverContent()
+}
+```
+
+Available edges: `.top`, `.bottom`, `.leading`, `.trailing`
+
+## Alerts
+
+Alerts present critical information that requires immediate attention or a decision.
+
+### Basic Alert
+
+```swift
+struct ContentView: View {
+    @State private var showingAlert = false
+    
+    var body: some View {
+        Button("Show Alert") {
+            showingAlert = true
+        }
+        .alert("Important Message", isPresented: $showingAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This is an important message that requires your attention.")
+        }
+    }
+}
+```
+
+### Alert with Multiple Buttons
+
+```swift
+struct ContentView: View {
+    @State private var showingAlert = false
+    
+    var body: some View {
+        Button("Delete Item") {
+            showingAlert = true
+        }
+        .alert("Confirm Deletion", isPresented: $showingAlert) {
+            Button("Delete", role: .destructive) {
+                // Perform deletion
+                print("Deleted")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to delete this item? This action cannot be undone.")
+        }
+    }
+}
+```
+
+**Button Roles:**
+- `.cancel` - Dismisses without action (bold text)
+- `.destructive` - Dangerous action (red text)
+- `nil` (default) - Standard action
+
+### Alert with Text Input (iOS 16+ alternative)
+
+While alerts traditionally supported text fields, SwiftUI's alert doesn't. Use a custom sheet instead:
+
+```swift
+struct ContentView: View {
+    @State private var showingInput = false
+    @State private var inputText = ""
+    
+    var body: some View {
+        Button("Enter Name") {
+            showingInput = true
+        }
+        .sheet(isPresented: $showingInput) {
+            InputSheet(text: $inputText)
+                .presentationDetents([.height(200)])
+        }
+    }
+}
+
+struct InputSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var text: String
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Enter name", text: $text)
+            }
+            .navigationTitle("Input")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+```
+
+### Confirmation Dialogs
+
+For action sheets (multiple choices), use `confirmationDialog`:
+
+```swift
+struct ContentView: View {
+    @State private var showingDialog = false
+    
+    var body: some View {
+        Button("Export Options") {
+            showingDialog = true
+        }
+        .confirmationDialog("Export Format", isPresented: $showingDialog) {
+            Button("PDF") {
+                print("Export as PDF")
+            }
+            Button("JPEG") {
+                print("Export as JPEG")
+            }
+            Button("PNG") {
+                print("Export as PNG")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose an export format")
+        }
+    }
+}
+```
+
+On iOS, this appears as an action sheet from the bottom. On macOS, it appears as a dropdown menu.
+
+## Combining Navigation Patterns
+
+Real apps combine these patterns. Here's a complete example:
+
+```swift
+struct AppView: View {
+    var body: some View {
+        TabView {
+            HomeTab()
+                .tabItem {
+                    Label("Home", systemImage: "house")
+                }
+            
+            SettingsTab()
+                .tabItem {
+                    Label("Settings", systemImage: "gear")
+                }
+        }
+    }
+}
+
+struct HomeTab: View {
+    @State private var showingSheet = false
+    @State private var showingAlert = false
+    @State private var items = ["Item 1", "Item 2", "Item 3"]
+    
+    var body: some View {
+        NavigationStack {
+            List(items, id: \.self) { item in
+                Text(item)
+            }
+            .navigationTitle("Home")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add", systemImage: "plus") {
+                        showingSheet = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSheet) {
+                AddItemSheet { newItem in
+                    items.append(newItem)
+                }
+            }
+        }
+    }
+}
+
+struct AddItemSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var itemName = ""
+    let onAdd: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Item name", text: $itemName)
+            }
+            .navigationTitle("Add Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        onAdd(itemName)
+                        dismiss()
+                    }
+                    .disabled(itemName.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+struct SettingsTab: View {
+    @State private var showingAlert = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account") {
+                    Text("Username: Alice")
+                }
+                Section("Actions") {
+                    Button("Reset Data", role: .destructive) {
+                        showingAlert = true
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .alert("Reset All Data?", isPresented: $showingAlert) {
+                Button("Reset", role: .destructive) {
+                    print("Data reset")
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This action cannot be undone.")
+            }
+        }
+    }
+}
+```
+
+This example shows how tabs, sheets, and alerts work together in a realistic app structure.
+
+## Summary Table
+
+| Pattern | Trigger | Use Case | Dismissal |
+|---------|---------|----------|-----------|
+| **TabView** | Tab bar tap | Top-level app sections | N/A (always visible) |
+| **Sheet** | `.sheet(isPresented:)` | Modal forms, detail views | Swipe down or programmatic |
+| **Full Screen Cover** | `.fullScreenCover(isPresented:)` | Immersive content (onboarding, media) | Programmatic only |
+| **Popover** | `.popover(isPresented:)` | Contextual info (iPad: popover, iPhone: sheet) | Tap outside or programmatic |
+| **Alert** | `.alert(isPresented:)` | Critical messages, confirmations | Button tap |
+| **Confirmation Dialog** | `.confirmationDialog(isPresented:)` | Multiple action choices | Cancel or button tap |
+| **Presentation Detents** | `.presentationDetents([])` | Control sheet height (iOS 16+) | Swipe or programmatic |
+
+## Official Resources
+
+- [Apple Documentation: TabView](https://developer.apple.com/documentation/swiftui/tabview)
+- [Apple Documentation: Sheets](https://developer.apple.com/documentation/swiftui/view/sheet(ispresented:ondismiss:content:))
+- [Apple Documentation: Alerts](https://developer.apple.com/documentation/swiftui/view/alert(_:ispresented:actions:message:))
+- [Apple Documentation: Presentation Detents](https://developer.apple.com/documentation/swiftui/view/presentationdetents(_:))
+- [Human Interface Guidelines: Modality](https://developer.apple.com/design/human-interface-guidelines/modality)

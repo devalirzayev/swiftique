@@ -1,0 +1,738 @@
+---
+title: "Dependency Injection"
+description: "Managing dependencies with protocols, environment, and containers"
+sectionId: "5.1-design-patterns"
+sectionTitle: "Design Patterns"
+order: 2
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Dependency Injection in Swift
+
+Dependency Injection (DI) is a design pattern where you provide objects with their dependencies from the outside rather than having them create dependencies internally. Instead of a class saying "I'll create what I need," you give it what it needs to function. This seemingly simple shift in thinking makes your code more testable, flexible, and maintainable.
+
+## Why Dependency Injection Matters
+
+Consider this common scenario without DI:
+
+```swift
+class UserProfileViewModel {
+    private let apiClient = APIClient()
+    
+    func fetchUserProfile(id: String) async throws -> User {
+        return try await apiClient.fetchUser(id: id)
+    }
+}
+```
+
+This looks reasonable, but it creates several problems:
+
+- **Impossible to test**: You can't test `UserProfileViewModel` without making real network calls
+- **Tightly coupled**: The view model is locked to one specific `APIClient` implementation
+- **Hard to modify**: Changing the API client requires changing the view model
+- **Hidden dependencies**: Reading the class doesn't tell you what it needs to function
+
+With dependency injection:
+
+```swift
+class UserProfileViewModel {
+    private let apiClient: APIClient
+    
+    init(apiClient: APIClient) {
+        self.apiClient = apiClient
+    }
+    
+    func fetchUserProfile(id: String) async throws -> User {
+        return try await apiClient.fetchUser(id: id)
+    }
+}
+```
+
+Now the dependency is explicit, and you can easily swap implementations for testing or different configurations.
+
+## The Three Main Types of Dependency Injection
+
+### 1. Constructor Injection (Initializer Injection)
+
+This is the most common and recommended approach in Swift. Dependencies are provided through the initializer.
+
+```swift
+protocol NetworkService {
+    func fetchData(from url: URL) async throws -> Data
+}
+
+class RealNetworkService: NetworkService {
+    func fetchData(from url: URL) async throws -> Data {
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return data
+    }
+}
+
+class DataRepository {
+    private let networkService: NetworkService
+    
+    // Constructor injection
+    init(networkService: NetworkService) {
+        self.networkService = networkService
+    }
+    
+    func loadItems() async throws -> [Item] {
+        let url = URL(string: "https://api.example.com/items")!
+        let data = try await networkService.fetchData(from: url)
+        return try JSONDecoder().decode([Item].self, from: data)
+    }
+}
+
+// Usage
+let repository = DataRepository(networkService: RealNetworkService())
+```
+
+**Advantages**: Dependencies are clearly visible, immutable (can use `let`), and the object is fully configured after initialization.
+
+### 2. Property Injection
+
+Dependencies are set through properties after object creation. This is less common in Swift but useful in specific scenarios.
+
+```swift
+class AnalyticsLogger {
+    var dateProvider: () -> Date = { Date() }
+    
+    func logEvent(_ name: String) {
+        let timestamp = dateProvider()
+        print("[\(timestamp)] Event: \(name)")
+    }
+}
+
+// Usage
+let logger = AnalyticsLogger()
+logger.dateProvider = { Date().addingTimeInterval(-3600) } // Inject custom time
+logger.logEvent("User logged in")
+```
+
+**Use cases**: Optional dependencies, when you need default behavior, or when working with frameworks that control object creation (like SwiftUI property wrappers).
+
+**Drawback**: The object might be used before all dependencies are set, leading to runtime errors.
+
+### 3. Method Injection
+
+Pass dependencies as parameters to methods that need them.
+
+```swift
+class ReportGenerator {
+    func generateReport(data: [String], formatter: ReportFormatter) -> String {
+        return formatter.format(data)
+    }
+}
+
+protocol ReportFormatter {
+    func format(_ data: [String]) -> String
+}
+
+struct CSVFormatter: ReportFormatter {
+    func format(_ data: [String]) -> String {
+        return data.joined(separator: ",")
+    }
+}
+
+struct JSONFormatter: ReportFormatter {
+    func format(_ data: [String]) -> String {
+        return "[\"\(data.joined(separator: "\",\""))\"]"
+    }
+}
+
+// Usage
+let generator = ReportGenerator()
+let csvReport = generator.generateReport(data: ["A", "B", "C"], formatter: CSVFormatter())
+let jsonReport = generator.generateReport(data: ["A", "B", "C"], formatter: JSONFormatter())
+```
+
+**Use case**: When different calls to the same method might need different implementations.
+
+## Protocol-Based Dependency Injection
+
+Protocols are Swift's primary tool for achieving abstraction and enabling dependency injection. They define contracts without specifying implementation.
+
+```swift
+// Define the contract
+protocol StorageService {
+    func save(_ data: Data, forKey key: String) throws
+    func load(forKey key: String) throws -> Data?
+    func delete(forKey key: String) throws
+}
+
+// Production implementation
+class UserDefaultsStorage: StorageService {
+    private let userDefaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
+    
+    func save(_ data: Data, forKey key: String) throws {
+        userDefaults.set(data, forKey: key)
+    }
+    
+    func load(forKey key: String) throws -> Data? {
+        return userDefaults.data(forKey: key)
+    }
+    
+    func delete(forKey key: String) throws {
+        userDefaults.removeObject(forKey: key)
+    }
+}
+
+// Test implementation
+class InMemoryStorage: StorageService {
+    private var storage: [String: Data] = [:]
+    
+    func save(_ data: Data, forKey key: String) throws {
+        storage[key] = data
+    }
+    
+    func load(forKey key: String) throws -> Data? {
+        return storage[key]
+    }
+    
+    func delete(forKey key: String) throws {
+        storage.removeObject(forKey: key)
+    }
+}
+
+// Consumer that depends on the protocol, not concrete types
+class UserPreferences {
+    private let storage: StorageService
+    
+    init(storage: StorageService) {
+        self.storage = storage
+    }
+    
+    func saveUsername(_ username: String) throws {
+        let data = username.data(using: .utf8)!
+        try storage.save(data, forKey: "username")
+    }
+    
+    func loadUsername() throws -> String? {
+        guard let data = try storage.load(forKey: "username") else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
+// Production usage
+let productionPrefs = UserPreferences(storage: UserDefaultsStorage())
+
+// Testing usage
+let testPrefs = UserPreferences(storage: InMemoryStorage())
+```
+
+## SwiftUI Environment and Dependency Injection
+
+SwiftUI provides the `@Environment` and `@EnvironmentObject` property wrappers for dependency injection through the view hierarchy.
+
+### Using @EnvironmentObject
+
+```swift
+// Your dependency as an ObservableObject
+class AuthenticationService: ObservableObject {
+    @Published var isAuthenticated = false
+    @Published var currentUser: User?
+    
+    func login(username: String, password: String) async throws {
+        // Authentication logic
+        isAuthenticated = true
+        currentUser = User(username: username)
+    }
+    
+    func logout() {
+        isAuthenticated = false
+        currentUser = nil
+    }
+}
+
+// Injecting the dependency
+@main
+struct MyApp: App {
+    @StateObject private var authService = AuthenticationService()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(authService)
+        }
+    }
+}
+
+// Consuming the dependency
+struct ContentView: View {
+    @EnvironmentObject var authService: AuthenticationService
+    
+    var body: some View {
+        if authService.isAuthenticated {
+            HomeView()
+        } else {
+            LoginView()
+        }
+    }
+}
+
+struct LoginView: View {
+    @EnvironmentObject var authService: AuthenticationService
+    @State private var username = ""
+    @State private var password = ""
+    
+    var body: some View {
+        VStack {
+            TextField("Username", text: $username)
+            SecureField("Password", text: $password)
+            Button("Login") {
+                Task {
+                    try? await authService.login(username: username, password: password)
+                }
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Custom Environment Keys
+
+For non-`ObservableObject` dependencies, create custom environment keys:
+
+```swift
+// Define the protocol
+protocol ImageCache {
+    func store(_ image: UIImage, forKey key: String)
+    func retrieve(forKey key: String) -> UIImage?
+}
+
+// Implement the service
+class InMemoryImageCache: ImageCache {
+    private var cache: [String: UIImage] = [:]
+    
+    func store(_ image: UIImage, forKey key: String) {
+        cache[key] = image
+    }
+    
+    func retrieve(forKey key: String) -> UIImage? {
+        return cache[key]
+    }
+}
+
+// Create environment key
+private struct ImageCacheKey: EnvironmentKey {
+    static let defaultValue: ImageCache = InMemoryImageCache()
+}
+
+// Extend EnvironmentValues
+extension EnvironmentValues {
+    var imageCache: ImageCache {
+        get { self[ImageCacheKey.self] }
+        set { self[ImageCacheKey.self] = newValue }
+    }
+}
+
+// Usage in views
+struct ImageLoaderView: View {
+    @Environment(\.imageCache) var imageCache
+    let imageKey: String
+    
+    var body: some View {
+        if let cachedImage = imageCache.retrieve(forKey: imageKey) {
+            Image(uiImage: cachedImage)
+        } else {
+            ProgressView()
+                .task {
+                    // Load and cache image
+                }
+        }
+    }
+}
+
+// Injecting custom implementation
+struct ParentView: View {
+    let customCache = InMemoryImageCache()
+    
+    var body: some View {
+        ImageLoaderView(imageKey: "profile")
+            .environment(\.imageCache, customCache)
+    }
+}
+```
+
+## Dependency Injection Containers
+
+For larger applications, manually wiring dependencies becomes cumbersome. Dependency injection containers centralize this configuration.
+
+### Simple Container Implementation
+
+```swift
+class DependencyContainer {
+    static let shared = DependencyContainer()
+    
+    // Registered dependencies
+    private var factories: [String: () -> Any] = [:]
+    private var singletons: [String: Any] = [:]
+    
+    private init() {
+        registerDependencies()
+    }
+    
+    // Register a factory (creates new instance each time)
+    func register<T>(_ type: T.Type, factory: @escaping () -> T) {
+        let key = String(describing: type)
+        factories[key] = factory
+    }
+    
+    // Register a singleton (same instance every time)
+    func registerSingleton<T>(_ type: T.Type, instance: T) {
+        let key = String(describing: type)
+        singletons[key] = instance
+    }
+    
+    // Resolve a dependency
+    func resolve<T>(_ type: T.Type) -> T {
+        let key = String(describing: type)
+        
+        // Check for singleton first
+        if let singleton = singletons[key] as? T {
+            return singleton
+        }
+        
+        // Check for factory
+        guard let factory = factories[key],
+              let instance = factory() as? T else {
+            fatalError("No registration found for \(key)")
+        }
+        
+        return instance
+    }
+    
+    private func registerDependencies() {
+        // Register singletons
+        registerSingleton(NetworkService.self, instance: RealNetworkService())
+        registerSingleton(StorageService.self, instance: UserDefaultsStorage())
+        
+        // Register factories
+        register(UserRepository.self) {
+            UserRepository(
+                networkService: self.resolve(NetworkService.self),
+                storageService: self.resolve(StorageService.self)
+            )
+        }
+        
+        register(UserProfileViewModel.self) {
+            UserProfileViewModel(
+                userRepository: self.resolve(UserRepository.self)
+            )
+        }
+    }
+}
+
+// Usage
+let viewModel = DependencyContainer.shared.resolve(UserProfileViewModel.self)
+```
+
+### Protocol-Based Container with Auto-Resolution
+
+```swift
+protocol Resolvable {
+    static func resolve(from container: DependencyContainer) -> Self
+}
+
+class DependencyContainer {
+    static let shared = DependencyContainer()
+    
+    private var singletons: [ObjectIdentifier: Any] = [:]
+    private var factories: [ObjectIdentifier: (DependencyContainer) -> Any] = [:]
+    
+    func registerSingleton<T>(_ type: T.Type, instance: T) {
+        singletons[ObjectIdentifier(type)] = instance
+    }
+    
+    func register<T>(_ type: T.Type, factory: @escaping (DependencyContainer) -> T) {
+        factories[ObjectIdentifier(type)] = factory
+    }
+    
+    func resolve<T>(_ type: T.Type) -> T {
+        let key = ObjectIdentifier(type)
+        
+        if let singleton = singletons[key] as? T {
+            return singleton
+        }
+        
+        if let factory = factories[key] {
+            return factory(self) as! T
+        }
+        
+        fatalError("No registration for \(type)")
+    }
+}
+
+// Example usage with auto-resolution
+class UserRepository {
+    let networkService: NetworkService
+    let storageService: StorageService
+    
+    init(networkService: NetworkService, storageService: StorageService) {
+        self.networkService = networkService
+        self.storageService = storageService
+    }
+}
+
+extension UserRepository: Resolvable {
+    static func resolve(from container: DependencyContainer) -> UserRepository {
+        return UserRepository(
+            networkService: container.resolve(NetworkService.self),
+            storageService: container.resolve(StorageService.self)
+        )
+    }
+}
+
+// Setup
+DependencyContainer.shared.registerSingleton(NetworkService.self, instance: RealNetworkService())
+DependencyContainer.shared.registerSingleton(StorageService.self, instance: UserDefaultsStorage())
+DependencyContainer.shared.register(UserRepository.self) { container in
+    UserRepository.resolve(from: container)
+}
+```
+
+## Testing with Dependency Injection
+
+Dependency injection makes testing straightforward by allowing mock implementations.
+
+```swift
+// Protocol definition
+protocol WeatherService {
+    func fetchTemperature(for city: String) async throws -> Double
+}
+
+// Production implementation
+class RealWeatherService: WeatherService {
+    func fetchTemperature(for city: String) async throws -> Double {
+        // Real API call
+        let url = URL(string: "https://api.weather.com/\(city)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        // Parse and return temperature
+        return 72.5
+    }
+}
+
+// Mock for testing
+class MockWeatherService: WeatherService {
+    var temperatureToReturn: Double = 75.0
+    var shouldThrowError = false
+    var fetchCallCount = 0
+    
+    func fetchTemperature(for city: String) async throws -> Double {
+        fetchCallCount += 1
+        if shouldThrowError {
+            throw NSError(domain: "TestError", code: 1)
+        }
+        return temperatureToReturn
+    }
+}
+
+// Class using the service
+class WeatherViewModel {
+    private let weatherService: WeatherService
+    var temperature: Double?
+    var errorMessage: String?
+    
+    init(weatherService: WeatherService) {
+        self.weatherService = weatherService
+    }
+    
+    func loadWeather(for city: String) async {
+        do {
+            temperature = try await weatherService.fetchTemperature(for: city)
+            errorMessage = nil
+        } catch {
+            temperature = nil
+            errorMessage = "Failed to load weather"
+        }
+    }
+}
+
+// XCTest example
+import XCTest
+
+class WeatherViewModelTests: XCTestCase {
+    func testLoadWeatherSuccess() async {
+        // Arrange
+        let mockService = MockWeatherService()
+        mockService.temperatureToReturn = 80.0
+        let viewModel = WeatherViewModel(weatherService: mockService)
+
+        // Act
+        await viewModel.loadWeather(for: "San Francisco")
+
+        // Assert
+        XCTAssertEqual(viewModel.temperature, 80.0)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(mockService.fetchCallCount, 1)
+    }
+
+    func testLoadWeatherFailure() async {
+        // Arrange
+        let mockService = MockWeatherService()
+        mockService.shouldThrowError = true
+        let viewModel = WeatherViewModel(weatherService: mockService)
+
+        // Act
+        await viewModel.loadWeather(for: "Unknown City")
+
+        // Assert
+        XCTAssertNil(viewModel.temperature)
+        XCTAssertEqual(viewModel.errorMessage, "Failed to load weather")
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Depending on Concrete Types
+
+```swift
+// ❌ Depends on concrete implementation
+class ProfileViewModel {
+    let service = FirebaseAuthService()
+}
+
+// ✅ Depends on protocol abstraction
+class ProfileViewModel {
+    let authService: AuthService
+
+    init(authService: AuthService) {
+        self.authService = authService
+    }
+}
+```
+
+### Mistake 2: Service Locator Anti-Pattern
+
+```swift
+// ❌ Hidden dependency - hard to track and test
+class OrderViewModel {
+    func placeOrder() {
+        let service = ServiceLocator.shared.resolve(OrderService.self)
+        service.submit(order)
+    }
+}
+
+// ✅ Explicit dependency
+class OrderViewModel {
+    private let orderService: OrderService
+
+    init(orderService: OrderService) {
+        self.orderService = orderService
+    }
+
+    func placeOrder() {
+        orderService.submit(order)
+    }
+}
+```
+
+### Mistake 3: Over-Injecting Dependencies
+
+```swift
+// ❌ Too many dependencies - the class is doing too much
+class SuperViewModel {
+    init(
+        networkService: NetworkService,
+        storageService: StorageService,
+        analyticsService: AnalyticsService,
+        authService: AuthService,
+        locationService: LocationService,
+        notificationService: NotificationService,
+        cacheService: CacheService
+    ) { ... }
+}
+
+// ✅ Split into focused classes
+class UserViewModel {
+    init(userRepository: UserRepository, analyticsService: AnalyticsService) { ... }
+}
+
+class LocationViewModel {
+    init(locationService: LocationService) { ... }
+}
+```
+
+If a class needs more than 3-4 dependencies, it's likely violating the Single Responsibility Principle.
+
+## Modern Alternative: @Observable with @Environment (iOS 17+)
+
+With `@Observable`, SwiftUI's `@Environment` can directly inject observable types without needing `@EnvironmentObject`:
+
+```swift
+import Observation
+
+@Observable
+class AuthenticationService {
+    var isAuthenticated = false
+    var currentUser: User?
+
+    func login(username: String, password: String) async throws {
+        isAuthenticated = true
+        currentUser = User(username: username)
+    }
+
+    func logout() {
+        isAuthenticated = false
+        currentUser = nil
+    }
+}
+
+// Injecting with .environment()
+@main
+struct MyApp: App {
+    @State private var authService = AuthenticationService()
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(authService)
+        }
+    }
+}
+
+// Consuming with @Environment
+struct ContentView: View {
+    @Environment(AuthenticationService.self) var authService
+
+    var body: some View {
+        if authService.isAuthenticated {
+            HomeView()
+        } else {
+            LoginView()
+        }
+    }
+}
+```
+
+**Key differences from @EnvironmentObject:**
+- No need to conform to `ObservableObject`
+- Use `.environment(instance)` instead of `.environmentObject(instance)`
+- Use `@Environment(Type.self)` instead of `@EnvironmentObject`
+- Only views reading changed properties re-render (better performance)
+
+## Summary Table
+
+| DI Type | When to Use | Swift Example |
+|---------|------------|---------------|
+| **Constructor** | Most cases (recommended) | `init(service: Service)` |
+| **Property** | Optional or default dependencies | `var logger: Logger = DefaultLogger()` |
+| **Method** | Different implementations per call | `func process(formatter: Formatter)` |
+| **Environment** | SwiftUI view hierarchy | `@EnvironmentObject` / `@Environment` |
+| **Container** | Large apps with complex graphs | `container.resolve(Service.self)` |
+
+## Official Resources
+
+- [Apple Documentation: Managing model data in your app](https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app)
+- [Swift.org: Protocol-Oriented Programming](https://www.swift.org/documentation/)
+- [WWDC 2019: Data Flow Through SwiftUI](https://developer.apple.com/videos/play/wwdc2019/226/)

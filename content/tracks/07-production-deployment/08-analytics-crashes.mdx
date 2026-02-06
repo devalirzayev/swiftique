@@ -1,0 +1,636 @@
+---
+title: "Analytics & Crash Reporting"
+description: "Firebase Analytics, Crashlytics, and monitoring app health"
+sectionId: "7.4-post-launch"
+sectionTitle: "Post-Launch"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Analytics & Crash Reporting
+
+## Introduction
+
+Analytics and crash reporting are essential tools for understanding how users interact with your iOS app and identifying issues in production. While Xcode provides debugging tools during development, these systems tell you what happens after your app is in users' hands: which features are popular, where users get stuck, and most importantly, why your app crashes.
+
+**Why this matters:**
+
+- **Crash reporting** captures unexpected app failures with stack traces, device info, and context—helping you fix bugs you can't reproduce locally
+- **Analytics** tracks user behavior, showing which features are used, how long sessions last, and where users drop off
+- **App health monitoring** provides insights into app performance, startup times, and resource usage
+
+Firebase Analytics and Crashlytics have become industry standards for iOS apps because they're free, well-integrated, and provide actionable insights. Apple also provides its own analytics through App Store Connect, which we'll briefly cover.
+
+## Setting Up Firebase
+
+Firebase is Google's mobile platform that includes Analytics and Crashlytics. Let's start with installation.
+
+### Installing Firebase SDK
+
+First, add Firebase to your project using Swift Package Manager (SPM):
+
+1. In Xcode: **File > Add Packages**
+2. Enter: `https://github.com/firebase/firebase-ios-sdk`
+3. Select `FirebaseAnalytics` and `FirebaseCrashlytics`
+
+Alternatively, using CocoaPods:
+
+```ruby
+# Podfile
+platform :ios, '13.0'
+use_frameworks!
+
+target 'YourApp' do
+  pod 'Firebase/Analytics'
+  pod 'Firebase/Crashlytics'
+end
+```
+
+### Configuring Firebase
+
+Download `GoogleService-Info.plist` from the Firebase Console and add it to your Xcode project. Then initialize Firebase in your app:
+
+```swift
+import SwiftUI
+import Firebase
+
+@main
+struct MyApp: App {
+    init() {
+        FirebaseApp.configure()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+For UIKit apps:
+
+```swift
+import UIKit
+import Firebase
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        FirebaseApp.configure()
+        return true
+    }
+}
+```
+
+### Enabling Crashlytics
+
+Crashlytics requires an additional build phase script to upload debug symbols. In Xcode:
+
+1. Select your target > **Build Phases**
+2. Click **+** > **New Run Script Phase**
+3. Add this script:
+
+```bash
+"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"
+```
+
+For CocoaPods:
+
+```bash
+"${PODS_ROOT}/FirebaseCrashlytics/run"
+```
+
+Make sure the script runs **after** "Compile Sources" but **before** "Copy Bundle Resources".
+
+**Important:** Set the script's input file:
+
+```
+${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${TARGET_NAME}
+```
+
+## Firebase Analytics Basics
+
+Firebase Analytics automatically tracks certain events like `app_open`, `first_open`, and screen views. But custom events give you real insight into user behavior.
+
+### Logging Custom Events
+
+```swift
+import FirebaseAnalytics
+
+class ProductService {
+    func viewProduct(id: String, name: String, category: String) {
+        // Log a custom event
+        Analytics.logEvent("product_view", parameters: [
+            "product_id": id,
+            "product_name": name,
+            "product_category": category
+        ])
+    }
+    
+    func purchaseProduct(id: String, price: Double, currency: String) {
+        // Use predefined events when available
+        Analytics.logEvent(AnalyticsEventPurchase, parameters: [
+            AnalyticsParameterItemID: id,
+            AnalyticsParameterPrice: price,
+            AnalyticsParameterCurrency: currency
+        ])
+    }
+}
+```
+
+**Best practices:**
+
+- Use Firebase's predefined events (`AnalyticsEventPurchase`, `AnalyticsEventLogin`, etc.) when they fit—they integrate with Firebase's reports
+- Event names should be descriptive but concise (max 40 characters)
+- Parameter keys: max 40 characters, values: max 100 characters
+- You can log up to 500 distinct events per app
+
+### Tracking Screen Views
+
+Firebase automatically tracks screen views in UIKit, but you need to explicitly log them in SwiftUI:
+
+```swift
+import SwiftUI
+import FirebaseAnalytics
+
+struct ProductDetailView: View {
+    let productId: String
+    
+    var body: some View {
+        VStack {
+            Text("Product Details")
+        }
+        .onAppear {
+            Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                AnalyticsParameterScreenName: "ProductDetail",
+                AnalyticsParameterScreenClass: String(describing: Self.self),
+                "product_id": productId
+            ])
+        }
+    }
+}
+```
+
+For UIKit (automatic tracking):
+
+```swift
+class ProductDetailViewController: UIViewController {
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        // This is tracked automatically, but you can add custom parameters
+        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+            AnalyticsParameterScreenName: "ProductDetail",
+            AnalyticsParameterScreenClass: String(describing: type(of: self))
+        ])
+    }
+}
+```
+
+### User Properties
+
+User properties describe segments of your user base. Unlike events (which track actions), properties describe users:
+
+```swift
+class UserService {
+    func updateUserProperties(isPremium: Bool, accountAge: Int) {
+        Analytics.setUserProperty(isPremium ? "premium" : "free", 
+                                   forName: "subscription_type")
+        Analytics.setUserProperty("\(accountAge)", 
+                                   forName: "account_age_days")
+        
+        // Set user ID (for identifying users across sessions)
+        Analytics.setUserID("user_12345")
+    }
+    
+    func clearUserData() {
+        // Clear on logout
+        Analytics.setUserID(nil)
+        Analytics.setUserProperty(nil, forName: "subscription_type")
+    }
+}
+```
+
+**Limitations:**
+
+- Max 25 user properties per app
+- Property names: max 24 characters
+- Property values: max 36 characters
+
+### Common Analytics Mistakes
+
+**Mistake 1: Logging sensitive data**
+
+```swift
+// ❌ DON'T: Log personally identifiable information
+Analytics.logEvent("user_action", parameters: [
+    "email": "user@example.com",  // Privacy violation
+    "credit_card": "1234-5678"    // Security violation
+])
+
+// ✅ DO: Use anonymized identifiers
+Analytics.logEvent("user_action", parameters: [
+    "user_id_hash": userId.sha256(),
+    "action_type": "purchase"
+])
+```
+
+**Mistake 2: Too many custom events**
+
+```swift
+// ❌ DON'T: Create events for every tiny action
+Analytics.logEvent("button_tapped", parameters: ["button": "like"])
+Analytics.logEvent("label_read", parameters: ["label": "title"])
+
+// ✅ DO: Focus on meaningful user journeys
+Analytics.logEvent("content_engagement", parameters: [
+    "content_type": "article",
+    "action": "liked"
+])
+```
+
+**Mistake 3: Blocking the main thread**
+
+```swift
+// ✅ Analytics calls are already asynchronous, but be careful with parameter preparation
+func trackComplexEvent() {
+    // If parameter preparation is expensive, move it off the main thread
+    DispatchQueue.global(qos: .utility).async {
+        let complexData = self.prepareComplexAnalyticsData()
+        
+        DispatchQueue.main.async {
+            Analytics.logEvent("complex_event", parameters: complexData)
+        }
+    }
+}
+```
+
+## Crashlytics Integration
+
+Crashlytics automatically catches crashes, but you can enhance it with custom logging, non-fatal errors, and user context.
+
+### Basic Crash Reporting
+
+Once configured, Crashlytics automatically catches crashes:
+
+```swift
+import FirebaseCrashlytics
+
+class SomeService {
+    func triggerCrash() {
+        // Force a crash for testing (only use in debug builds!)
+        #if DEBUG
+        fatalError("Test crash for Crashlytics")
+        #endif
+    }
+}
+```
+
+### Custom Logging
+
+Add breadcrumbs to understand what led to a crash:
+
+```swift
+class CheckoutService {
+    func processCheckout(cartId: String) {
+        Crashlytics.crashlytics().log("Starting checkout process")
+        
+        Crashlytics.crashlytics().log("Cart ID: \(cartId)")
+        
+        do {
+            try validateCart(cartId)
+            Crashlytics.crashlytics().log("Cart validated successfully")
+            
+            try processPayment()
+            Crashlytics.crashlytics().log("Payment processed")
+            
+        } catch {
+            Crashlytics.crashlytics().log("Checkout failed: \(error.localizedDescription)")
+            // This will be logged even if we recover
+            throw error
+        }
+    }
+}
+```
+
+These logs appear in the crash report, showing the sequence of events before the crash.
+
+### Recording Non-Fatal Errors
+
+Not all errors crash your app, but you still want to track them:
+
+```swift
+class NetworkService {
+    func fetchData() async throws -> Data {
+        do {
+            let data = try await URLSession.shared.data(from: someURL).0
+            return data
+            
+        } catch {
+            // Log non-fatal error to Crashlytics
+            Crashlytics.crashlytics().record(error: error)
+            
+            // You can still handle the error gracefully
+            if let fallbackData = loadCachedData() {
+                return fallbackData
+            }
+            
+            throw error
+        }
+    }
+}
+```
+
+For custom errors:
+
+```swift
+enum AppError: Error {
+    case invalidResponse
+    case serverError(code: Int)
+    case unknownError
+}
+
+class APIClient {
+    func handleAPIError(_ statusCode: Int) {
+        let error = AppError.serverError(code: statusCode)
+        
+        // Record with additional context
+        Crashlytics.crashlytics().record(
+            error: error,
+            userInfo: [
+                "status_code": statusCode,
+                "endpoint": "/api/users",
+                "timestamp": Date().timeIntervalSince1970
+            ]
+        )
+    }
+}
+```
+
+### Setting Custom Keys
+
+Custom keys help you understand the app state when an error occurred:
+
+```swift
+class AppStateManager {
+    func updateNetworkStatus(_ isReachable: Bool) {
+        Crashlytics.crashlytics().setCustomValue(
+            isReachable,
+            forKey: "network_reachable"
+        )
+    }
+    
+    func setUserContext(userId: String?, isPremium: Bool) {
+        if let userId = userId {
+            Crashlytics.crashlytics().setUserID(userId)
+        }
+        
+        Crashlytics.crashlytics().setCustomValue(
+            isPremium,
+            forKey: "is_premium_user"
+        )
+    }
+    
+    func setAppState(screen: String, sessionLength: TimeInterval) {
+        Crashlytics.crashlytics().setCustomValue(screen, forKey: "current_screen")
+        Crashlytics.crashlytics().setCustomValue(sessionLength, forKey: "session_length")
+    }
+}
+```
+
+**Important:** Custom keys persist across app sessions until explicitly changed or the app is reinstalled.
+
+### Handling Opt-Out
+
+Respect user privacy by allowing them to opt out of crash reporting:
+
+```swift
+class PrivacyManager {
+    static let crashReportingEnabledKey = "crash_reporting_enabled"
+    
+    var isCrashReportingEnabled: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: Self.crashReportingEnabledKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.crashReportingEnabledKey)
+            Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(newValue)
+        }
+    }
+    
+    func initialize() {
+        // Check user preference before collecting crashes
+        let isEnabled = UserDefaults.standard.bool(forKey: Self.crashReportingEnabledKey)
+        Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(isEnabled)
+    }
+}
+```
+
+### Testing Crashlytics
+
+Force a crash to verify Crashlytics is working:
+
+```swift
+class CrashlyticsTestHelper {
+    static func sendTestCrash() {
+        #if DEBUG
+        // Note: Crashes in the debugger won't be sent
+        // Run without debugger attached to test
+        Crashlytics.crashlytics().log("This is a test crash")
+        fatalError("Test crash")
+        #endif
+    }
+    
+    static func sendTestError() {
+        let error = NSError(
+            domain: "com.yourapp.test",
+            code: 999,
+            userInfo: [NSLocalizedDescriptionKey: "Test error"]
+        )
+        Crashlytics.crashlytics().record(error: error)
+    }
+}
+```
+
+**Testing tip:** Crashes caught by the debugger won't be sent to Firebase. To test:
+
+1. Run your app without the debugger (⌘+Ctrl+R)
+2. Trigger the crash
+3. Reopen the app—crashes are sent on next launch
+4. Wait a few minutes and check the Firebase Console
+
+## Apple's Built-In Analytics
+
+Apple provides analytics through App Store Connect and Xcode Organizer, without requiring any SDK.
+
+### App Store Connect Analytics
+
+Available automatically for all apps:
+
+- **App Units**: Downloads and redownloads
+- **Sales and Trends**: Revenue and subscriptions
+- **Usage**: Active devices, installations, sessions
+- **Retention**: Day 1, Day 7, Day 28 retention rates
+- **Crashes**: Crash rate and crash-free users percentage
+
+Access at: [App Store Connect](https://appstoreconnect.apple.com) > Analytics
+
+### MetricKit
+
+MetricKit is Apple's framework for collecting app metrics and diagnostics:
+
+```swift
+import MetricKit
+
+class MetricsManager: NSObject, MXMetricManagerSubscriber {
+    static let shared = MetricsManager()
+    
+    override init() {
+        super.init()
+        MXMetricManager.shared.add(self)
+    }
+    
+    deinit {
+        MXMetricManager.shared.remove(self)
+    }
+    
+    // Called once per day with metrics
+    func didReceive(_ payloads: [MXMetricPayload]) {
+        for payload in payloads {
+            // CPU metrics
+            if let cpuMetrics = payload.cpuMetrics {
+                print("CPU time: \(cpuMetrics.cumulativeCPUTime)")
+            }
+            
+            // Memory metrics
+            if let memoryMetrics = payload.memoryMetrics {
+                print("Peak memory: \(memoryMetrics.peakMemoryUsage)")
+            }
+            
+            // Display metrics
+            if let displayMetrics = payload.displayMetrics {
+                print("Pixel luminance: \(displayMetrics.averagePixelLuminance)")
+            }
+            
+            // Network metrics
+            if let networkMetrics = payload.networkTransferMetrics {
+                print("Cellular download: \(networkMetrics.cumulativeCellularDownload)")
+                print("WiFi upload: \(networkMetrics.cumulativeWifiUpload)")
+            }
+            
+            // Send to your analytics backend
+            sendToServer(payload.jsonRepresentation())
+        }
+    }
+    
+    // Called with diagnostic reports (crashes, hangs, disk writes)
+    func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        for payload in payloads {
+            // Crash diagnostics
+            if let crashDiagnostics = payload.crashDiagnostics {
+                for crash in crashDiagnostics {
+                    print("Crash: \(crash.callStackTree)")
+                    sendToServer(crash.jsonRepresentation())
+                }
+            }
+            
+            // Hang diagnostics
+            if let hangDiagnostics = payload.hangDiagnostics {
+                for hang in hangDiagnostics {
+                    print("Hang duration: \(hang.hangDuration)")
+                    sendToServer(hang.jsonRepresentation())
+                }
+            }
+
+            // Disk write diagnostics
+            if let diskWriteDiagnostics = payload.diskWriteExceptionDiagnostics {
+                for diskWrite in diskWriteDiagnostics {
+                    print("Excessive disk write: \(diskWrite.callStackTree)")
+                    sendToServer(diskWrite.jsonRepresentation())
+                }
+            }
+        }
+    }
+
+    private func sendToServer(_ data: Data) {
+        // Send to your analytics backend
+        print("Sending \(data.count) bytes of metrics data")
+    }
+}
+```
+
+MetricKit delivers payloads approximately once every 24 hours, making it ideal for long-term monitoring rather than real-time debugging.
+
+## Building an Analytics Wrapper
+
+For production apps, create an abstraction layer so you can switch analytics providers without changing your entire codebase:
+
+```swift
+protocol AnalyticsProvider {
+    func logEvent(_ name: String, parameters: [String: Any]?)
+    func setUserProperty(_ value: String?, forName name: String)
+    func setUserId(_ id: String?)
+}
+
+class FirebaseAnalyticsProvider: AnalyticsProvider {
+    func logEvent(_ name: String, parameters: [String: Any]?) {
+        Analytics.logEvent(name, parameters: parameters)
+    }
+
+    func setUserProperty(_ value: String?, forName name: String) {
+        Analytics.setUserProperty(value, forName: name)
+    }
+
+    func setUserId(_ id: String?) {
+        Analytics.setUserID(id)
+    }
+}
+
+class AnalyticsService {
+    static let shared = AnalyticsService()
+    private var providers: [AnalyticsProvider] = []
+
+    func addProvider(_ provider: AnalyticsProvider) {
+        providers.append(provider)
+    }
+
+    func logEvent(_ name: String, parameters: [String: Any]? = nil) {
+        providers.forEach { $0.logEvent(name, parameters: parameters) }
+    }
+
+    func setUserProperty(_ value: String?, forName name: String) {
+        providers.forEach { $0.setUserProperty(value, forName: name) }
+    }
+
+    func setUserId(_ id: String?) {
+        providers.forEach { $0.setUserId(id) }
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Tool/API | Purpose |
+|---------|----------|---------|
+| **Firebase Analytics** | `Analytics.logEvent()` | Track user events and behavior |
+| **Screen tracking** | `AnalyticsEventScreenView` | Monitor which screens users visit |
+| **User properties** | `Analytics.setUserProperty()` | Segment users by attributes |
+| **Crashlytics** | `FirebaseCrashlytics` | Automatic crash reporting |
+| **Custom logs** | `Crashlytics.crashlytics().log()` | Breadcrumbs before crashes |
+| **Non-fatal errors** | `Crashlytics.crashlytics().record(error:)` | Track handled errors |
+| **Custom keys** | `setCustomValue(_:forKey:)` | App state context in crash reports |
+| **MetricKit** | `MXMetricManagerSubscriber` | Apple's native performance metrics |
+| **App Store Analytics** | App Store Connect | Downloads, retention, revenue |
+| **Privacy opt-out** | `setCrashlyticsCollectionEnabled()` | Respect user privacy choices |
+
+## Official Resources
+
+- [Firebase Analytics Documentation](https://firebase.google.com/docs/analytics/get-started?platform=ios)
+- [Firebase Crashlytics Documentation](https://firebase.google.com/docs/crashlytics/get-started?platform=ios)
+- [Apple Documentation: MetricKit](https://developer.apple.com/documentation/metrickit)
+- [App Store Connect Analytics](https://developer.apple.com/help/app-store-connect/view-app-analytics/)
+- [WWDC 2020: What's New in MetricKit](https://developer.apple.com/videos/play/wwdc2020/10081/)

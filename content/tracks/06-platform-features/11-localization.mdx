@@ -1,0 +1,654 @@
+---
+title: "Localization"
+description: "String catalogs, locale formatting, and right-to-left support"
+sectionId: "6.4-platform-specific"
+sectionTitle: "Platform-Specific Features"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Localization in iOS Development
+
+Localization is the process of adapting your iOS app to support multiple languages, regions, and cultures. It goes beyond simple translation—it includes formatting dates, numbers, and currencies correctly for each locale, supporting right-to-left (RTL) languages like Arabic and Hebrew, and ensuring your UI adapts appropriately.
+
+Getting localization right from the start is crucial. Retrofitting localization into an existing app is significantly more work than building it in from day one. Even if you're only targeting English speakers initially, following localization best practices costs you almost nothing and keeps your options open.
+
+## Why Localization Matters
+
+- **Market reach**: Over 75% of iOS users don't speak English as their first language
+- **App Store ranking**: Localized apps rank higher in regional App Stores
+- **User experience**: Users are more likely to engage with apps in their native language
+- **Legal requirements**: Some regions require apps to support local languages
+
+## String Catalogs (iOS 17+)
+
+String Catalogs are Apple's modern approach to localization, introduced in Xcode 15. They replace the older `.strings` and `.stringsdict` files with a single, unified JSON format that's easier to manage.
+
+### Setting Up String Catalogs
+
+1. In Xcode, go to File → New → File
+2. Select "String Catalog" from the Resource section
+3. Name it `Localizable.xcstrings` (this is the default catalog name)
+
+String Catalogs automatically extract localizable strings from your code when you build your project.
+
+### Basic String Localization
+
+```swift
+import SwiftUI
+
+struct WelcomeView: View {
+    var body: some View {
+        VStack {
+            // This string will automatically be extracted to the String Catalog
+            Text("Welcome to the App")
+            
+            // You can also use the String(localized:) initializer explicitly
+            Text(String(localized: "Getting Started"))
+        }
+    }
+}
+```
+
+When you build your project, Xcode extracts these strings into your String Catalog. You can then add translations in the catalog editor.
+
+### String Interpolation with Localization
+
+```swift
+struct GreetingView: View {
+    let username: String = "Alice"
+    
+    var body: some View {
+        // String interpolation works automatically
+        Text("Hello, \(username)!")
+        
+        // Explicit version with String(localized:)
+        Text(String(localized: "Welcome back, \(username)"))
+    }
+}
+```
+
+In your String Catalog, this appears as:
+```
+"Hello, %@!" = "Hello, %@!"; // English
+"Hello, %@!" = "Bonjour, %@ !"; // French
+```
+
+### Pluralization Rules
+
+Different languages have different pluralization rules. English has two forms (one/other), but other languages can have more complex rules.
+
+```swift
+struct MessageCountView: View {
+    let messageCount: Int
+    
+    var body: some View {
+        Text("You have \(messageCount) new message(s)")
+    }
+}
+```
+
+In your String Catalog, you'll define plural variations:
+
+```json
+{
+  "You have %lld new message(s)": {
+    "localizations": {
+      "en": {
+        "variations": {
+          "plural": {
+            "one": {
+              "stringUnit": {
+                "value": "You have %lld new message"
+              }
+            },
+            "other": {
+              "stringUnit": {
+                "value": "You have %lld new messages"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+For better control, use the explicit pluralization API:
+
+```swift
+struct MessageCountView: View {
+    let messageCount: Int
+    
+    var body: some View {
+        Text("^[\(messageCount) new message](inflect: true)")
+    }
+}
+```
+
+### Context-Aware Localization
+
+Sometimes the same English word translates differently based on context. String Catalogs support comments to provide context:
+
+```swift
+// "Close" as in close a window
+Text("Close", comment: "Button to dismiss the dialog")
+
+// "Close" as in nearby
+Text("Close", comment: "Adjective describing proximity")
+```
+
+These will appear as separate entries in your String Catalog, allowing different translations.
+
+### Common Mistakes with String Catalogs
+
+**Mistake 1: Concatenating localized strings**
+
+```swift
+// ❌ BAD: Don't concatenate strings
+let message = String(localized: "Welcome") + ", " + String(localized: "User")
+
+// ✅ GOOD: Use a single localized string with interpolation
+let message = String(localized: "Welcome, User")
+```
+
+**Mistake 2: Using string literals directly in computed properties**
+
+```swift
+// ❌ BAD: This won't update when language changes at runtime
+var greeting: String {
+    String(localized: "Hello")
+}
+
+// ✅ GOOD: For dynamic updates, use LocalizedStringKey
+var greetingView: some View {
+    Text("Hello") // LocalizedStringKey updates automatically
+}
+```
+
+**Mistake 3: Forgetting to localize accessibility labels**
+
+```swift
+Button(action: { /* ... */ }) {
+    Image(systemName: "trash")
+}
+// ❌ Missing accessibility label
+
+Button(action: { /* ... */ }) {
+    Image(systemName: "trash")
+}
+.accessibilityLabel("Delete") // ✅ Localizable label
+```
+
+## Legacy Localization (.strings files)
+
+If you're maintaining older code or targeting iOS versions before iOS 17, you'll encounter `.strings` files.
+
+### Localizable.strings (en)
+```
+"welcome_message" = "Welcome to the App";
+"hello_user" = "Hello, %@!";
+```
+
+### Localizable.strings (es)
+```
+"welcome_message" = "Bienvenido a la aplicación";
+"hello_user" = "¡Hola, %@!";
+```
+
+### Using .strings files in code
+
+```swift
+// Using NSLocalizedString
+let message = NSLocalizedString("welcome_message", comment: "Main welcome message")
+
+// With tableName if using a different .strings file
+let message = NSLocalizedString("key", tableName: "Errors", comment: "Error message")
+
+// With bundle for framework localization
+let message = NSLocalizedString("key", bundle: .main, comment: "")
+```
+
+## Locale Formatting
+
+Never hardcode date, number, or currency formats. What looks correct in one locale can be confusing or incorrect in another.
+
+### Formatting Dates
+
+```swift
+import Foundation
+
+struct DateFormattingExamples {
+    let date = Date()
+    
+    func examples() {
+        // ✅ GOOD: Use localized date formatting
+        let formatted = date.formatted(date: .long, time: .short)
+        // US: "January 15, 2024 at 2:30 PM"
+        // UK: "15 January 2024 at 14:30"
+        
+        // More control with FormatStyle
+        let customFormat = date.formatted(
+            .dateTime
+                .day()
+                .month(.wide)
+                .year()
+        )
+        
+        // ISO 8601 for API communication (not user-facing)
+        let iso8601 = date.ISO8601Format()
+    }
+}
+```
+
+### SwiftUI Date Formatting
+
+```swift
+struct DateView: View {
+    let date = Date()
+    
+    var body: some View {
+        VStack {
+            // Automatic localization
+            Text(date, style: .date)
+            Text(date, style: .time)
+            Text(date, style: .relative) // "2 hours ago"
+            
+            // Custom format
+            Text(date.formatted(.dateTime.month().day().hour().minute()))
+        }
+    }
+}
+```
+
+### Formatting Numbers
+
+```swift
+import Foundation
+
+struct NumberFormattingExamples {
+    func examples() {
+        let number = 1234567.89
+        
+        // ✅ GOOD: Localized number formatting
+        let formatted = number.formatted()
+        // US: "1,234,567.89"
+        // Germany: "1.234.567,89"
+        
+        // Specific number of decimal places
+        let decimal = number.formatted(.number.precision(.fractionLength(2)))
+        
+        // Percentages
+        let percentage = 0.847.formatted(.percent)
+        // US: "84.7%"
+        
+        // Scientific notation
+        let scientific = number.formatted(.number.notation(.scientific))
+    }
+}
+```
+
+### Formatting Currency
+
+```swift
+import Foundation
+
+struct CurrencyFormattingExamples {
+    func examples() {
+        let amount = 1234.56
+        
+        // ✅ GOOD: Use currency formatting
+        let usd = amount.formatted(.currency(code: "USD"))
+        // US: "$1,234.56"
+        // Germany: "1.234,56 $"
+        
+        // Automatic currency based on locale
+        let auto = amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD"))
+        
+        // Custom currency symbol position
+        let custom = amount.formatted(
+            .currency(code: "EUR")
+            .presentation(.narrow) // Use symbol instead of code
+        )
+    }
+}
+```
+
+### Common Formatting Mistakes
+
+**Mistake 1: Hardcoded number formats**
+
+```swift
+// ❌ BAD: Assumes US formatting
+let price = "$\(String(format: "%.2f", amount))"
+
+// ✅ GOOD: Use localized currency formatting
+let price = amount.formatted(.currency(code: "USD"))
+```
+
+**Mistake 2: Not accounting for different calendar systems**
+
+```swift
+// ❌ BAD: Assumes Gregorian calendar
+let components = DateComponents(year: 2024, month: 1, day: 1)
+
+// ✅ GOOD: Use Calendar.current
+var components = DateComponents()
+components.calendar = Calendar.current
+components.year = 2024
+components.month = 1
+components.day = 1
+```
+
+**Mistake 3: Sorting strings incorrectly**
+
+```swift
+let names = ["Étienne", "Albert", "Zoë", "Aaron"]
+
+// ❌ BAD: Doesn't respect locale-specific sorting
+let sorted = names.sorted()
+
+// ✅ GOOD: Use localized comparison
+let sorted = names.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+// Correctly handles accented characters per locale
+```
+
+## Right-to-Left (RTL) Language Support
+
+Supporting RTL languages like Arabic, Hebrew, and Persian requires more than just text translation. Your entire UI needs to mirror horizontally.
+
+### Automatic RTL Support in SwiftUI
+
+SwiftUI provides automatic RTL support for most layouts:
+
+```swift
+struct AutoRTLView: View {
+    var body: some View {
+        HStack {
+            Image(systemName: "star")
+            Text("Favorite")
+            Spacer()
+            Image(systemName: "chevron.right")
+        }
+        .padding()
+    }
+}
+```
+
+In RTL mode, this layout automatically flips: the chevron appears on the left, star on the right.
+
+### Controlling RTL Behavior
+
+Sometimes you need to override the automatic flipping:
+
+```swift
+struct RTLControlView: View {
+    var body: some View {
+        HStack {
+            // Force left-to-right for things like logos
+            Image("app-logo")
+                .flipsForRightToLeftLayoutDirection(false)
+            
+            Text("App Name")
+            
+            // This image will flip in RTL
+            Image(systemName: "arrow.right")
+                .flipsForRightToLeftLayoutDirection(true)
+        }
+    }
+}
+```
+
+### Leading and Trailing vs Left and Right
+
+```swift
+struct AlignmentExample: View {
+    var body: some View {
+        VStack {
+            // ✅ GOOD: Use .leading and .trailing
+            Text("Aligned to start")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // ❌ BAD: .left and .right don't flip for RTL
+            Text("Always left aligned")
+                .frame(maxWidth: .infinity, alignment: .left)
+        }
+        .padding(.leading, 16) // ✅ Use .leading, not .left
+    }
+}
+```
+
+### UIKit RTL Support
+
+For UIKit code, use semantic content attributes:
+
+```swift
+import UIKit
+
+class RTLViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        let button = UIButton(type: .system)
+        button.setTitle("Next", for: .normal)
+        
+        // ✅ GOOD: Use semantic directions
+        button.contentHorizontalAlignment = .leading
+        button.semanticContentAttribute = .forceLeftToRight // Override if needed
+        
+        // ✅ GOOD: Use directional layout margins
+        button.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: 16,  // Not .left
+            bottom: 8,
+            trailing: 16  // Not .right
+        )
+    }
+}
+```
+
+### RTL-Aware Constraints
+
+```swift
+import UIKit
+
+class RTLConstraintsViewController: UIViewController {
+    let label = UILabel()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        view.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        
+        // ✅ GOOD: Use leadingAnchor and trailingAnchor
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+        
+        // ❌ BAD: Don't use leftAnchor and rightAnchor
+        // label.leftAnchor.constraint(equalTo: view.leftAnchor, constant: 16)
+    }
+}
+```
+
+### Images and Icons
+
+Some images need special handling in RTL:
+
+```swift
+struct ImageRTLExample: View {
+    var body: some View {
+        VStack {
+            // SF Symbols automatically flip if directional
+            Image(systemName: "arrow.forward")
+            
+            // Custom images - specify flipping behavior
+            Image("custom-arrow")
+                .flipsForRightToLeftLayoutDirection(true)
+            
+            // Non-directional images shouldn't flip
+            Image("logo")
+                .flipsForRightToLeftLayoutDirection(false)
+        }
+    }
+}
+```
+
+### Testing RTL Layouts
+
+You can test RTL without changing your device language:
+
+```swift
+// In your App or Scene
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(\.layoutDirection, .rightToLeft) // Force RTL for testing
+        }
+    }
+}
+```
+
+Or in Xcode:
+- Edit Scheme → Run → Options → App Language → Right-to-Left Pseudolanguage
+
+### Common RTL Mistakes
+
+**Mistake 1: Hardcoded directional assets**
+
+```swift
+// ❌ BAD: Using separate assets for RTL
+let imageName = UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft 
+    ? "arrow-left" : "arrow-right"
+
+// ✅ GOOD: Use one asset with auto-flipping
+Image("arrow-right")
+    .flipsForRightToLeftLayoutDirection(true)
+```
+
+**Mistake 2: Assuming text flows left-to-right**
+
+```swift
+// ❌ BAD: Manually building attributed strings with assumed direction
+let string = NSMutableAttributedString(string: prefix)
+string.append(NSAttributedString(string: content))
+
+// ✅ GOOD: Use localized string interpolation
+let string = String(localized: "\(prefix) \(content)")
+```
+
+**Mistake 3: Not testing with actual RTL content**
+
+Always test with real Arabic or Hebrew text, not just English with RTL layout. Some layout issues only appear with actual RTL text.
+
+## Testing Localization
+
+### Testing Different Locales in Simulator
+
+1. Settings → General → Language & Region → Add Language
+2. Or use Scheme settings: Edit Scheme → Run → Options → App Language
+
+### Pseudolocalization
+
+Xcode includes pseudolocalization tools that help you spot localization issues without needing actual translations:
+
+- **Accented Pseudolanguage**: Adds accents to characters (e.g., "Ẃéĺçöḿé") to verify text is drawn from localized resources
+- **Bounded String Pseudolanguage**: Wraps strings in brackets (e.g., "[Welcome]") to detect concatenation issues
+- **Right-to-Left Pseudolanguage**: Mirrors the layout without real RTL text
+- **Double-Length Pseudolanguage**: Doubles string length to test layout flexibility
+
+Enable these in: Edit Scheme → Run → Options → App Language.
+
+### SwiftUI Preview Localization
+
+```swift
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+            .environment(\.locale, Locale(identifier: "ar")) // Arabic
+            .environment(\.layoutDirection, .rightToLeft)
+            .previewDisplayName("Arabic RTL")
+
+        ContentView()
+            .environment(\.locale, Locale(identifier: "de"))
+            .previewDisplayName("German")
+
+        ContentView()
+            .environment(\.locale, Locale(identifier: "ja"))
+            .previewDisplayName("Japanese")
+    }
+}
+```
+
+### Automated Localization Testing
+
+```swift
+import XCTest
+
+class LocalizationTests: XCTestCase {
+    func testAllStringsHaveTranslations() {
+        let bundle = Bundle.main
+        let languages = bundle.localizations.filter { $0 != "Base" }
+
+        for language in languages {
+            guard let path = bundle.path(forResource: language, ofType: "lproj"),
+                  let languageBundle = Bundle(path: path) else {
+                XCTFail("Missing bundle for \(language)")
+                continue
+            }
+
+            // Verify key strings exist
+            let welcomeText = languageBundle.localizedString(
+                forKey: "welcome_message",
+                value: nil,
+                table: nil
+            )
+            XCTAssertNotEqual(welcomeText, "welcome_message",
+                "Missing translation for 'welcome_message' in \(language)")
+        }
+    }
+}
+```
+
+## Common Mistakes Summary
+
+| Mistake | Problem | Solution |
+|---------|---------|----------|
+| String concatenation | Word order varies across languages | Use single string with interpolation |
+| Hardcoded formats | Dates/numbers display incorrectly | Use `.formatted()` methods |
+| Fixed layout widths | Text truncation in longer languages | Use flexible Auto Layout constraints |
+| Using `.left`/`.right` | Breaks RTL layouts | Use `.leading`/`.trailing` |
+| Ignoring plurals | Grammatically incorrect counts | Use String Catalog plural rules |
+| Missing accessibility labels | VoiceOver reads untranslated content | Localize all accessibility strings |
+
+## Summary Table
+
+| Concept | Key API / Tool | Purpose |
+|---------|---------------|---------|
+| **String Catalogs** | `.xcstrings` (Xcode 15+) | Modern unified localization format |
+| **String(localized:)** | `String(localized: "key")` | Explicit localized string in code |
+| **Pluralization** | String Catalog plural rules | Language-correct plural forms |
+| **Date formatting** | `.formatted(date:time:)` | Locale-aware date display |
+| **Number formatting** | `.formatted(.number)` | Locale-aware number display |
+| **Currency formatting** | `.formatted(.currency(code:))` | Locale-aware currency display |
+| **RTL support** | `.leading` / `.trailing` | Automatic layout mirroring |
+| **RTL image flipping** | `.flipsForRightToLeftLayoutDirection()` | Control directional image behavior |
+| **Pseudolocalization** | Xcode Scheme options | Test localization without translations |
+| **Legacy strings** | `NSLocalizedString()` | Pre-iOS 17 localization |
+| **Locale comparison** | `.localizedStandardCompare()` | Locale-aware string sorting |
+
+## Official Resources
+
+- [Apple Documentation: Localization](https://developer.apple.com/documentation/xcode/localization)
+- [Apple Documentation: String Catalogs](https://developer.apple.com/documentation/xcode/localizing-and-varying-text-with-a-string-catalog)
+- [Apple Documentation: Formatting Numbers and Dates](https://developer.apple.com/documentation/foundation/formatstyle)
+- [Apple: Internationalization and Localization Guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPInternational/Introduction/Introduction.html)
+- [WWDC 2023: Discover String Catalogs](https://developer.apple.com/videos/play/wwdc2023/10155/)

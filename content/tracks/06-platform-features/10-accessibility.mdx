@@ -1,0 +1,626 @@
+---
+title: "Accessibility"
+description: "VoiceOver, Dynamic Type, accessibility labels, and inclusive design"
+sectionId: "6.4-platform-specific"
+sectionTitle: "Platform-Specific Features"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Accessibility in iOS Development
+
+Accessibility in iOS development means building apps that everyone can use, regardless of their abilities. This includes people who are blind or have low vision, are deaf or hard of hearing, have motor impairments, or cognitive differences. Apple provides robust accessibility features built into iOS, and as developers, we need to ensure our apps work seamlessly with these technologies.
+
+Making your app accessible isn't just the right thing to do—it's also required by law in many jurisdictions, expands your potential user base, and often improves the experience for all users.
+
+## Why Accessibility Matters
+
+Consider these statistics: approximately 15% of the world's population lives with some form of disability. In the US alone, over 7 million people use VoiceOver, Apple's screen reader. Beyond permanent disabilities, accessibility features help people in temporary situations (like holding a baby while using a phone) or contextual limitations (using a phone in bright sunlight).
+
+## Core Accessibility Concepts
+
+### VoiceOver
+
+VoiceOver is Apple's screen reader that speaks what's on the screen, allowing blind and low-vision users to navigate iOS devices. It's the most critical accessibility technology to support in your apps.
+
+#### Making Elements Accessible
+
+By default, standard UIKit controls (UIButton, UILabel, etc.) are accessible. However, custom views and images need explicit configuration:
+
+```swift
+import UIKit
+
+class ProfileViewController: UIViewController {
+    let profileImageView = UIImageView()
+    let usernameLabel = UILabel()
+    let customButton = UIView() // Custom view acting as a button
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Image view needs accessibility
+        profileImageView.isAccessibilityElement = true
+        profileImageView.accessibilityLabel = "Profile picture"
+        profileImageView.accessibilityTraits = .image
+        
+        // Labels are accessible by default, but we can enhance them
+        usernameLabel.text = "john_doe_123"
+        usernameLabel.accessibilityLabel = "Username: john doe 123"
+        
+        // Custom views need full accessibility configuration
+        customButton.isAccessibilityElement = true
+        customButton.accessibilityLabel = "Send message"
+        customButton.accessibilityTraits = .button
+        customButton.accessibilityHint = "Opens message composer"
+    }
+}
+```
+
+#### Accessibility Properties Explained
+
+- **`isAccessibilityElement`**: Determines if VoiceOver can focus on this element
+- **`accessibilityLabel`**: What VoiceOver reads (keep it concise, no period at the end)
+- **`accessibilityHint`**: Optional additional context about what happens when interacting
+- **`accessibilityTraits`**: Describes the element's type and state (button, image, selected, etc.)
+- **`accessibilityValue`**: For elements with changing values (sliders, progress bars)
+
+```swift
+class VolumeControl: UIView {
+    private var volume: Float = 0.5 {
+        didSet {
+            updateAccessibility()
+        }
+    }
+    
+    private func updateAccessibility() {
+        isAccessibilityElement = true
+        accessibilityLabel = "Volume"
+        accessibilityValue = "\(Int(volume * 100)) percent"
+        accessibilityTraits = .adjustable
+        accessibilityHint = "Swipe up or down to adjust volume"
+    }
+    
+    // VoiceOver users can adjust by swiping up/down
+    override func accessibilityIncrement() {
+        volume = min(1.0, volume + 0.1)
+    }
+    
+    override func accessibilityDecrement() {
+        volume = max(0.0, volume - 0.1)
+    }
+}
+```
+
+### Grouping Elements
+
+Sometimes multiple UI elements represent a single piece of information. Group them for a better VoiceOver experience:
+
+```swift
+class ArticleCell: UITableViewCell {
+    let titleLabel = UILabel()
+    let authorLabel = UILabel()
+    let dateLabel = UILabel()
+    let thumbnailView = UIImageView()
+    
+    func configure(title: String, author: String, date: Date) {
+        titleLabel.text = title
+        authorLabel.text = author
+        dateLabel.text = formatDate(date)
+        
+        // Make container the only accessible element
+        contentView.isAccessibilityElement = true
+        
+        // Combine all information into one label
+        let dateString = formatDate(date)
+        contentView.accessibilityLabel = """
+        \(title). By \(author). Published \(dateString)
+        """
+        
+        // Individual labels should not be accessible
+        titleLabel.isAccessibilityElement = false
+        authorLabel.isAccessibilityElement = false
+        dateLabel.isAccessibilityElement = false
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+```
+
+### Common Mistake: Redundant Information
+
+Don't include the element type in the label—traits handle that:
+
+```swift
+// ❌ Bad: Redundant "button"
+button.accessibilityLabel = "Submit button"
+button.accessibilityTraits = .button
+
+// ✅ Good: Trait conveys it's a button
+button.accessibilityLabel = "Submit"
+button.accessibilityTraits = .button
+```
+
+### SwiftUI Accessibility
+
+SwiftUI makes accessibility easier with modifiers:
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    @State private var isPlaying = false
+    @State private var progress: Double = 0.3
+    
+    var body: some View {
+        VStack {
+            Image("albumArt")
+                .accessibility(label: Text("Album artwork for Dark Side of the Moon"))
+                .accessibility(addTraits: .isImage)
+            
+            Button(action: togglePlayback) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            }
+            .accessibility(label: Text(isPlaying ? "Pause" : "Play"))
+            .accessibility(hint: Text("Toggles playback"))
+            
+            // Slider is accessible by default, but we can enhance it
+            Slider(value: $progress, in: 0...1)
+                .accessibility(label: Text("Playback position"))
+                .accessibility(value: Text("\(Int(progress * 100)) percent"))
+            
+            // Group related elements
+            HStack {
+                Text("3:42")
+                Text("Dark Side of the Moon")
+                Text("Pink Floyd")
+            }
+            .accessibilityElement(children: .combine)
+            .accessibility(label: Text("3 minutes 42 seconds. Dark Side of the Moon by Pink Floyd"))
+        }
+    }
+    
+    func togglePlayback() {
+        isPlaying.toggle()
+    }
+}
+```
+
+## Dynamic Type
+
+Dynamic Type allows users to adjust text size system-wide. Supporting it is crucial for users with low vision or those who prefer larger text.
+
+### Using Dynamic Type
+
+Always use text styles rather than fixed font sizes:
+
+```swift
+import UIKit
+
+class ArticleViewController: UIViewController {
+    let titleLabel = UILabel()
+    let bodyLabel = UILabel()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // ✅ Good: Uses Dynamic Type
+        titleLabel.font = UIFont.preferredFont(forTextStyle: .title1)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 0 // Allow wrapping
+        
+        bodyLabel.font = UIFont.preferredFont(forTextStyle: .body)
+        bodyLabel.adjustsFontForContentSizeCategory = true
+        bodyLabel.numberOfLines = 0
+        
+        // ❌ Bad: Fixed size doesn't scale
+        // titleLabel.font = UIFont.systemFont(ofSize: 24)
+    }
+}
+```
+
+### Available Text Styles
+
+```swift
+// Display styles (iOS 14+)
+let largeTitle = UIFont.preferredFont(forTextStyle: .largeTitle)
+let title1 = UIFont.preferredFont(forTextStyle: .title1)
+let title2 = UIFont.preferredFont(forTextStyle: .title2)
+let title3 = UIFont.preferredFont(forTextStyle: .title3)
+
+// Body styles
+let body = UIFont.preferredFont(forTextStyle: .body)
+let callout = UIFont.preferredFont(forTextStyle: .callout)
+let subheadline = UIFont.preferredFont(forTextStyle: .subheadline)
+let footnote = UIFont.preferredFont(forTextStyle: .footnote)
+let caption1 = UIFont.preferredFont(forTextStyle: .caption1)
+let caption2 = UIFont.preferredFont(forTextStyle: .caption2)
+```
+
+### Custom Fonts with Dynamic Type
+
+If you must use custom fonts, scale them properly:
+
+```swift
+extension UIFont {
+    static func customFont(name: String, textStyle: UIFont.TextStyle) -> UIFont {
+        // Get the default size for this text style
+        let defaultSize = UIFont.preferredFont(forTextStyle: textStyle).pointSize
+        
+        guard let customFont = UIFont(name: name, size: defaultSize) else {
+            // Fallback to system font if custom font unavailable
+            return UIFont.preferredFont(forTextStyle: textStyle)
+        }
+        
+        // Create a metrics object that scales the font
+        let fontMetrics = UIFontMetrics(forTextStyle: textStyle)
+        return fontMetrics.scaledFont(for: customFont)
+    }
+}
+
+// Usage
+let customLabel = UILabel()
+customLabel.font = .customFont(name: "Avenir-Heavy", textStyle: .headline)
+customLabel.adjustsFontForContentSizeCategory = true
+```
+
+### SwiftUI Dynamic Type
+
+SwiftUI supports Dynamic Type automatically, but you need to handle layout:
+
+```swift
+import SwiftUI
+
+struct ArticleView: View {
+    @Environment(\.sizeCategory) var sizeCategory
+    
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Breaking News")
+                .font(.title) // Automatically scales
+            
+            Text("This is the article body that will scale with user preferences.")
+                .font(.body)
+            
+            // Adapt layout for larger text sizes
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading) {
+                    ActionButton()
+                    ShareButton()
+                }
+            } else {
+                HStack {
+                    ActionButton()
+                    ShareButton()
+                }
+            }
+        }
+        .padding()
+    }
+}
+
+struct ActionButton: View {
+    var body: some View {
+        Button("Read More") { }
+    }
+}
+
+struct ShareButton: View {
+    var body: some View {
+        Button("Share") { }
+    }
+}
+
+extension ContentSizeCategory {
+    var isAccessibilityCategory: Bool {
+        switch self {
+        case .accessibilityMedium, .accessibilityLarge,
+             .accessibilityExtraLarge, .accessibilityExtraExtraLarge,
+             .accessibilityExtraExtraExtraLarge:
+            return true
+        default:
+            return false
+        }
+    }
+}
+```
+
+### Responding to Dynamic Type Changes
+
+Listen for content size changes to update your UI:
+
+```swift
+class AdaptiveViewController: UIViewController {
+    let label = UILabel()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        
+        // Observe content size changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(contentSizeDidChange),
+            name: UIContentSizeCategory.didChangeNotification,
+            object: nil
+        )
+    }
+    
+    @objc func contentSizeDidChange() {
+        // Recalculate layout if needed
+        view.setNeedsLayout()
+        
+        // Update constraints or stack view axis if necessary
+        updateLayoutForCurrentSize()
+    }
+    
+    func updateLayoutForCurrentSize() {
+        let category = UIApplication.shared.preferredContentSizeCategory
+        
+        // Adjust layout for accessibility sizes
+        if category.isAccessibilityCategory {
+            // Switch to vertical stack, larger spacing, etc.
+        }
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+}
+```
+
+## Color and Contrast
+
+Sufficient color contrast is essential for users with low vision or color blindness.
+
+### Minimum Contrast Ratios
+
+According to WCAG (Web Content Accessibility Guidelines):
+- Normal text: 4.5:1 minimum
+- Large text (18pt+ or 14pt+ bold): 3:1 minimum
+
+### Using Semantic Colors
+
+Always use semantic colors that adapt to Dark Mode and accessibility settings:
+
+```swift
+// ✅ Good: Semantic colors
+view.backgroundColor = .systemBackground
+label.textColor = .label
+secondaryLabel.textColor = .secondaryLabel
+
+// ❌ Bad: Hard-coded colors
+view.backgroundColor = .white
+label.textColor = .black
+```
+
+### Increase Contrast Mode
+
+iOS offers an "Increase Contrast" setting. Support it:
+
+```swift
+import UIKit
+
+class ContrastAwareView: UIView {
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        
+        if traitCollection.accessibilityContrast != previousTraitCollection?.accessibilityContrast {
+            updateColorsForContrast()
+        }
+    }
+    
+    func updateColorsForContrast() {
+        if traitCollection.accessibilityContrast == .high {
+            // Use higher contrast colors
+            layer.borderWidth = 2.0
+            layer.borderColor = UIColor.label.cgColor
+        } else {
+            // Standard contrast
+            layer.borderWidth = 1.0
+            layer.borderColor = UIColor.separator.cgColor
+        }
+    }
+}
+```
+
+### SwiftUI Contrast
+
+```swift
+import SwiftUI
+
+struct ContrastAwareButton: View {
+    @Environment(\.accessibilityReduceTransparency) var reduceTransparency
+    @Environment(\.colorSchemeContrast) var contrast
+    
+    var body: some View {
+        Button("Submit") {
+            // Action
+        }
+        .padding()
+        .background(
+            contrast == .increased ? Color.blue : Color.blue.opacity(0.8)
+        )
+        .foregroundColor(.white)
+        .cornerRadius(reduceTransparency ? 0 : 10)
+    }
+}
+```
+
+## Motion and Animation
+
+Some users experience motion sensitivity or vestibular disorders. Respect the Reduce Motion setting:
+
+```swift
+import UIKit
+
+class AnimatedViewController: UIViewController {
+    func animateView() {
+        let shouldReduceMotion = UIAccessibility.isReduceMotionEnabled
+        
+        if shouldReduceMotion {
+            // Instant change, no animation
+            view.alpha = 0
+        } else {
+            // Full animation
+            UIView.animate(withDuration: 0.3) {
+                self.view.alpha = 0
+            }
+        }
+    }
+    
+    func presentWithAnimation() {
+        if UIAccessibility.isReduceMotionEnabled {
+            // Crossfade instead of sliding
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = 0.2
+            view.window?.layer.add(transition, forKey: kCATransition)
+        } else {
+            // Standard slide animation
+            let animator = UIViewPropertyAnimator(duration: 0.5, dampingRatio: 0.8) {
+                // Animation code
+            }
+            animator.startAnimation()
+        }
+    }
+}
+```
+
+### SwiftUI Reduce Motion
+
+```swift
+import SwiftUI
+
+struct AnimatedContentView: View {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack {
+            Button("Toggle") {
+                isExpanded.toggle()
+            }
+            
+            if isExpanded {
+                Text("Expanded content")
+                    .transition(reduceMotion ? .opacity : .slide)
+            }
+        }
+        .animation(reduceMotion ? nil : .spring(), value: isExpanded)
+    }
+}
+```
+
+## Testing Accessibility
+
+### Using Accessibility Inspector
+
+Accessibility Inspector is an Xcode developer tool for auditing your app's accessibility:
+
+1. Open Xcode → Open Developer Tool → Accessibility Inspector
+2. Point it at the iOS Simulator or a connected device
+3. Use the "Audit" button to scan for issues automatically
+4. Navigate through elements to check labels, traits, and hints
+
+```swift
+// Common issues found by Accessibility Inspector:
+// 1. Missing accessibility labels on images
+// 2. Elements with no accessibility traits
+// 3. Insufficient color contrast
+// 4. Touch targets smaller than 44×44 points
+```
+
+### Automated Accessibility Testing
+
+```swift
+import XCTest
+
+class AccessibilityTests: XCTestCase {
+    let app = XCUIApplication()
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app.launch()
+    }
+
+    func testMainScreenAccessibility() throws {
+        // Verify important elements have accessibility labels
+        let welcomeText = app.staticTexts["Welcome"]
+        XCTAssertTrue(welcomeText.exists, "Welcome text should be accessible")
+
+        let settingsButton = app.buttons["Settings"]
+        XCTAssertTrue(settingsButton.exists, "Settings button should be accessible")
+
+        // Check that interactive elements are accessible
+        XCTAssertTrue(settingsButton.isHittable, "Settings button should be hittable")
+    }
+
+    func testVoiceOverOrder() throws {
+        // Verify VoiceOver navigation order makes sense
+        let elements = app.descendants(matching: .any)
+            .allElementsBoundByAccessibilityElement
+
+        // Check that elements exist and are in a logical order
+        XCTAssertFalse(elements.isEmpty, "There should be accessible elements")
+    }
+}
+```
+
+### Testing with VoiceOver
+
+The best way to test accessibility is to use VoiceOver directly:
+
+1. On device: Settings → Accessibility → VoiceOver → On
+2. Navigate your app using VoiceOver gestures:
+   - Swipe right: Move to next element
+   - Swipe left: Move to previous element
+   - Double-tap: Activate element
+   - Three-finger swipe: Scroll
+
+> **Tip**: Set up an Accessibility Shortcut (triple-press Side Button) to quickly toggle VoiceOver during testing.
+
+## Accessibility Checklist
+
+Before submitting your app, verify:
+
+- [ ] All interactive elements have accessibility labels
+- [ ] Images have descriptive labels or are marked as decorative
+- [ ] Dynamic Type is supported (test with all text sizes)
+- [ ] Color is never the only indicator of state
+- [ ] Minimum contrast ratio of 4.5:1 for text
+- [ ] Reduce Motion is respected for animations
+- [ ] Touch targets are at least 44×44 points
+- [ ] VoiceOver navigation order is logical
+- [ ] Custom controls are fully accessible
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **VoiceOver labels** | `.accessibilityLabel()` | Describe element for screen reader |
+| **Accessibility hints** | `.accessibilityHint()` | Additional context about actions |
+| **Accessibility traits** | `.accessibilityTraits` | Describe element type (button, image, etc.) |
+| **Accessibility value** | `.accessibilityValue` | Current value (sliders, toggles) |
+| **Element grouping** | `.accessibilityElement(children: .combine)` | Group related content |
+| **Dynamic Type** | `.font(.body)` / `UIFont.preferredFont()` | Scalable text sizes |
+| **Custom font scaling** | `UIFontMetrics.scaledFont()` | Dynamic Type with custom fonts |
+| **Reduce Motion** | `@Environment(\.accessibilityReduceMotion)` | Respect motion preferences |
+| **Increase Contrast** | `traitCollection.accessibilityContrast` | Support high contrast mode |
+| **Semantic colors** | `.label`, `.systemBackground` | Colors that adapt automatically |
+| **Accessibility Inspector** | Xcode Developer Tool | Audit and test accessibility |
+
+## Official Resources
+
+- [Apple Documentation: Accessibility](https://developer.apple.com/documentation/accessibility)
+- [Apple: Human Interface Guidelines — Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
+- [Apple Documentation: Supporting VoiceOver](https://developer.apple.com/documentation/accessibility/supporting-voiceover-in-your-app)
+- [Apple Documentation: Dynamic Type](https://developer.apple.com/documentation/uikit/uifont/scaling_fonts_automatically)
+- [WWDC 2023: Build Accessible Apps](https://developer.apple.com/videos/play/wwdc2023/10034/)

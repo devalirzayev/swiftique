@@ -1,0 +1,550 @@
+---
+title: "NavigationStack"
+description: "NavigationStack, NavigationLink, navigation paths, and programmatic navigation"
+sectionId: "2.5-navigation"
+sectionTitle: "Navigation"
+order: 14
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# NavigationStack in SwiftUI
+
+NavigationStack is SwiftUI's modern approach to navigation, introduced in iOS 16. It manages a stack of views where you can push new views onto the stack and pop them back, similar to how UINavigationController works in UIKit. If you've used navigation in any mobile app before—tapping an item to see details, then tapping back—you've experienced stack-based navigation.
+
+Before iOS 16, SwiftUI developers used `NavigationView`, which had several limitations and inconsistencies. NavigationStack replaces it with a cleaner, more powerful API that gives you better control over the navigation state.
+
+## Why NavigationStack Matters
+
+Navigation is fundamental to most iOS apps. Users need to move between screens, drill into details, and return to previous views. NavigationStack provides:
+
+- **Type-safe navigation** with strongly-typed paths
+- **Programmatic control** over the navigation state
+- **Deep linking support** by setting the entire navigation path
+- **State restoration** by saving and restoring the navigation path
+
+## Basic NavigationStack with NavigationLink
+
+The simplest way to use NavigationStack is with NavigationLink, which creates a tappable element that pushes a new view onto the stack:
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                NavigationLink("Go to Detail") {
+                    DetailView()
+                }
+                
+                NavigationLink("Go to Settings") {
+                    SettingsView()
+                }
+            }
+            .navigationTitle("Home")
+        }
+    }
+}
+
+struct DetailView: View {
+    var body: some View {
+        Text("Detail View")
+            .navigationTitle("Detail")
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        Text("Settings View")
+            .navigationTitle("Settings")
+    }
+}
+```
+
+The NavigationStack wrapper is required—NavigationLink won't work without it. The `.navigationTitle()` modifier sets the title shown in the navigation bar.
+
+## NavigationLink with Values
+
+Instead of directly embedding a destination view, you can pass a value to NavigationLink and handle navigation using the `.navigationDestination()` modifier. This approach separates navigation logic from the UI:
+
+```swift
+struct ContentView: View {
+    let items = ["Apple", "Banana", "Cherry", "Date"]
+    
+    var body: some View {
+        NavigationStack {
+            List(items, id: \.self) { item in
+                NavigationLink(item, value: item)
+            }
+            .navigationTitle("Fruits")
+            .navigationDestination(for: String.self) { item in
+                FruitDetailView(fruit: item)
+            }
+        }
+    }
+}
+
+struct FruitDetailView: View {
+    let fruit: String
+    
+    var body: some View {
+        Text("You selected: \(fruit)")
+            .navigationTitle(fruit)
+    }
+}
+```
+
+The `value` parameter must be `Hashable`. The `.navigationDestination(for:)` modifier tells the NavigationStack what view to display when a value of that type is pushed onto the stack.
+
+## Navigation Paths for Programmatic Navigation
+
+For full control over navigation, use `NavigationPath` or an array to track the navigation stack. This enables programmatic navigation without user taps:
+
+```swift
+struct ContentView: View {
+    @State private var path = NavigationPath()
+    
+    var body: some View {
+        NavigationStack(path: $path) {
+            VStack(spacing: 20) {
+                Text("Home Screen")
+                    .font(.title)
+                
+                Button("Go to Detail") {
+                    path.append("Detail")
+                }
+                
+                Button("Go Two Levels Deep") {
+                    path.append("Detail")
+                    path.append("Settings")
+                }
+                
+                Button("Go to Root") {
+                    path.removeLast(path.count)
+                }
+            }
+            .navigationTitle("Home")
+            .navigationDestination(for: String.self) { value in
+                if value == "Detail" {
+                    DetailView(path: $path)
+                } else if value == "Settings" {
+                    SettingsView(path: $path)
+                }
+            }
+        }
+    }
+}
+
+struct DetailView: View {
+    @Binding var path: NavigationPath
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Detail View")
+                .font(.title)
+            
+            Button("Go to Settings") {
+                path.append("Settings")
+            }
+            
+            Button("Back to Root") {
+                path.removeLast(path.count)
+            }
+        }
+        .navigationTitle("Detail")
+    }
+}
+
+struct SettingsView: View {
+    @Binding var path: NavigationPath
+    
+    var body: some View {
+        VStack {
+            Text("Settings View")
+                .font(.title)
+        }
+        .navigationTitle("Settings")
+    }
+}
+```
+
+`NavigationPath` is a type-erased wrapper that can hold any Hashable types. You manipulate it like an array:
+
+- `path.append(value)` - Push a view
+- `path.removeLast()` - Pop the top view
+- `path.removeLast(count)` - Pop multiple views
+- `path.count` - Number of views in the stack
+- `path.isEmpty` - Check if at root
+
+## Type-Safe Navigation with Arrays
+
+If all your navigation values are the same type, use an array instead of NavigationPath for better type safety:
+
+```swift
+enum Route: Hashable {
+    case detail(id: Int)
+    case settings
+    case profile(name: String)
+}
+
+struct ContentView: View {
+    @State private var path: [Route] = []
+    
+    var body: some View {
+        NavigationStack(path: $path) {
+            VStack(spacing: 20) {
+                Button("View Item 1") {
+                    path.append(.detail(id: 1))
+                }
+                
+                Button("View Profile") {
+                    path.append(.profile(name: "John"))
+                }
+                
+                Button("Deep Link Example") {
+                    path = [.detail(id: 1), .settings]
+                }
+            }
+            .navigationTitle("Home")
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .detail(let id):
+                    DetailView(id: id, path: $path)
+                case .settings:
+                    SettingsView()
+                case .profile(let name):
+                    ProfileView(name: name)
+                }
+            }
+        }
+    }
+}
+
+struct DetailView: View {
+    let id: Int
+    @Binding var path: [Route]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Detail #\(id)")
+                .font(.title)
+            
+            Button("Go to Settings") {
+                path.append(.settings)
+            }
+        }
+        .navigationTitle("Detail")
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        Text("Settings")
+            .navigationTitle("Settings")
+    }
+}
+
+struct ProfileView: View {
+    let name: String
+    
+    var body: some View {
+        Text("Profile: \(name)")
+            .navigationTitle(name)
+    }
+}
+```
+
+Using an enum provides compile-time safety and makes navigation intent explicit. You can also set the entire path at once, which is perfect for deep linking.
+
+## Multiple Navigation Destinations
+
+You can register multiple `.navigationDestination()` modifiers for different types:
+
+```swift
+struct ContentView: View {
+    @State private var path = NavigationPath()
+    
+    var body: some View {
+        NavigationStack(path: $path) {
+            List {
+                Button("Show String Detail") {
+                    path.append("Hello")
+                }
+                
+                Button("Show Number Detail") {
+                    path.append(42)
+                }
+                
+                Button("Show Custom Detail") {
+                    path.append(Product(name: "iPhone", price: 999))
+                }
+            }
+            .navigationTitle("Home")
+            .navigationDestination(for: String.self) { text in
+                Text("String: \(text)")
+                    .navigationTitle("String Detail")
+            }
+            .navigationDestination(for: Int.self) { number in
+                Text("Number: \(number)")
+                    .navigationTitle("Number Detail")
+            }
+            .navigationDestination(for: Product.self) { product in
+                ProductDetailView(product: product)
+            }
+        }
+    }
+}
+
+struct Product: Hashable {
+    let name: String
+    let price: Int
+}
+
+struct ProductDetailView: View {
+    let product: Product
+    
+    var body: some View {
+        VStack {
+            Text(product.name)
+                .font(.title)
+            Text("$\(product.price)")
+                .font(.headline)
+        }
+        .navigationTitle("Product")
+    }
+}
+```
+
+## State Preservation and Deep Linking
+
+One powerful feature of NavigationStack is the ability to save and restore the entire navigation state. This is useful for deep linking or state restoration:
+
+```swift
+struct ContentView: View {
+    @State private var path: [Int] = []
+    
+    var body: some View {
+        NavigationStack(path: $path) {
+            VStack(spacing: 20) {
+                Text("Current path: \(path.description)")
+                    .font(.caption)
+                
+                Button("Add Random Number") {
+                    path.append(Int.random(in: 1...100))
+                }
+                
+                Button("Simulate Deep Link") {
+                    // This could come from a URL or notification
+                    path = [1, 2, 3, 4]
+                }
+                
+                Button("Clear Path") {
+                    path = []
+                }
+            }
+            .navigationTitle("Home")
+            .navigationDestination(for: Int.self) { number in
+                NumberDetailView(number: number, path: $path)
+            }
+        }
+    }
+}
+
+struct NumberDetailView: View {
+    let number: Int
+    @Binding var path: [Int]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Number: \(number)")
+                .font(.title)
+            
+            Text("Stack depth: \(path.count)")
+                .font(.caption)
+            
+            Button("Push Another Number") {
+                path.append(Int.random(in: 1...100))
+            }
+        }
+        .navigationTitle("Level \(path.count)")
+    }
+}
+```
+
+You can persist the path to UserDefaults, handle URL schemes, or process push notifications by simply setting the path array.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting the NavigationStack Wrapper
+
+```swift
+// ❌ Won't work - NavigationLink needs a NavigationStack parent
+struct BrokenView: View {
+    var body: some View {
+        NavigationLink("Go", value: "destination") {
+            Text("Destination")
+        }
+    }
+}
+
+// ✅ Correct
+struct WorkingView: View {
+    var body: some View {
+        NavigationStack {
+            NavigationLink("Go", value: "destination") {
+                Text("Destination")
+            }
+            .navigationDestination(for: String.self) { _ in
+                Text("Destination")
+            }
+        }
+    }
+}
+```
+
+### Mistake 2: Missing navigationDestination Modifier
+
+```swift
+// ❌ The link appears but navigation doesn't work
+NavigationStack {
+    NavigationLink("Go", value: "test")
+    // Missing .navigationDestination!
+}
+
+// ✅ Correct
+NavigationStack {
+    NavigationLink("Go", value: "test")
+        .navigationDestination(for: String.self) { value in
+            Text(value)
+        }
+}
+```
+
+### Mistake 3: Not Making Custom Types Hashable
+
+```swift
+// ❌ Won't compile
+struct User {
+    let name: String
+}
+
+// ✅ Must conform to Hashable
+struct User: Hashable {
+    let name: String
+}
+```
+
+### Edge Case: Empty Path Behavior
+
+```swift
+@State private var path: [String] = []
+
+// Removing from empty path does nothing (no crash)
+path.removeLast() // Safe, but has no effect
+```
+
+### Edge Case: NavigationPath vs Array Performance
+
+`NavigationPath` uses type erasure and has slightly more overhead than a typed array. For most apps, this doesn't matter, but if you're dealing with very deep navigation stacks or frequent updates, a typed array performs better:
+
+```swift
+// Faster for homogeneous paths
+@State private var path: [Route] = []
+
+// More flexible but slightly slower
+@State private var path = NavigationPath()
+```
+
+## NavigationStack vs NavigationView
+
+If you need to support iOS 15 or earlier, you'll still use NavigationView. Here's the key difference:
+
+```swift
+// Old way (iOS 13-15)
+NavigationView {
+    List {
+        NavigationLink(destination: DetailView()) {
+            Text("Go to Detail")
+        }
+    }
+}
+
+// New way (iOS 16+)
+NavigationStack {
+    List {
+        NavigationLink("Go to Detail", value: "detail")
+    }
+    .navigationDestination(for: String.self) { _ in
+        DetailView()
+    }
+}
+```
+
+NavigationStack offers better control, cleaner syntax, and programmatic navigation that NavigationView lacks.
+
+## Navigation with @Observable (iOS 17+)
+
+In iOS 17, you can use the `@Observable` macro for cleaner navigation management:
+
+```swift
+@Observable
+class NavigationManager {
+    var path: [Route] = []
+    
+    func navigateTo(_ route: Route) {
+        path.append(route)
+    }
+    
+    func navigateToRoot() {
+        path.removeAll()
+    }
+    
+    func goBack() {
+        if !path.isEmpty {
+            path.removeLast()
+        }
+    }
+}
+
+struct ContentView: View {
+    @State private var navigationManager = NavigationManager()
+    
+    var body: some View {
+        NavigationStack(path: $navigationManager.path) {
+            VStack {
+                Button("Navigate") {
+                    navigationManager.navigateTo(.detail(id: 1))
+                }
+            }
+            .navigationDestination(for: Route.self) { route in
+                // Handle routing
+                Text("Route: \(String(describing: route))")
+            }
+        }
+    }
+}
+```
+
+## Official Documentation
+
+For more details, refer to Apple's official documentation:
+
+- [NavigationStack](https://developer.apple.com/documentation/swiftui/navigationstack)
+- [NavigationLink](https://developer.apple.com/documentation/swiftui/navigationlink)
+- [NavigationPath](https://developer.apple.com/documentation/swiftui/navigationpath)
+
+## Summary Table
+
+| Concept | Purpose | Key Points |
+|---------|---------|------------|
+| **NavigationStack** | Container for stack-based navigation | Required wrapper for navigation; replaces NavigationView (iOS 16+) |
+| **NavigationLink** | Creates navigable UI elements | Can use destination view directly or value-based navigation |
+| **NavigationPath** | Type-erased navigation state | Can hold any Hashable types; manipulate like an array |
+| **Typed Array Path** | Type-safe navigation state | Better performance and type safety for homogeneous paths |
+| **navigationDestination()** | Maps values to destination views | Required when using value-based NavigationLink |
+| **path.append()** | Push a view onto the stack | Programmatic navigation forward |
+| **path.removeLast()** | Pop the top view | Programmatic navigation backward |
+| **Deep Linking** | Set entire navigation state | Assign array directly: `path = [.home, .detail]` |
+| **Route Enum** | Type-safe navigation routes | Best practice for complex navigation hierarchies |
+
+NavigationStack is a significant improvement over NavigationView, giving you the control you need for sophisticated navigation patterns while maintaining SwiftUI's declarative style. Start with simple NavigationLink usage, then graduate to path-based navigation as your app's complexity grows.

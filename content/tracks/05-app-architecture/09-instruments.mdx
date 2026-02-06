@@ -1,0 +1,590 @@
+---
+title: "Instruments & Profiling"
+description: "Time Profiler, Allocations, Leaks, and performance optimization"
+sectionId: "5.3-debugging-profiling"
+sectionTitle: "Debugging & Profiling"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Instruments & Profiling
+
+Instruments is Apple's powerful profiling and analysis tool that helps you identify performance bottlenecks, memory issues, and other runtime problems in your iOS apps. Think of it as a diagnostic suite that tells you exactly where your app is spending time, using memory, or leaking resources.
+
+Why does this matter? Even well-written Swift code can have hidden performance issues. An app might compile without warnings but still drain battery, stutter during scrolling, or crash mysteriously after extended use. Instruments helps you find and fix these problems before your users do.
+
+## What is Profiling?
+
+Profiling is the process of measuring your app's behavior at runtime. Instead of guessing why your app is slow or using too much memory, you collect concrete data about:
+
+- Which functions consume the most CPU time
+- How much memory your app allocates
+- Where memory leaks occur
+- How efficiently your app uses energy
+
+Instruments collects this data with minimal impact on your app's performance, giving you an accurate picture of real-world behavior.
+
+## Getting Started with Instruments
+
+You can launch Instruments in several ways:
+
+1. From Xcode: **Product > Profile** (or `Cmd+I`)
+2. As a standalone app: Open from `/Applications/Xcode.app/Contents/Applications/Instruments.app`
+3. From the Debug navigator when your app is running
+
+When you profile from Xcode, it builds your app in Release configuration—important because Debug builds include extra overhead that skews profiling results.
+
+## Time Profiler: Finding CPU Bottlenecks
+
+Time Profiler shows you where your app spends CPU time. It periodically samples your app's call stack, building a picture of which functions run most frequently.
+
+### Basic Example
+
+Let's say you have a view controller that's loading slowly:
+
+```swift
+class ProductListViewController: UIViewController {
+    var products: [Product] = []
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        loadProducts()
+        processImages()
+        updateUI()
+    }
+    
+    func loadProducts() {
+        // Simulate loading data
+        products = (0..<1000).map { index in
+            Product(id: index, name: "Product \(index)", price: Double(index) * 1.5)
+        }
+    }
+    
+    func processImages() {
+        // Problem: Processing images on main thread
+        for product in products {
+            let image = UIImage(named: "placeholder")
+            let processed = applyExpensiveFilter(to: image)
+            product.cachedImage = processed
+        }
+    }
+    
+    func applyExpensiveFilter(to image: UIImage?) -> UIImage? {
+        guard let image = image else { return nil }
+        // Expensive image processing
+        return image.applyingFilter("CISepiaTone", parameters: [:])
+    }
+    
+    func updateUI() {
+        tableView.reloadData()
+    }
+}
+```
+
+When you profile this with Time Profiler, you'll see `processImages()` consuming significant time on the main thread. The call tree will show you the exact percentage of time spent in each function.
+
+### Interpreting Time Profiler Results
+
+Time Profiler displays a timeline and a call tree. Key columns include:
+
+- **Weight**: Percentage of total samples where this function appeared
+- **Self**: Time spent in this function alone (not its callees)
+- **Symbol Name**: The function or method name
+
+Look for functions with high weight values—these are your optimization targets.
+
+### Optimized Version
+
+```swift
+func processImages() {
+    let imageQueue = DispatchQueue(label: "com.app.imageprocessing", 
+                                   qos: .userInitiated,
+                                   attributes: .concurrent)
+    let group = DispatchGroup()
+    
+    for product in products {
+        group.enter()
+        imageQueue.async {
+            let image = UIImage(named: "placeholder")
+            let processed = self.applyExpensiveFilter(to: image)
+            product.cachedImage = processed
+            group.leave()
+        }
+    }
+    
+    group.notify(queue: .main) {
+        self.updateUI()
+    }
+}
+```
+
+Re-profiling shows the work now happens on background threads, keeping the main thread responsive.
+
+## Allocations: Tracking Memory Usage
+
+The Allocations instrument tracks every memory allocation your app makes. It shows you which objects are being created, how much memory they use, and whether they're being properly deallocated.
+
+### Understanding Memory Categories
+
+```swift
+class DataManager {
+    // Problem: Unintentionally holding onto large amounts of data
+    private var cachedResults: [String: Data] = [:]
+    
+    func fetchData(for key: String) -> Data? {
+        if let cached = cachedResults[key] {
+            return cached
+        }
+        
+        // Simulate fetching large data
+        let data = Data(count: 10_000_000) // 10 MB
+        cachedResults[key] = data // Never removed!
+        return data
+    }
+}
+
+class ViewController: UIViewController {
+    let dataManager = DataManager()
+    
+    func loadMultipleItems() {
+        // Each call allocates 10 MB that's never freed
+        for i in 0..<50 {
+            _ = dataManager.fetchData(for: "item\(i)")
+        }
+        // We just allocated 500 MB!
+    }
+}
+```
+
+In Allocations, you'd see memory growing with each call, never decreasing. The "Generations" feature helps identify this pattern—mark a generation, perform an action, mark another generation, and see what persists.
+
+### Better Memory Management
+
+```swift
+class DataManager {
+    private var cache: NSCache<NSString, NSData>
+    
+    init() {
+        cache = NSCache<NSString, NSData>()
+        cache.countLimit = 20 // Limit number of items
+        cache.totalCostLimit = 50_000_000 // 50 MB max
+    }
+    
+    func fetchData(for key: String) -> Data? {
+        let nsKey = key as NSString
+        if let cached = cache.object(forKey: nsKey) {
+            return cached as Data
+        }
+        
+        let data = Data(count: 10_000_000)
+        cache.setObject(data as NSData, forKey: nsKey, cost: data.count)
+        return data
+    }
+}
+```
+
+`NSCache` automatically evicts objects when memory is tight, preventing unbounded growth.
+
+## Leaks: Finding Memory Leaks
+
+A memory leak occurs when your app allocates memory but never frees it, even though it's no longer needed. Unlike other languages, Swift's ARC usually prevents leaks, but retain cycles can still create them.
+
+### Classic Retain Cycle Example
+
+```swift
+class NetworkManager {
+    var onComplete: (() -> Void)?
+    
+    func fetchData() {
+        // Simulate network call
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            self.onComplete?()
+        }
+    }
+}
+
+class ProfileViewController: UIViewController {
+    let networkManager = NetworkManager()
+    var userData: String = ""
+    
+    func loadUserData() {
+        // Problem: Strong reference cycle
+        networkManager.onComplete = {
+            self.userData = "Loaded data"
+            self.updateUI()
+        }
+        networkManager.fetchData()
+    }
+    
+    func updateUI() {
+        // Update UI with userData
+    }
+}
+```
+
+The view controller holds `networkManager`, which holds `onComplete`, which captures `self` (the view controller). This cycle prevents both from being deallocated.
+
+The Leaks instrument will show this as a leak when the view controller is dismissed but not deallocated.
+
+### Fixed Version
+
+```swift
+func loadUserData() {
+    // Use weak or unowned to break the cycle
+    networkManager.onComplete = { [weak self] in
+        guard let self = self else { return }
+        self.userData = "Loaded data"
+        self.updateUI()
+    }
+    networkManager.fetchData()
+}
+```
+
+### Common Leak Patterns
+
+**Delegate Retain Cycles:**
+
+```swift
+// Wrong
+protocol DataSourceDelegate {
+    func didReceiveData(_ data: Data)
+}
+
+class DataSource {
+    var delegate: DataSourceDelegate? // Strong reference
+}
+
+// Correct
+class DataSource {
+    weak var delegate: DataSourceDelegate? // Weak reference
+}
+
+// But delegate protocol must be class-only
+protocol DataSourceDelegate: AnyObject {
+    func didReceiveData(_ data: Data)
+}
+```
+
+**Closure Capture Lists:**
+
+```swift
+class ImageDownloader {
+    var image: UIImage?
+    
+    func download(url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self, let data = data else { return }
+            self.image = UIImage(data: data)
+        }.resume()
+    }
+}
+```
+
+## Performance Optimization Workflow
+
+Here's a systematic approach to optimizing your app:
+
+### 1. Establish a Baseline
+
+Before optimizing, measure current performance:
+
+```swift
+class PerformanceTest {
+    func measureExecutionTime(label: String, block: () -> Void) {
+        let start = CFAbsoluteTimeGetCurrent()
+        block()
+        let end = CFAbsoluteTimeGetCurrent()
+        print("\(label): \(end - start) seconds")
+    }
+    
+    func runTest() {
+        measureExecutionTime(label: "Data Processing") {
+            processLargeDataset()
+        }
+    }
+    
+    func processLargeDataset() {
+        let data = (0..<100_000).map { $0 * 2 }
+        let _ = data.filter { $0 % 3 == 0 }
+    }
+}
+```
+
+### 2. Identify Hotspots with Time Profiler
+
+Profile the code and look for functions with >5% weight. These are prime optimization candidates.
+
+### 3. Optimize Algorithmically First
+
+The biggest gains come from better algorithms, not micro-optimizations:
+
+```swift
+// Slow: O(n²)
+func findDuplicates(in array: [Int]) -> [Int] {
+    var duplicates: [Int] = []
+    for i in 0..<array.count {
+        for j in (i+1)..<array.count {
+            if array[i] == array[j] && !duplicates.contains(array[i]) {
+                duplicates.append(array[i])
+            }
+        }
+    }
+    return duplicates
+}
+
+// Fast: O(n)
+func findDuplicatesFast(in array: [Int]) -> [Int] {
+    var seen = Set<Int>()
+    var duplicates = Set<Int>()
+    
+    for num in array {
+        if seen.contains(num) {
+            duplicates.insert(num)
+        } else {
+            seen.insert(num)
+        }
+    }
+    
+    return Array(duplicates)
+}
+```
+
+### 4. Use Lazy Evaluation
+
+```swift
+struct DataProcessor {
+    let items: [Int]
+    
+    // Eager: Creates intermediate arrays
+    func processEager() -> [String] {
+        return items
+            .filter { $0 > 10 }
+            .map { $0 * 2 }
+            .map { "Value: \($0)" }
+    }
+    
+    // Lazy: No intermediate arrays
+    func processLazy() -> [String] {
+        return items
+            .lazy
+            .filter { $0 > 10 }
+            .map { $0 * 2 }
+            .map { "Value: \($0)" }
+            .map { $0 } // Convert back to Array only if needed
+    }
+}
+```
+
+### 5. Check Memory with Allocations
+
+Look for:
+- Persistent growth in memory over time
+- Large allocations that could be reduced
+- Objects that should be deallocated but aren't
+
+### 6. Run Leaks Regularly
+
+Make leak checking part of your testing routine:
+
+```swift
+// In your test suite
+func testViewControllerDoesNotLeak() {
+    var viewController: ProfileViewController? = ProfileViewController()
+    weak var weakReference = viewController
+    
+    viewController?.loadUserData()
+    viewController = nil
+    
+    // Wait for async cleanup
+    let expectation = XCTestExpectation(description: "Wait for deallocation")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        XCTAssertNil(weakReference, "ViewController should be deallocated")
+        expectation.fulfill()
+    }
+    
+    wait(for: [expectation], timeout: 2)
+}
+```
+
+## Advanced Profiling Techniques
+
+### Call Tree Inversion
+
+In Time Profiler, enable "Invert Call Tree" to see which functions are called most often, rather than which functions call others. This helps identify leaf functions that are optimization targets.
+
+### Track Allocations by Generation
+
+Use Generations in Allocations to isolate memory changes:
+
+1. Mark Generation A
+2. Perform an action (e.g., open and close a screen)
+3. Mark Generation B
+4. View objects created between generations
+5. If objects persist that shouldn't, investigate
+
+### Custom Instruments with os_signpost
+
+Add custom measurement points in your code:
+
+```swift
+import os.signpost
+
+class DataProcessor {
+    let log = OSLog(subsystem: "com.app.dataprocessor", category: "processing")
+    
+    func processData(_ data: [Int]) -> [Int] {
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: "Data Processing", signpostID: signpostID)
+        
+        let result = data.map { $0 * 2 }.filter { $0 > 100 }
+        
+        os_signpost(.end, log: log, name: "Data Processing", signpostID: signpostID)
+        return result
+    }
+}
+```
+
+In Instruments, use the Points of Interest template to see these custom events.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Profiling Debug Builds
+
+**Problem:** Debug builds include extra overhead for debugging features.
+
+**Solution:** Always profile Release builds. Use `Cmd+I` from Xcode, which automatically uses Release configuration.
+
+### Mistake 2: Over-Optimizing
+
+**Problem:** Spending time optimizing code that runs rarely or quickly.
+
+**Solution:** Focus on hotspots identified by profiling. Don't optimize until you've measured.
+
+```swift
+// Don't worry about optimizing this
+func loadSettings() -> Settings {
+    // Runs once at app launch, takes 5ms
+    return Settings.load()
+}
+
+// Do optimize this
+func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    // Called hundreds of times during scrolling
+    // Every millisecond matters here
+}
+```
+
+### Mistake 3: Ignoring Autorelease Pool Overhead
+
+**Problem:** Creating many temporary objects in tight loops.
+
+```swift
+func processImages() {
+    for i in 0..<10_000 {
+        let image = UIImage(named: "temp")
+        // Process image
+        // Image isn't released until much later
+    }
+}
+```
+
+**Solution:** Use explicit autorelease pools:
+
+```swift
+func processImages() {
+    for i in 0..<10_000 {
+        autoreleasepool {
+            let image = UIImage(named: "temp")
+            // Process image
+            // Image released immediately after block
+        }
+    }
+}
+```
+
+### Mistake 4: Premature Weak References
+
+**Problem:** Using `weak` everywhere "just in case."
+
+```swift
+// Unnecessary
+class ViewController: UIViewController {
+    weak var label: UILabel? // Label is in view hierarchy, this breaks things
+}
+
+// Correct
+class ViewController: UIViewController {
+    @IBOutlet var label: UILabel! // Strong reference is fine here
+}
+```
+
+**Solution:** Use `weak` only for delegates, closures that capture self, and parent references.
+
+### Edge Case: Memory Pressure Simulation
+
+Real memory issues often appear only under pressure. Test with Memory Warnings:
+
+```swift
+class CacheManager {
+    private var cache: [String: Data] = [:]
+    
+    init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+    }
+    
+    @objc func handleMemoryWarning() {
+        cache.removeAll()
+        print("Cache cleared due to memory pressure")
+    }
+}
+```
+
+In Simulator: **Debug > Simulate Memory Warning** to test your app's response to memory pressure.
+
+## Energy Profiling
+
+Battery drain is a common user complaint. The Energy Log instrument helps identify power-hungry code:
+
+```swift
+// ❌ Bad: Continuous location updates drain battery
+locationManager.desiredAccuracy = kCLLocationAccuracyBest
+locationManager.startUpdatingLocation()
+
+// ✅ Good: Use significant changes or reduced accuracy when possible
+locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+locationManager.startMonitoringSignificantLocationChanges()
+```
+
+Key energy consumers to watch:
+- **Networking**: Batch requests, avoid polling
+- **Location**: Use the lowest accuracy you need
+- **Timers**: Avoid short intervals, use `tolerance` to allow coalescing
+- **Background processing**: Complete tasks quickly, use `beginBackgroundTask`
+
+## Summary Table
+
+| Instrument | Purpose | Key Metric | When to Use |
+|------------|---------|-----------|-------------|
+| **Time Profiler** | Find CPU bottlenecks | % of CPU time per function | App feels slow or unresponsive |
+| **Allocations** | Track memory usage | Bytes allocated, persistent/transient | Memory growing over time |
+| **Leaks** | Detect memory leaks | Leaked object count and size | Objects not being deallocated |
+| **Energy Log** | Measure battery impact | Energy Impact rating | Users report battery drain |
+| **Network** | Analyze network calls | Request count, size, latency | Excessive data usage |
+| **Core Animation** | Profile UI rendering | FPS, offscreen rendering | Scroll stuttering, animation jank |
+| **os_signpost** | Custom measurement points | Duration of marked regions | Measuring specific code paths |
+| **Generations** | Isolate memory changes | Objects created between marks | Finding specific leak sources |
+
+## Official Resources
+
+- [Apple Documentation: Instruments](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance)
+- [Apple Documentation: os_signpost](https://developer.apple.com/documentation/os/logging/recording_performance_data)
+- [WWDC18: Practical Approaches to Great App Performance](https://developer.apple.com/videos/play/wwdc2018/407/)
+- [WWDC19: Getting Started with Instruments](https://developer.apple.com/videos/play/wwdc2019/411/)
+- [WWDC23: Analyze Hangs with Instruments](https://developer.apple.com/videos/play/wwdc2023/10248/)

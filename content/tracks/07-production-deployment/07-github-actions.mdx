@@ -1,0 +1,638 @@
+---
+title: "GitHub Actions for iOS"
+description: "Setting up CI/CD pipelines with GitHub Actions and Fastlane"
+sectionId: "7.3-ci-cd"
+sectionTitle: "CI/CD & Automation"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# GitHub Actions for iOS: Setting Up CI/CD Pipelines
+
+Continuous Integration and Continuous Deployment (CI/CD) automates the process of building, testing, and deploying your iOS apps. Instead of manually running tests and creating builds on your local machine, GitHub Actions can do this automatically whenever you push code or create a pull request.
+
+For iOS developers, this means catching bugs earlier, ensuring code quality, and streamlining the release process—all without tying up your development machine for hours during builds.
+
+## What Are GitHub Actions?
+
+GitHub Actions is GitHub's built-in automation platform. It runs workflows (automated processes) in response to events like pushing code, opening pull requests, or creating releases. For iOS projects, you'll typically want to:
+
+- Run unit and UI tests automatically
+- Build your app to verify it compiles
+- Generate and distribute beta builds
+- Deploy to TestFlight or the App Store
+
+## Prerequisites
+
+Before setting up GitHub Actions for iOS, you'll need:
+
+- An iOS project hosted on GitHub
+- Xcode project or workspace properly configured
+- Basic understanding of YAML syntax (we'll cover the essentials)
+- Apple Developer account (for code signing and distribution)
+
+## Understanding the Basics: Your First Workflow
+
+GitHub Actions workflows are defined in YAML files stored in `.github/workflows/` in your repository. Let's start with a simple workflow that builds and tests your iOS app.
+
+Create `.github/workflows/ios.yml`:
+
+```yaml
+name: iOS CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Select Xcode version
+      run: sudo xcode-select -switch /Applications/Xcode_15.0.app
+    
+    - name: Build and Test
+      run: |
+        xcodebuild clean build test \
+          -project MyApp.xcodeproj \
+          -scheme MyApp \
+          -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.0' \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO
+```
+
+### Breaking Down the Workflow
+
+**Triggers (`on`)**: This workflow runs on pushes to `main` or `develop` branches and on all pull requests to `main`.
+
+**Runner (`runs-on`)**: iOS builds require macOS runners. GitHub provides `macos-latest`, `macos-13`, and `macos-12`. Always check which Xcode version is available on each runner in the [GitHub Actions runner images documentation](https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md).
+
+**Steps**: Each step performs one action. The workflow checks out your code, selects an Xcode version, then builds and tests your app.
+
+## Common Mistake: Simulator Names and OS Versions
+
+One of the most frequent errors is specifying a simulator that doesn't exist on the runner:
+
+```yaml
+# ❌ This might fail if iPhone 14 isn't available
+-destination 'platform=iOS Simulator,name=iPhone 14,OS=16.0'
+```
+
+To see available simulators, add a debug step:
+
+```yaml
+- name: List available simulators
+  run: xcrun simctl list devices available
+```
+
+Better yet, use a more generic destination that's more likely to exist:
+
+```yaml
+# ✅ More reliable approach
+-destination 'platform=iOS Simulator,name=iPhone 15,OS=latest'
+```
+
+Or use the `destination 'platform=iOS Simulator,OS=latest'` to let Xcode choose.
+
+## Working with Workspaces and CocoaPods
+
+If your project uses CocoaPods, your workflow needs to account for the workspace:
+
+```yaml
+- name: Install dependencies
+  run: |
+    cd ios
+    pod install
+    
+- name: Build and Test
+  run: |
+    xcodebuild clean build test \
+      -workspace MyApp.xcworkspace \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO
+```
+
+For SPM (Swift Package Manager) dependencies, GitHub Actions will resolve them automatically during the build, but you can cache them for faster builds:
+
+```yaml
+- name: Cache SPM dependencies
+  uses: actions/cache@v3
+  with:
+    path: .build
+    key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+    restore-keys: |
+      ${{ runner.os }}-spm-
+```
+
+## Setting Up Fastlane
+
+[Fastlane](https://docs.fastlane.tools/) is the industry standard for automating iOS builds and deployments. It simplifies complex xcodebuild commands and manages code signing, screenshots, and App Store submissions.
+
+### Installing Fastlane
+
+In your project root, create a `Gemfile`:
+
+```ruby
+source "https://rubygems.org"
+
+gem "fastlane"
+```
+
+Then initialize Fastlane:
+
+```bash
+bundle install
+bundle exec fastlane init
+```
+
+### Basic Fastfile Configuration
+
+Fastlane uses a `Fastfile` (stored in `fastlane/Fastfile`) to define lanes—automated workflows:
+
+```ruby
+default_platform(:ios)
+
+platform :ios do
+  desc "Run tests"
+  lane :test do
+    run_tests(
+      scheme: "MyApp",
+      devices: ["iPhone 15"],
+      clean: true
+    )
+  end
+
+  desc "Build for testing"
+  lane :build_for_testing do
+    build_app(
+      scheme: "MyApp",
+      configuration: "Debug",
+      skip_archive: true,
+      skip_codesigning: true,
+      destination: "generic/platform=iOS Simulator"
+    )
+  end
+  
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    increment_build_number(xcodeproj: "MyApp.xcodeproj")
+    
+    build_app(
+      scheme: "MyApp",
+      export_method: "app-store"
+    )
+    
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+end
+```
+
+### Integrating Fastlane with GitHub Actions
+
+Update your workflow to use Fastlane:
+
+```yaml
+name: iOS CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0'
+        bundler-cache: true
+    
+    - name: Install Fastlane
+      run: bundle install
+    
+    - name: Run tests
+      run: bundle exec fastlane test
+```
+
+## Code Signing and Secrets
+
+Building for distribution requires proper code signing. You'll need to store certificates and provisioning profiles securely.
+
+### Setting Up Secrets
+
+GitHub Actions provides encrypted secrets for sensitive data. Go to your repository's Settings > Secrets and variables > Actions, and add:
+
+- `APPLE_ID`: Your Apple ID email
+- `APPLE_APP_SPECIFIC_PASSWORD`: Generate this at appleid.apple.com
+- `MATCH_PASSWORD`: Encryption password for certificates (if using Fastlane Match)
+- `FASTLANE_SESSION`: Authentication session (optional, for 2FA)
+
+### Using Fastlane Match
+
+Fastlane Match stores your certificates and provisioning profiles in a private Git repository or cloud storage:
+
+```ruby
+lane :beta do
+  match(
+    type: "appstore",
+    readonly: true,
+    git_basic_authorization: Base64.strict_encode64(ENV["GIT_AUTHORIZATION"])
+  )
+  
+  build_app(
+    scheme: "MyApp",
+    export_method: "app-store"
+  )
+  
+  upload_to_testflight
+end
+```
+
+Your workflow needs access to these secrets:
+
+```yaml
+- name: Build and upload to TestFlight
+  env:
+    MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+    FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    FASTLANE_USER: ${{ secrets.APPLE_ID }}
+  run: bundle exec fastlane beta
+```
+
+## Common Mistake: Code Signing Errors
+
+Code signing is the most common source of CI/CD failures. Here are typical issues:
+
+**1. Missing provisioning profile:**
+
+```yaml
+# Error: No profile for team 'XXXXXXXXXX' matching 'MyApp'
+```
+
+Solution: Ensure your Match setup is correct and the readonly mode can access profiles:
+
+```ruby
+match(
+  type: "appstore",
+  readonly: true,
+  app_identifier: "com.yourcompany.myapp"
+)
+```
+
+**2. Certificate not trusted:**
+
+On CI, you may need to add the certificate to the keychain:
+
+```yaml
+- name: Import certificate
+  env:
+    CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+    CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+  run: |
+    echo $CERTIFICATE_BASE64 | base64 --decode > certificate.p12
+    security create-keychain -p "" build.keychain
+    security import certificate.p12 -k build.keychain -P $CERTIFICATE_PASSWORD -T /usr/bin/codesign
+    security list-keychains -s build.keychain
+    security default-keychain -s build.keychain
+    security unlock-keychain -p "" build.keychain
+    security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+```
+
+## Testing Strategies
+
+### Unit Tests Only
+
+For quick feedback, run only unit tests on pull requests:
+
+```yaml
+- name: Run unit tests
+  run: |
+    xcodebuild test \
+      -project MyApp.xcodeproj \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      -only-testing:MyAppTests \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO
+```
+
+### UI Tests
+
+UI tests take longer but catch integration issues:
+
+```yaml
+- name: Run UI tests
+  run: |
+    xcodebuild test \
+      -project MyApp.xcodeproj \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      -only-testing:MyAppUITests \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO
+```
+
+### Parallel Testing
+
+Speed up tests by running them in parallel:
+
+```yaml
+- name: Run tests in parallel
+  run: |
+    xcodebuild test \
+      -project MyApp.xcodeproj \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      -parallel-testing-enabled YES \
+      -maximum-parallel-testing-workers 4 \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO
+```
+
+## Advanced: Matrix Builds
+
+Test against multiple iOS versions and devices:
+
+```yaml
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - destination: 'platform=iOS Simulator,name=iPhone 15,OS=17.0'
+            xcode: '/Applications/Xcode_15.0.app'
+          - destination: 'platform=iOS Simulator,name=iPhone 14,OS=16.4'
+            xcode: '/Applications/Xcode_14.3.app'
+          - destination: 'platform=iOS Simulator,name=iPad Pro (12.9-inch),OS=17.0'
+            xcode: '/Applications/Xcode_15.0.app'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Select Xcode
+      run: sudo xcode-select -switch ${{ matrix.xcode }}
+    
+    - name: Run tests
+      run: |
+        xcodebuild test \
+          -project MyApp.xcodeproj \
+          -scheme MyApp \
+          -destination '${{ matrix.destination }}' \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO
+```
+
+## Caching for Faster Builds
+
+Caching dependencies and build artifacts significantly reduces build times:
+
+```yaml
+- name: Cache DerivedData
+  uses: actions/cache@v3
+  with:
+    path: ~/Library/Developer/Xcode/DerivedData
+    key: ${{ runner.os }}-deriveddata-${{ hashFiles('**/*.xcodeproj') }}
+    restore-keys: |
+      ${{ runner.os }}-deriveddata-
+
+- name: Cache CocoaPods
+  uses: actions/cache@v3
+  with:
+    path: Pods
+    key: ${{ runner.os }}-pods-${{ hashFiles('**/Podfile.lock') }}
+    restore-keys: |
+      ${{ runner.os }}-pods-
+```
+
+## Handling Test Results
+
+Save test results and code coverage reports as artifacts:
+
+```yaml
+- name: Run tests with coverage
+  run: |
+    xcodebuild test \
+      -project MyApp.xcodeproj \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      -enableCodeCoverage YES \
+      -resultBundlePath TestResults.xcresult \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO
+
+- name: Upload test results
+  uses: actions/upload-artifact@v3
+  if: always()
+  with:
+    name: test-results
+    path: TestResults.xcresult
+```
+
+## Complete Example: Production-Ready Workflow
+
+Here's a comprehensive workflow that handles testing, building, and deployment:
+
+```yaml
+name: iOS CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_15.0.app/Contents/Developer
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    
+    - name: Cache SPM
+      uses: actions/cache@v3
+      with:
+        path: .build
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+    
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0'
+        bundler-cache: true
+    
+    - name: Install Fastlane
+      run: bundle install
+    
+    - name: Run tests
+      run: bundle exec fastlane test
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage/lcov.info
+        fail_ci_if_error: true
+
+  build:
+    name: Build App
+    runs-on: macos-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0'
+        bundler-cache: true
+    
+    - name: Install Fastlane
+      run: bundle install
+    
+    - name: Build for TestFlight
+      env:
+        MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        FASTLANE_USER: ${{ secrets.APPLE_ID }}
+        FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+      run: bundle exec fastlane beta
+    
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: MyApp.ipa
+        path: MyApp.ipa
+
+  release:
+    name: Release to App Store
+    runs-on: macos-latest
+    needs: build
+    if: github.event_name == 'release'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0'
+        bundler-cache: true
+
+    - name: Install Fastlane
+      run: bundle install
+
+    - name: Deploy to App Store
+      env:
+        MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        FASTLANE_USER: ${{ secrets.APPLE_ID }}
+      run: bundle exec fastlane release
+```
+
+## Notifications and Status Checks
+
+Add Slack or other notifications to your workflow:
+
+```yaml
+- name: Notify on failure
+  if: failure()
+  uses: 8398a7/action-slack@v3
+  with:
+    status: ${{ job.status }}
+    text: 'iOS build failed on ${{ github.ref }}'
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+Add required status checks in your repository settings to prevent merging PRs with failing tests.
+
+## Common Pitfalls
+
+### 1. macOS Runner Costs
+
+GitHub-hosted macOS runners use more minutes than Linux runners (10x multiplier). Optimize by:
+- Running linting and simple checks on Linux runners
+- Caching aggressively
+- Only running full builds on specific branches
+
+### 2. Xcode Version Mismatches
+
+Pin your Xcode version explicitly rather than relying on `macos-latest`:
+
+```yaml
+# ✅ Explicit version
+run: sudo xcode-select -switch /Applications/Xcode_15.0.app
+
+# ❌ May change unexpectedly
+runs-on: macos-latest  # Xcode version varies
+```
+
+### 3. Secrets in Forks
+
+Pull requests from forks don't have access to repository secrets. Your workflow should handle this gracefully:
+
+```yaml
+- name: Run tests (no signing needed)
+  if: github.event_name == 'pull_request'
+  run: bundle exec fastlane test
+
+- name: Build and deploy (needs secrets)
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  env:
+    MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+  run: bundle exec fastlane beta
+```
+
+## Summary Table
+
+| Concept | Tool/Syntax | Purpose |
+|---------|------------|---------|
+| **Workflow file** | `.github/workflows/ios.yml` | Define CI/CD pipeline |
+| **Trigger** | `on: push`, `pull_request`, `release` | When pipeline runs |
+| **macOS runner** | `runs-on: macos-latest` | Required for Xcode builds |
+| **Xcode selection** | `xcode-select -switch` | Pin Xcode version |
+| **Fastlane** | `bundle exec fastlane <lane>` | Automate build/test/deploy |
+| **Match** | `match(type: "appstore")` | Manage code signing |
+| **Secrets** | `${{ secrets.NAME }}` | Store sensitive credentials |
+| **Caching** | `actions/cache@v3` | Speed up builds |
+| **Matrix builds** | `strategy: matrix` | Test multiple configurations |
+| **Artifacts** | `actions/upload-artifact@v3` | Save build outputs |
+| **Status checks** | Repository settings | Enforce passing builds |
+
+## Official Resources
+
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [GitHub Actions Runner Images](https://github.com/actions/runner-images)
+- [Fastlane Documentation](https://docs.fastlane.tools/)
+- [Fastlane Match](https://docs.fastlane.tools/actions/match/)
+- [Apple Documentation: Xcode Build Settings](https://developer.apple.com/documentation/xcode/build-settings-reference)

@@ -1,0 +1,607 @@
+---
+title: "Arrays"
+description: "Ordered collections with typed elements"
+sectionId: "1.4-collections"
+sectionTitle: "Collection Types"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Arrays in Swift
+
+Arrays are ordered, zero-indexed collections that store values of the same type. They're one of the most fundamental data structures in Swift and iOS development, used for everything from managing lists of data to storing collections of UI elements.
+
+Unlike some languages where arrays are fixed-size, Swift arrays are dynamic—they can grow and shrink as needed. Swift's type safety ensures that once you declare an array of a specific type, it can only hold elements of that type.
+
+## Why Arrays Matter
+
+Arrays are essential for:
+- Storing and organizing sequential data (user lists, menu items, messages)
+- Working with table views and collection views in iOS
+- Processing collections of data with map, filter, and reduce
+- Managing ordered data that needs index-based access
+
+## Creating Arrays
+
+### Empty Arrays
+
+```swift
+// Explicit type annotation
+var numbers: [Int] = []
+
+// Using initializer syntax
+var names = [String]()
+
+// Using Array initializer (equivalent)
+var scores = Array<Double>()
+```
+
+### Arrays with Initial Values
+
+```swift
+// Array literal
+let colors = ["red", "green", "blue"]
+
+// Repeating value
+let zeros = Array(repeating: 0, count: 5)
+// [0, 0, 0, 0, 0]
+
+// Using range
+let oneToFive = Array(1...5)
+// [1, 2, 3, 4, 5]
+```
+
+### Type Inference
+
+Swift infers the array type from its contents:
+
+```swift
+let mixed = [1, 2, 3]  // Type is [Int]
+let strings = ["Swift", "iOS"]  // Type is [String]
+
+// Compiler error: cannot mix types
+// let invalid = [1, "two", 3.0]  // Won't compile
+```
+
+## Accessing Elements
+
+### Index-Based Access
+
+```swift
+let languages = ["Swift", "Objective-C", "JavaScript"]
+
+// Access by index
+let first = languages[0]  // "Swift"
+let last = languages[2]   // "JavaScript"
+
+// Safe access with optional
+let firstSafe = languages.first  // Optional("Swift")
+let lastSafe = languages.last    // Optional("JavaScript")
+```
+
+**Common Mistake:** Accessing an index that doesn't exist crashes your app:
+
+```swift
+let languages = ["Swift", "Objective-C"]
+// let item = languages[5]  // Fatal error: Index out of range
+```
+
+**Better approach:** Check the count or use safe access:
+
+```swift
+if languages.indices.contains(5) {
+    print(languages[5])
+} else {
+    print("Index out of bounds")
+}
+```
+
+### Subscript Ranges
+
+```swift
+let numbers = [1, 2, 3, 4, 5, 6, 7]
+
+let subset = numbers[2...4]  // [3, 4, 5] (ArraySlice)
+let prefix = numbers[..<3]   // [1, 2, 3]
+let suffix = numbers[4...]   // [5, 6, 7]
+
+// Convert ArraySlice back to Array if needed
+let subArray = Array(subset)
+```
+
+## Adding Elements
+
+```swift
+var fruits = ["Apple", "Banana"]
+
+// Append single element
+fruits.append("Orange")
+// ["Apple", "Banana", "Orange"]
+
+// Append multiple elements
+fruits.append(contentsOf: ["Mango", "Grape"])
+// ["Apple", "Banana", "Orange", "Mango", "Grape"]
+
+// Insert at specific index
+fruits.insert("Pear", at: 1)
+// ["Apple", "Pear", "Banana", "Orange", "Mango", "Grape"]
+
+// Using += operator
+fruits += ["Kiwi"]
+```
+
+## Removing Elements
+
+```swift
+var cities = ["Tokyo", "Paris", "London", "Berlin", "Seoul"]
+
+// Remove at specific index
+let removed = cities.remove(at: 2)  // Returns "London"
+// ["Tokyo", "Paris", "Berlin", "Seoul"]
+
+// Remove first and last
+let first = cities.removeFirst()  // "Tokyo"
+let last = cities.removeLast()    // "Seoul"
+// ["Paris", "Berlin"]
+
+// Remove all
+cities.removeAll()  // []
+
+// Remove all but keep capacity
+cities.removeAll(keepingCapacity: true)
+```
+
+**Edge Case:** Calling `removeFirst()` or `removeLast()` on an empty array crashes:
+
+```swift
+var empty: [Int] = []
+// empty.removeLast()  // Fatal error: Can't remove last element from empty array
+
+// Safe alternatives
+if let last = empty.popLast() {
+    print(last)
+}
+```
+
+## Modifying Elements
+
+```swift
+var scores = [85, 90, 78, 92]
+
+// Update single element
+scores[1] = 95
+// [85, 95, 78, 92]
+
+// Update range
+scores[1...2] = [88, 91]
+// [85, 88, 91, 92]
+
+// Replace range with different count
+scores[1...2] = [100]
+// [85, 100, 92]
+```
+
+## Array Properties
+
+```swift
+let items = ["A", "B", "C", "D"]
+
+items.count        // 4
+items.isEmpty      // false
+items.capacity     // At least 4 (may be more)
+items.first        // Optional("A")
+items.last         // Optional("D")
+items.indices      // 0..<4
+```
+
+## Iterating Arrays
+
+### For-In Loop
+
+```swift
+let animals = ["Cat", "Dog", "Bird"]
+
+for animal in animals {
+    print(animal)
+}
+
+// With index using enumerated()
+for (index, animal) in animals.enumerated() {
+    print("\(index): \(animal)")
+}
+// 0: Cat
+// 1: Dog
+// 2: Bird
+```
+
+### forEach Method
+
+```swift
+animals.forEach { animal in
+    print(animal)
+}
+
+// Shorthand
+animals.forEach { print($0) }
+```
+
+**Important:** Unlike `for-in`, you cannot use `break` or `continue` with `forEach`.
+
+## Searching and Filtering
+
+```swift
+let numbers = [1, 5, 3, 8, 2, 9, 4]
+
+// Check if contains
+numbers.contains(5)  // true
+
+// Find first match
+let firstEven = numbers.first(where: { $0 % 2 == 0 })  // Optional(8)
+
+// Find index
+if let index = numbers.firstIndex(of: 5) {
+    print("Found at index \(index)")  // Found at index 1
+}
+
+// Filter
+let evens = numbers.filter { $0 % 2 == 0 }
+// [8, 2, 4]
+
+// Check condition
+let allPositive = numbers.allSatisfy { $0 > 0 }  // true
+```
+
+## Transforming Arrays
+
+### Map
+
+```swift
+let numbers = [1, 2, 3, 4]
+
+let doubled = numbers.map { $0 * 2 }
+// [2, 4, 6, 8]
+
+let strings = numbers.map { String($0) }
+// ["1", "2", "3", "4"]
+```
+
+### CompactMap
+
+Filters out `nil` values:
+
+```swift
+let strings = ["1", "2", "three", "4"]
+
+let numbers = strings.compactMap { Int($0) }
+// [1, 2, 4] - "three" was filtered out
+```
+
+### FlatMap
+
+Flattens nested arrays:
+
+```swift
+let nested = [[1, 2], [3, 4], [5]]
+
+let flattened = nested.flatMap { $0 }
+// [1, 2, 3, 4, 5]
+```
+
+### Reduce
+
+```swift
+let numbers = [1, 2, 3, 4, 5]
+
+let sum = numbers.reduce(0, +)  // 15
+
+let product = numbers.reduce(1, *)  // 120
+
+// With closure
+let concatenated = ["Hello", " ", "World"].reduce("") { $0 + $1 }
+// "Hello World"
+```
+
+## Sorting
+
+```swift
+var numbers = [5, 2, 8, 1, 9]
+
+// Sort in place (mutating)
+numbers.sort()
+// [1, 2, 5, 8, 9]
+
+numbers.sort(by: >)
+// [9, 8, 5, 2, 1]
+
+// Return sorted copy (non-mutating)
+let original = [5, 2, 8, 1, 9]
+let sorted = original.sorted()
+// original is unchanged, sorted is [1, 2, 5, 8, 9]
+
+// Custom sorting
+struct Person {
+    let name: String
+    let age: Int
+}
+
+var people = [
+    Person(name: "Alice", age: 30),
+    Person(name: "Bob", age: 25),
+    Person(name: "Charlie", age: 35)
+]
+
+people.sort { $0.age < $1.age }
+// Sorted by age ascending
+```
+
+## Reversing
+
+```swift
+let numbers = [1, 2, 3, 4, 5]
+
+// Returns reversed collection (efficient, doesn't copy)
+let reversed = numbers.reversed()
+// Not an Array, but a ReversedCollection
+
+// Convert to Array
+let reversedArray = Array(numbers.reversed())
+// [5, 4, 3, 2, 1]
+
+// Reverse in place
+var mutable = [1, 2, 3, 4, 5]
+mutable.reverse()
+// [5, 4, 3, 2, 1]
+```
+
+## Array Slicing
+
+Array slices share storage with the original array for efficiency:
+
+```swift
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+let slice = numbers[2..<7]  // Type is ArraySlice<Int>
+// [3, 4, 5, 6, 7]
+
+// Indices preserve original array's indices
+print(slice.startIndex)  // 2 (not 0!)
+
+// Safe iteration
+for i in slice.indices {
+    print(slice[i])
+}
+
+// Convert to Array if needed
+let newArray = Array(slice)
+print(newArray.startIndex)  // 0
+```
+
+**Common Mistake:** Assuming slice indices start at 0:
+
+```swift
+let numbers = [1, 2, 3, 4, 5]
+let slice = numbers[2...4]
+
+// Wrong - crashes if slice doesn't start at 0
+// let first = slice[0]  // Fatal error
+
+// Correct
+let first = slice[slice.startIndex]
+// Or convert to Array first
+let array = Array(slice)
+let firstItem = array[0]
+```
+
+## Value Semantics
+
+Arrays in Swift are value types, not reference types:
+
+```swift
+var original = [1, 2, 3]
+var copy = original
+
+copy.append(4)
+
+print(original)  // [1, 2, 3]
+print(copy)      // [1, 2, 3, 4]
+```
+
+This is copy-on-write (COW) for efficiency—the actual copy only happens when you modify one of the arrays.
+
+## Multidimensional Arrays
+
+```swift
+// 2D array
+var matrix: [[Int]] = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+
+let element = matrix[1][2]  // 6
+
+// Creating a 3x3 grid of zeros
+let grid = Array(repeating: Array(repeating: 0, count: 3), count: 3)
+```
+
+**Be careful with repeating reference types:**
+
+```swift
+// Wrong - all rows share the same array instance
+class Counter {
+    var value = 0
+}
+
+// Don't do this with reference types
+var wrong = Array(repeating: [Counter()], count: 3)
+```
+
+## Performance Considerations
+
+### Capacity and Reserving
+
+```swift
+var numbers: [Int] = []
+
+// Check capacity
+print(numbers.capacity)  // 0
+
+// Reserve capacity to avoid reallocations
+numbers.reserveCapacity(1000)
+print(numbers.capacity)  // At least 1000
+
+for i in 0..<1000 {
+    numbers.append(i)  // No reallocation needed
+}
+```
+
+### Index vs. Iterator
+
+```swift
+let numbers = Array(1...1000)
+
+// Slower - subscript involves bounds checking
+var sum = 0
+for i in 0..<numbers.count {
+    sum += numbers[i]
+}
+
+// Faster - direct iteration
+var sum2 = 0
+for number in numbers {
+    sum2 += number
+}
+```
+
+## Common Patterns in iOS Development
+
+### TableView Data Source
+
+```swift
+class ViewController: UIViewController, UITableViewDataSource {
+    var items = ["Item 1", "Item 2", "Item 3"]
+    
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return items.count
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        cell.textLabel?.text = items[indexPath.row]
+        return cell
+    }
+}
+```
+
+### Managing State
+
+```swift
+struct TodoList {
+    private(set) var items: [TodoItem] = []
+    
+    mutating func add(_ item: TodoItem) {
+        items.append(item)
+    }
+    
+    mutating func remove(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        items.remove(at: index)
+    }
+    
+    mutating func toggle(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        items[index].isCompleted.toggle()
+    }
+}
+```
+
+## Common Mistakes and How to Avoid Them
+
+### 1. Index Out of Range
+
+```swift
+// Bad
+func getThirdElement(from array: [Int]) -> Int {
+    return array[2]  // Crashes if array has < 3 elements
+}
+
+// Good
+func getThirdElement(from array: [Int]) -> Int? {
+    guard array.count > 2 else { return nil }
+    return array[2]
+}
+
+// Or use indices
+func getThirdElement(from array: [Int]) -> Int? {
+    return array.indices.contains(2) ? array[2] : nil
+}
+```
+
+### 2. Modifying Array While Iterating
+
+```swift
+var numbers = [1, 2, 3, 4, 5]
+
+// Bad - undefined behavior
+for (index, number) in numbers.enumerated() {
+    if number % 2 == 0 {
+        numbers.remove(at: index)  // Don't modify while iterating!
+    }
+}
+
+// Good - use filter
+numbers = numbers.filter { $0 % 2 != 0 }
+
+// Or iterate backwards if you must modify
+for index in (0..<numbers.count).reversed() {
+    if numbers[index] % 2 == 0 {
+        numbers.remove(at: index)
+    }
+}
+```
+
+### 3. Force Unwrapping Optional Array Access
+
+```swift
+// Bad
+let users: [User] = []
+let firstUser = users.first!  // Crashes on empty array
+
+// Good
+if let firstUser = users.first {
+    print(firstUser)
+}
+
+// Or provide default
+let firstUser = users.first ?? User.default
+```
+
+## Summary Table
+
+| Operation | Syntax | Time Complexity | Notes |
+|-----------|--------|-----------------|-------|
+| Create empty | `[Int]()` or `[]` | O(1) | Specify type for empty arrays |
+| Access element | `array[index]` | O(1) | Crashes if out of bounds |
+| Safe access | `array.first`, `array.last` | O(1) | Returns optional |
+| Append | `array.append(element)` | O(1) amortized | May trigger reallocation |
+| Insert | `array.insert(element, at: i)` | O(n) | Shifts subsequent elements |
+| Remove at index | `array.remove(at: i)` | O(n) | Shifts subsequent elements |
+| Remove last | `array.removeLast()` | O(1) | Crashes if empty |
+| Safe remove last | `array.popLast()` | O(1) | Returns optional |
+| Contains | `array.contains(element)` | O(n) | Linear search |
+| Find index | `array.firstIndex(of: element)` | O(n) | Returns optional index |
+| Filter | `array.filter { }` | O(n) | Returns new array |
+| Map | `array.map { }` | O(n) | Returns new array |
+| Reduce | `array.reduce(initial, +)` | O(n) | Combines into single value |
+| Sort | `array.sort()` | O(n log n) | Mutates in place |
+| Sorted copy | `array.sorted()` | O(n log n) | Returns new array |
+| Reverse | `array.reverse()` | O(n) | Mutates in place |
+| Count | `array.count` | O(1) | Number of elements |
+| Is empty | `array.isEmpty` | O(1) | Prefer over `count == 0` |
+
+## Official Resources
+
+- [Apple Documentation: Array](https://developer.apple.com/documentation/swift/array)
+- [Swift Book: Collection Types](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/)

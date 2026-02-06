@@ -1,0 +1,410 @@
+---
+title: "App Icons & Launch Screen"
+description: "Asset catalogs, icon guidelines, and launch screen configuration"
+sectionId: "7.1-app-store-prep"
+sectionTitle: "App Store Preparation"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Icons & Launch Screen
+
+When you create a new iOS app, one of the first things users see is your app icon on their home screen and a brief launch screen while your app starts. These visual elements are crucial for user experience and App Store approval. In this article, you'll learn how to properly configure app icons and launch screens using Xcode's asset catalog system.
+
+## Why App Icons and Launch Screens Matter
+
+**App Icons** serve as your app's brand identity. They appear on the home screen, in search results, in Settings, and throughout iOS. Apple has strict requirements for app icons, and failing to meet them will result in App Store rejection.
+
+**Launch Screens** provide immediate visual feedback that your app is loading. They're not splash screens for branding—they should seamlessly transition into your app's first screen. A poorly designed launch screen creates a jarring user experience.
+
+## Understanding Asset Catalogs
+
+Asset catalogs (`.xcassets` files) are Xcode's solution for managing app resources like images, icons, and colors. They automatically handle different device resolutions, screen sizes, and operating system versions.
+
+When you create a new project, Xcode generates an `Assets.xcassets` folder with two key components:
+- `AppIcon` - for your app icons
+- `LaunchScreen` (or a Launch Screen storyboard in older projects)
+
+### Why Use Asset Catalogs?
+
+Asset catalogs provide several benefits:
+- **Automatic scaling**: Provide @1x, @2x, and @3x versions of images
+- **Organization**: Keep all visual assets in one place
+- **Optimization**: Xcode optimizes assets during compilation
+- **Platform-specific assets**: Different resources for iPhone, iPad, Apple Watch, etc.
+
+## Configuring App Icons
+
+### Icon Size Requirements
+
+iOS requires app icons in multiple sizes for different contexts. As of iOS 17, you need to provide icons at these primary sizes:
+
+- **iPhone**: 60x60pt (@2x and @3x)
+- **iPad**: 76x76pt (@2x)
+- **App Store**: 1024x1024pt (@1x)
+- **Settings**: 29x29pt (@2x and @3x)
+- **Spotlight**: 40x40pt (@2x and @3x)
+
+Points (pt) vs pixels: iOS uses points as a device-independent unit. A @2x image means 2 pixels per point, and @3x means 3 pixels per point.
+
+### Adding App Icons to Your Project
+
+1. **Open your Asset Catalog**: In Xcode's Project Navigator, click on `Assets.xcassets`
+2. **Select AppIcon**: Click on "AppIcon" in the left sidebar
+3. **Drag and drop images**: Drop your PNG files into the appropriate slots
+
+**Critical requirements:**
+- PNG format only (no transparency for iOS icons)
+- Exact pixel dimensions (not approximate)
+- sRGB color space
+- No alpha channel
+
+### Programmatically Accessing App Icon Information
+
+While you can't change the app icon through standard APIs (see alternate app icons below), you can check if certain properties are set:
+
+```swift
+import UIKit
+
+// Check if the app has an icon set
+if let iconsDictionary = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+   let primaryIconsDictionary = iconsDictionary["CFBundlePrimaryIcon"] as? [String: Any],
+   let iconFiles = primaryIconsDictionary["CFBundleIconFiles"] as? [String] {
+    print("App icon files: \(iconFiles)")
+}
+```
+
+### Alternate App Icons
+
+iOS allows users to change your app's icon (available since iOS 10.3). This requires configuring alternate icons in your project.
+
+**Step 1:** Add alternate icon images to your project (NOT in the asset catalog—add them directly to your project folder). Name them distinctly, like "DarkIcon@2x.png", "DarkIcon@3x.png".
+
+**Step 2:** Update your `Info.plist`:
+
+```xml
+<key>CFBundleIcons</key>
+<dict>
+    <key>CFBundleAlternateIcons</key>
+    <dict>
+        <key>DarkIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>DarkIcon</string>
+            </array>
+        </dict>
+    </dict>
+</dict>
+```
+
+**Step 3:** Implement icon switching in Swift:
+
+```swift
+import UIKit
+
+class IconManager {
+    static func changeAppIcon(to iconName: String?) {
+        guard UIApplication.shared.supportsAlternateIcons else {
+            print("Alternate icons not supported on this device")
+            return
+        }
+        
+        UIApplication.shared.setAlternateIconName(iconName) { error in
+            if let error = error {
+                print("Error setting alternate icon: \(error.localizedDescription)")
+            } else {
+                print("Successfully changed app icon")
+            }
+        }
+    }
+    
+    static func resetToDefaultIcon() {
+        changeAppIcon(to: nil) // nil resets to default
+    }
+    
+    static var currentIconName: String? {
+        return UIApplication.shared.alternateIconName
+    }
+}
+
+// Usage
+IconManager.changeAppIcon(to: "DarkIcon")
+```
+
+**Common mistake:** iOS shows a system alert when changing icons. You cannot suppress this alert—it's a privacy/security feature.
+
+## Configuring Launch Screens
+
+Apple deprecated static launch images in favor of launch screens created with Interface Builder or SwiftUI. Modern iOS apps use a `LaunchScreen.storyboard` file or, starting with iOS 14, a `Info.plist` configuration.
+
+### Launch Screen Storyboard (Traditional Approach)
+
+The `LaunchScreen.storyboard` file is included in new Xcode projects. Best practices:
+
+**Do:**
+- Use a simplified version of your first screen
+- Use Auto Layout for all devices
+- Keep it minimal (no animations, no web content, no dynamic data)
+
+**Don't:**
+- Add branding splash screens (Apple rejects these)
+- Include text that requires localization
+- Display loading indicators
+
+Example layout code for a programmatically-created launch screen view controller:
+
+```swift
+import UIKit
+
+class LaunchScreenViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        view.backgroundColor = .systemBackground
+        
+        let logoImageView = UIImageView(image: UIImage(named: "logo"))
+        logoImageView.contentMode = .scaleAspectFit
+        logoImageView.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(logoImageView)
+        
+        NSLayoutConstraint.activate([
+            logoImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            logoImageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            logoImageView.widthAnchor.constraint(equalToConstant: 120),
+            logoImageView.heightAnchor.constraint(equalToConstant: 120)
+        ])
+    }
+}
+```
+
+**Note:** You don't instantiate this view controller yourself. It's only used as a reference for the storyboard design.
+
+### Modern Approach: Info.plist Configuration (iOS 14+)
+
+Starting with iOS 14, you can configure launch screens purely through `Info.plist`, which is faster and more efficient.
+
+```xml
+<key>UILaunchScreen</key>
+<dict>
+    <key>UIColorName</key>
+    <string>LaunchScreenBackground</string>
+    <key>UIImageName</key>
+    <string>LaunchLogo</string>
+    <key>UIImageRespectsSafeAreaInsets</key>
+    <true/>
+    <key>UILaunchScreenShowsNavigationBar</key>
+    <false/>
+</dict>
+```
+
+**Keys explained:**
+- `UIColorName`: References a color in your asset catalog
+- `UIImageName`: References an image in your asset catalog (centered by default)
+- `UIImageRespectsSafeAreaInsets`: If true, image respects safe areas
+- `UILaunchScreenShowsNavigationBar`: Shows a navigation bar if true
+
+### Accessing Launch Screen Programmatically
+
+You typically don't interact with launch screens programmatically, but you can check which method is being used:
+
+```swift
+import UIKit
+
+class LaunchScreenChecker {
+    static func getLaunchScreenType() -> String {
+        // Check if using storyboard
+        if let launchStoryboard = Bundle.main.infoDictionary?["UILaunchStoryboardName"] as? String {
+            return "Using storyboard: \(launchStoryboard)"
+        }
+        
+        // Check if using Info.plist configuration
+        if Bundle.main.infoDictionary?["UILaunchScreen"] != nil {
+            return "Using Info.plist configuration"
+        }
+        
+        return "No launch screen configured"
+    }
+}
+
+// Usage
+print(LaunchScreenChecker.getLaunchScreenType())
+```
+
+### Testing Launch Screens
+
+Launch screens are cached aggressively by iOS. When testing changes:
+
+1. **Delete the app** from the device/simulator completely
+2. **Clean build folder** (Cmd+Shift+K in Xcode)
+3. **Rebuild and reinstall**
+
+**Alternative:** Restart the device/simulator to clear the cache.
+
+```swift
+// Add this code to force a delay during development to observe launch screen
+#if DEBUG
+Thread.sleep(forTimeInterval: 2.0) // Only for testing—never ship this!
+#endif
+```
+
+## Edge Cases and Common Mistakes
+
+### Missing Icon Sizes
+
+**Problem:** You submit to the App Store but forgot the 1024x1024 icon.
+
+**Solution:** Xcode shows a warning in the asset catalog. Always check the AppIcon entry for any empty slots with a yellow warning triangle.
+
+### Transparent App Icons
+
+**Problem:** Your designer provides an icon with transparency.
+
+**Result:** App Store rejection or black background where transparency was.
+
+**Solution:** Always use opaque backgrounds. iOS adds its own rounded corners—don't pre-round your icons.
+
+```swift
+// Utility to check if an image has transparency (useful for validation)
+extension UIImage {
+    var hasAlpha: Bool {
+        guard let cgImage = self.cgImage else { return false }
+        let alpha = cgImage.alphaInfo
+        return alpha == .first || alpha == .last || alpha == .premultipliedFirst || alpha == .premultipliedLast
+    }
+}
+
+// Usage
+if let icon = UIImage(named: "AppIconTestImage"), icon.hasAlpha {
+    print("Warning: Icon has transparency")
+}
+```
+
+### Launch Screen Not Updating
+
+**Problem:** You update your launch screen but it still shows the old version.
+
+**Solution:** iOS caches launch screens. Delete the app and reinstall, or restart the device.
+
+### Localized Text on Launch Screens
+
+**Problem:** You add text to your launch screen that should be localized.
+
+**Apple's guideline:** Launch screens shouldn't contain text. If you must include text, it should be part of an image or require manual localization of the storyboard.
+
+**Better solution:** Don't use text. Use visual elements that are universally recognizable.
+
+### Dark Mode Considerations
+
+Your launch screen should support both light and dark mode. In asset catalogs, you can provide different images for each appearance:
+
+```swift
+// In your asset catalog, select an image set
+// In the Attributes Inspector, set "Appearances" to "Any, Light, Dark"
+// Then drag appropriate images for each mode
+```
+
+For storyboards, use system colors that automatically adapt:
+
+```swift
+// In Interface Builder or programmatically
+view.backgroundColor = .systemBackground // Adapts automatically
+label.textColor = .label // Adapts automatically
+```
+
+## Testing on Different Devices
+
+Always test on various screen sizes. You can check the current device programmatically:
+
+```swift
+import UIKit
+
+struct DeviceInfo {
+    static var modelName: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        return identifier
+    }
+    
+    static var screenSize: CGSize {
+        return UIScreen.main.bounds.size
+    }
+    
+    static var scale: CGFloat {
+        return UIScreen.main.scale
+    }
+}
+
+// Usage during testing
+print("Device: \(DeviceInfo.modelName)")
+print("Screen size: \(DeviceInfo.screenSize)")
+print("Scale: \(DeviceInfo.scale)x")
+```
+
+## Automated Icon Generation
+
+Instead of manually creating every icon size, you can use scripts or third-party tools. Here's a basic approach using command-line tools:
+
+```swift
+// This is a shell script example (save as generate_icons.sh)
+// Not Swift, but useful for automation
+/*
+#!/bin/bash
+
+# Requires ImageMagick: brew install imagemagick
+
+SOURCE_IMAGE="icon_1024.png"
+
+# iPhone sizes
+sips -z 120 120   $SOURCE_IMAGE --out AppIcon-60@2x.png
+sips -z 180 180   $SOURCE_IMAGE --out AppIcon-60@3x.png
+
+# iPad sizes
+sips -z 152 152   $SOURCE_IMAGE --out AppIcon-76@2x.png
+
+# Settings
+sips -z 58 58     $SOURCE_IMAGE --out AppIcon-29@2x.png
+sips -z 87 87     $SOURCE_IMAGE --out AppIcon-29@3x.png
+
+# Spotlight
+sips -z 80 80     $SOURCE_IMAGE --out AppIcon-40@2x.png
+sips -z 120 120   $SOURCE_IMAGE --out AppIcon-40@3x.png
+*/
+```
+
+## Official Apple Guidelines
+
+Always refer to the official documentation:
+
+- **Human Interface Guidelines - App Icons**: Provides design guidance, including size, color, and style recommendations
+- **Asset Catalog Format Reference**: Technical specification for `.xcassets` structure
+- **UILaunchScreen Documentation**: Details on Info.plist configuration for launch screens
+
+Key takeaways from Apple's guidelines:
+1. App icons should be distinctive and memorable
+2. Avoid placing text on app icons
+3. Fill the entire icon area
+4. Use safe, inclusive imagery
+5. Test on actual devices, not just simulator
+
+## Summary Table
+
+| Aspect | Key Points | Common Mistakes |
+|--------|-----------|-----------------|
+| **App Icons** | - Use PNG format without transparency<br>- Provide all required sizes<br>- 1024x1024 for App Store<br>- Asset catalog automatically handles @2x/@3x | - Including transparency<br>- Wrong pixel dimensions<br>- Pre-rounding corners<br>- Missing required sizes |
+| **Launch Screen** | - Use storyboard or Info.plist<br>- Keep minimal and simple<br>- Support all device sizes<br>- Support dark mode | - Using as splash screen<br>- Including dynamic content<br>- Not testing cache behavior<br>- Including localizable text |
+| **Asset Catalog** | - Central location for all assets<br>- Automatic optimization<br>- Platform-specific variants<br>- Color and image sets | - Not organizing image sets properly<br>- Forgetting to set appearances<br>- Not using vector assets when appropriate |
+| **Alternate Icons** | - Configure in Info.plist<br>- Store outside asset catalog<br>- Use UIApplication API<br>- System alert cannot be suppressed | - Trying to suppress system alert<br>- Putting alternates in asset catalog<br>- Not checking supportsAlternateIcons<br>- Forgetting @2x/@3x versions |
+| **Testing** | - Delete and reinstall app<br>- Test on multiple devices<br>- Clear build folder<br>- Restart simulator/device | - Not clearing cache<br>- Only testing on one device size<br>- Assuming simulator matches device<br>- Not testing dark mode |
+
+## Conclusion
+
+App icons and launch screens are fundamental to your iOS app's user experience and App Store presence. By properly configuring your asset catalog, following Apple's guidelines, and avoiding common mistakes, you ensure your app makes a great first impression. Remember to test thoroughly across different devices and appearance modes, and always refer to Apple's Human Interface Guidelines for the latest requirements and best practices.

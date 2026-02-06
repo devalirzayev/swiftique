@@ -1,0 +1,562 @@
+---
+title: "Gesture Basics"
+description: "TapGesture, LongPressGesture, DragGesture, and gesture composition"
+sectionId: "3.2-gestures"
+sectionTitle: "Gestures & Interactions"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Gesture Basics in SwiftUI
+
+Gestures are how users interact with your iOS app through touch. SwiftUI provides a declarative API for recognizing and responding to common gestures like taps, long presses, and drags. Unlike UIKit's gesture recognizers, SwiftUI gestures are modifiers you attach directly to views, making them both powerful and easy to implement.
+
+Understanding gestures is essential because they're the primary way users navigate and manipulate content on iOS devices. Whether you're building a photo gallery that responds to pinches, a card interface that drags, or simply detecting button taps, mastering gesture basics is fundamental to creating intuitive iOS apps.
+
+## TapGesture
+
+`TapGesture` recognizes one or more taps on a view. It's the most common gesture you'll use.
+
+### Basic Tap
+
+```swift
+import SwiftUI
+
+struct BasicTapView: View {
+    @State private var tapCount = 0
+    
+    var body: some View {
+        Text("Tapped \(tapCount) times")
+            .padding()
+            .background(Color.blue)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            .onTapGesture {
+                tapCount += 1
+            }
+    }
+}
+```
+
+The `.onTapGesture` modifier is shorthand for attaching a `TapGesture`. For most cases, this convenience modifier is all you need.
+
+### Multiple Taps
+
+You can require multiple consecutive taps before the gesture triggers:
+
+```swift
+struct DoubleTapView: View {
+    @State private var isLiked = false
+    
+    var body: some View {
+        Image(systemName: isLiked ? "heart.fill" : "heart")
+            .font(.system(size: 100))
+            .foregroundColor(isLiked ? .red : .gray)
+            .onTapGesture(count: 2) {
+                isLiked.toggle()
+            }
+    }
+}
+```
+
+### Using the Gesture Modifier
+
+For more control, use the `.gesture()` modifier with an explicit `TapGesture`:
+
+```swift
+struct ExplicitTapView: View {
+    @State private var message = "Tap me"
+    
+    var body: some View {
+        Text(message)
+            .padding()
+            .background(Color.green)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            .gesture(
+                TapGesture()
+                    .onEnded { _ in
+                        message = "You tapped!"
+                    }
+            )
+    }
+}
+```
+
+**Common Mistake:** Forgetting that `onTapGesture(count:)` requires *all* taps to occur. A double-tap gesture won't trigger on a single tap—you'll need separate gestures if you want to handle both.
+
+## LongPressGesture
+
+`LongPressGesture` recognizes when a user presses and holds on a view for a specified duration.
+
+### Basic Long Press
+
+```swift
+struct BasicLongPressView: View {
+    @State private var isPressed = false
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(isPressed ? Color.red : Color.blue)
+            .frame(width: 200, height: 200)
+            .onLongPressGesture {
+                isPressed.toggle()
+            }
+            .overlay(
+                Text(isPressed ? "Activated!" : "Long press me")
+                    .foregroundColor(.white)
+            )
+    }
+}
+```
+
+### Customizing Duration
+
+You can specify the minimum press duration (default is 0.5 seconds):
+
+```swift
+struct CustomDurationView: View {
+    @State private var status = "Press and hold for 2 seconds"
+    
+    var body: some View {
+        Text(status)
+            .padding()
+            .background(Color.orange)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            .onLongPressGesture(minimumDuration: 2.0) {
+                status = "Long press complete!"
+            }
+    }
+}
+```
+
+### Monitoring Press State
+
+Use the `pressing` parameter to track when the press starts and ends:
+
+```swift
+struct PressingStateView: View {
+    @State private var isPressing = false
+    @State private var completed = false
+    
+    var body: some View {
+        Circle()
+            .fill(isPressing ? Color.yellow : Color.purple)
+            .frame(width: 150, height: 150)
+            .scaleEffect(isPressing ? 1.2 : 1.0)
+            .animation(.easeInOut, value: isPressing)
+            .onLongPressGesture(minimumDuration: 1.0, pressing: { pressing in
+                isPressing = pressing
+            }, perform: {
+                completed = true
+            })
+            .overlay(
+                Text(completed ? "Done!" : (isPressing ? "Keep holding..." : "Hold me"))
+                    .foregroundColor(.white)
+            )
+    }
+}
+```
+
+The `pressing` closure is called twice: once when the press begins (`true`) and once when it ends (`false`). The `perform` closure only executes if the minimum duration is met.
+
+**Common Mistake:** Confusing the `pressing` callback with the `perform` callback. The `pressing` closure fires on touch down and touch up, while `perform` only fires after the minimum duration is met and the user releases.
+
+## DragGesture
+
+`DragGesture` recognizes dragging motions and provides continuous updates about the drag's location and translation.
+
+### Basic Drag
+
+```swift
+struct BasicDragView: View {
+    @State private var offset = CGSize.zero
+    
+    var body: some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: 100, height: 100)
+            .offset(offset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        offset = value.translation
+                    }
+                    .onEnded { _ in
+                        // Reset to center
+                        offset = .zero
+                    }
+            )
+    }
+}
+```
+
+The `value` parameter in `onChanged` contains useful properties:
+- `translation`: The total offset from the starting point (`CGSize`)
+- `location`: The current location in the view's coordinate space (`CGPoint`)
+- `startLocation`: Where the drag began (`CGPoint`)
+
+### Persistent Drag
+
+To make the view stay where the user drags it:
+
+```swift
+struct PersistentDragView: View {
+    @State private var position = CGPoint(x: 100, y: 100)
+    
+    var body: some View {
+        Circle()
+            .fill(Color.green)
+            .frame(width: 80, height: 80)
+            .position(position)
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { value in
+                        position = value.location
+                    }
+            )
+    }
+}
+```
+
+### Constrained Drag
+
+Limit dragging to a specific axis or boundary:
+
+```swift
+struct ConstrainedDragView: View {
+    @State private var offsetX: CGFloat = 0
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Color.red)
+            .frame(width: 100, height: 100)
+            .offset(x: offsetX, y: 0)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only horizontal movement, constrained between -150 and 150
+                        offsetX = min(max(value.translation.width, -150), 150)
+                    }
+            )
+    }
+}
+```
+
+### Drag with Animation
+
+Add smooth animations when the drag ends:
+
+```swift
+struct AnimatedDragView: View {
+    @State private var offset = CGSize.zero
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 20)
+            .fill(Color.purple)
+            .frame(width: 120, height: 120)
+            .offset(offset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        offset = value.translation
+                    }
+                    .onEnded { value in
+                        withAnimation(.spring()) {
+                            offset = .zero
+                        }
+                    }
+            )
+    }
+}
+```
+
+**Common Mistake:** Using `.offset()` without understanding coordinate spaces. The `translation` property gives you the offset *from the start of the drag*, not an absolute position. If you need absolute positioning, use `.position()` with `coordinateSpace: .global`.
+
+## Gesture Composition
+
+SwiftUI lets you combine gestures in powerful ways using operators and modifiers.
+
+### Simultaneous Gestures
+
+Both gestures recognize at the same time:
+
+```swift
+struct SimultaneousGesturesView: View {
+    @State private var offset = CGSize.zero
+    @State private var tapCount = 0
+    
+    var body: some View {
+        Rectangle()
+            .fill(Color.orange)
+            .frame(width: 150, height: 150)
+            .offset(offset)
+            .gesture(
+                SimultaneousGesture(
+                    DragGesture()
+                        .onChanged { value in
+                            offset = value.translation
+                        }
+                        .onEnded { _ in
+                            withAnimation {
+                                offset = .zero
+                            }
+                        },
+                    TapGesture()
+                        .onEnded { _ in
+                            tapCount += 1
+                        }
+                )
+            )
+            .overlay(
+                Text("Taps: \(tapCount)")
+                    .foregroundColor(.white)
+            )
+    }
+}
+```
+
+### Sequenced Gestures
+
+The second gesture only recognizes after the first completes:
+
+```swift
+struct SequencedGesturesView: View {
+    @State private var isLongPressing = false
+    @State private var offset = CGSize.zero
+    
+    var body: some View {
+        Circle()
+            .fill(isLongPressing ? Color.green : Color.gray)
+            .frame(width: 100, height: 100)
+            .offset(offset)
+            .scaleEffect(isLongPressing ? 1.2 : 1.0)
+            .gesture(
+                SequenceGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            isLongPressing = true
+                        },
+                    DragGesture()
+                        .onChanged { value in
+                            offset = value.translation
+                        }
+                        .onEnded { _ in
+                            isLongPressing = false
+                            withAnimation {
+                                offset = .zero
+                            }
+                        }
+                )
+            )
+    }
+}
+```
+
+This creates a "long press then drag" interaction—the drag only activates after the long press completes.
+
+### Exclusive Gestures
+
+Only one gesture can succeed—the first to recognize wins:
+
+```swift
+struct ExclusiveGesturesView: View {
+    @State private var horizontalOffset: CGFloat = 0
+    @State private var verticalOffset: CGFloat = 0
+    
+    var body: some View {
+        Rectangle()
+            .fill(Color.blue)
+            .frame(width: 100, height: 100)
+            .offset(x: horizontalOffset, y: verticalOffset)
+            .gesture(
+                ExclusiveGesture(
+                    DragGesture(minimumDistance: 30)
+                        .onChanged { value in
+                            horizontalOffset = value.translation.width
+                        }
+                        .onEnded { _ in
+                            withAnimation {
+                                horizontalOffset = 0
+                            }
+                        },
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            verticalOffset = value.translation.height
+                        }
+                        .onEnded { _ in
+                            withAnimation {
+                                verticalOffset = 0
+                            }
+                        }
+                )
+            )
+    }
+}
+```
+
+### High Priority vs. Low Priority Gestures
+
+Control which view's gestures take precedence in the view hierarchy:
+
+```swift
+struct GesturePriorityView: View {
+    @State private var outerTap = 0
+    @State private var innerTap = 0
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Default: inner gesture takes priority
+            ZStack {
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: 200, height: 200)
+                    .onTapGesture {
+                        outerTap += 1
+                    }
+                
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 100, height: 100)
+                    .onTapGesture {
+                        innerTap += 1
+                    }
+            }
+            
+            Text("Outer: \(outerTap), Inner: \(innerTap)")
+            
+            // highPriorityGesture: outer gesture takes priority
+            ZStack {
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: 200, height: 200)
+                    .highPriorityGesture(
+                        TapGesture()
+                            .onEnded { _ in
+                                outerTap += 1
+                            }
+                    )
+                
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 100, height: 100)
+                    .onTapGesture {
+                        innerTap += 1
+                    }
+            }
+        }
+    }
+}
+```
+
+**Common Mistake:** Not understanding gesture priority. By default, child views' gestures take precedence over parent views. Use `.highPriorityGesture()` on a parent to reverse this, or `.simultaneousGesture()` to allow both to fire.
+
+## Gesture State and GestureState
+
+For temporary state that should automatically reset when the gesture ends, use `@GestureState`:
+
+```swift
+struct GestureStateView: View {
+    @GestureState private var isDragging = false
+    @State private var position = CGPoint(x: 100, y: 100)
+    
+    var body: some View {
+        Circle()
+            .fill(isDragging ? Color.yellow : Color.blue)
+            .frame(width: 100, height: 100)
+            .position(position)
+            .scaleEffect(isDragging ? 1.3 : 1.0)
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .updating($isDragging) { value, state, transaction in
+                        state = true
+                    }
+                    .onEnded { value in
+                        position = value.location
+                    }
+            )
+    }
+}
+```
+
+`@GestureState` automatically resets to its default value when the gesture ends. This is perfect for temporary visual states like scaling or highlighting during interaction.
+
+### Complex GestureState Example
+
+You can use any type with `@GestureState`:
+
+```swift
+struct ComplexGestureStateView: View {
+    @GestureState private var dragState = DragState.inactive
+    @State private var viewOffset = CGSize.zero
+    
+    enum DragState {
+        case inactive
+        case dragging(translation: CGSize)
+        
+        var translation: CGSize {
+            switch self {
+            case .inactive:
+                return .zero
+            case .dragging(let translation):
+                return translation
+            }
+        }
+        
+        var isDragging: Bool {
+            switch self {
+            case .inactive:
+                return false
+            case .dragging:
+                return true
+            }
+        }
+    }
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 15)
+            .fill(dragState.isDragging ? Color.green : Color.blue)
+            .frame(width: 120, height: 120)
+            .offset(x: viewOffset.width + dragState.translation.width,
+                   y: viewOffset.height + dragState.translation.height)
+            .scaleEffect(dragState.isDragging ? 1.1 : 1.0)
+            .gesture(
+                DragGesture()
+                    .updating($dragState) { value, state, _ in
+                        state = .dragging(translation: value.translation)
+                    }
+                    .onEnded { value in
+                        viewOffset.width += value.translation.width
+                        viewOffset.height += value.translation.height
+                    }
+            )
+            .animation(.interactiveSpring(), value: dragState.isDragging)
+    }
+}
+```
+
+`@GestureState` automatically resets to its initial value when the gesture ends, which is why we store the final position separately in `viewOffset`.
+
+## Summary Table
+
+| Gesture | Trigger | Key Values | Common Use |
+|---------|---------|------------|------------|
+| **TapGesture** | Tap (single/double/triple) | `count` | Buttons, toggles, selections |
+| **LongPressGesture** | Press and hold | `minimumDuration` | Context menus, delete confirmation |
+| **DragGesture** | Pan/swipe | `translation`, `startLocation`, `predictedEndTranslation` | Moving views, swiping cards |
+| **MagnificationGesture** | Pinch | `magnitude` (scale factor) | Zooming images, resizing |
+| **RotationGesture** | Two-finger rotate | `rotation` (Angle) | Rotating views |
+| **@GestureState** | Any gesture | Auto-resets on end | Transient gesture state |
+| **.onChanged** | During gesture | Current gesture value | Real-time updates |
+| **.onEnded** | Gesture completes | Final gesture value | Committing changes |
+| **.updating** | During gesture | Binds to @GestureState | Efficient transient state |
+
+## Official Resources
+
+- [Apple Documentation: Gestures](https://developer.apple.com/documentation/swiftui/gestures)
+- [Apple Documentation: DragGesture](https://developer.apple.com/documentation/swiftui/draggesture)
+- [Apple Documentation: GestureState](https://developer.apple.com/documentation/swiftui/gesturestate)
+- [Human Interface Guidelines: Gestures](https://developer.apple.com/design/human-interface-guidelines/gestures)

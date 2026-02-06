@@ -1,0 +1,728 @@
+---
+title: "MVVM Pattern"
+description: "Model-View-ViewModel architecture in SwiftUI apps"
+sectionId: "5.1-design-patterns"
+sectionTitle: "Design Patterns"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# MVVM Pattern in SwiftUI
+
+MVVM (Model-View-ViewModel) is an architectural pattern that separates your app's data (Model), user interface (View), and business logic (ViewModel). While SwiftUI doesn't enforce any specific architecture, MVVM has become the de facto standard because it aligns naturally with SwiftUI's declarative syntax and data flow mechanisms.
+
+## Why MVVM Matters
+
+Without a clear architecture, SwiftUI views quickly become bloated with business logic, network calls, and data manipulation. MVVM solves this by:
+
+- **Separating concerns**: Each component has a single, clear responsibility
+- **Improving testability**: You can test business logic without instantiating views
+- **Enhancing reusability**: ViewModels can be shared across multiple views
+- **Making code maintainable**: Changes to business logic don't require view modifications
+
+## The Three Components
+
+### Model
+
+The Model represents your app's data structures. These are typically simple Swift structs or classes that conform to `Codable`, `Identifiable`, or other protocols as needed.
+
+```swift
+struct User: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var email: String
+    var age: Int
+}
+
+struct Task: Identifiable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+    var dueDate: Date
+}
+```
+
+Models should be "dumb" — they contain data and perhaps some computed properties, but no business logic or data fetching code.
+
+### View
+
+The View displays data and captures user input. In SwiftUI, views observe the ViewModel using property wrappers like `@StateObject` or `@ObservedObject`.
+
+```swift
+struct UserListView: View {
+    @StateObject private var viewModel = UserListViewModel()
+    
+    var body: some View {
+        NavigationStack {
+            List(viewModel.users) { user in
+                VStack(alignment: .leading) {
+                    Text(user.name)
+                        .font(.headline)
+                    Text(user.email)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Users")
+            .task {
+                await viewModel.loadUsers()
+            }
+            .overlay {
+                if viewModel.isLoading {
+                    ProgressView()
+                }
+            }
+        }
+    }
+}
+```
+
+Views should be as "dumb" as possible — they display what the ViewModel provides and call ViewModel methods in response to user actions.
+
+### ViewModel
+
+The ViewModel contains business logic, performs data transformations, and manages state. It must conform to `ObservableObject` and use `@Published` for properties that trigger view updates.
+
+```swift
+@MainActor
+class UserListViewModel: ObservableObject {
+    @Published var users: [User] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private let userService: UserService
+    
+    init(userService: UserService = UserService()) {
+        self.userService = userService
+    }
+    
+    func loadUsers() async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            users = try await userService.fetchUsers()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        
+        isLoading = false
+    }
+    
+    func deleteUser(_ user: User) {
+        users.removeAll { $0.id == user.id }
+    }
+}
+```
+
+The `@MainActor` attribute ensures all UI updates happen on the main thread, which is critical when working with asynchronous code.
+
+## Complete Example: Task Management App
+
+Let's build a simple task manager to see how all components work together.
+
+### Model
+
+```swift
+struct Task: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+    var priority: Priority
+    
+    enum Priority: String, Codable, CaseIterable {
+        case low = "Low"
+        case medium = "Medium"
+        case high = "High"
+    }
+    
+    init(id: UUID = UUID(), title: String, isCompleted: Bool = false, priority: Priority = .medium) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+        self.priority = priority
+    }
+}
+```
+
+### ViewModel
+
+```swift
+@MainActor
+class TaskViewModel: ObservableObject {
+    @Published var tasks: [Task] = []
+    @Published var filter: TaskFilter = .all
+    
+    enum TaskFilter {
+        case all, active, completed
+    }
+    
+    // Computed property for filtered tasks
+    var filteredTasks: [Task] {
+        switch filter {
+        case .all:
+            return tasks
+        case .active:
+            return tasks.filter { !$0.isCompleted }
+        case .completed:
+            return tasks.filter { $0.isCompleted }
+        }
+    }
+    
+    // Computed property for statistics
+    var completionRate: Double {
+        guard !tasks.isEmpty else { return 0 }
+        let completed = tasks.filter { $0.isCompleted }.count
+        return Double(completed) / Double(tasks.count)
+    }
+    
+    func addTask(title: String, priority: Task.Priority) {
+        let task = Task(title: title, priority: priority)
+        tasks.append(task)
+    }
+    
+    func toggleCompletion(for task: Task) {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else {
+            return
+        }
+        tasks[index].isCompleted.toggle()
+    }
+    
+    func deleteTask(_ task: Task) {
+        tasks.removeAll { $0.id == task.id }
+    }
+    
+    func deleteTask(at offsets: IndexSet) {
+        tasks.remove(atOffsets: offsets)
+    }
+}
+```
+
+### View
+
+```swift
+struct TaskListView: View {
+    @StateObject private var viewModel = TaskViewModel()
+    @State private var showingAddTask = false
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                // Statistics header
+                StatisticsView(completionRate: viewModel.completionRate)
+                
+                // Filter picker
+                Picker("Filter", selection: $viewModel.filter) {
+                    Text("All").tag(TaskViewModel.TaskFilter.all)
+                    Text("Active").tag(TaskViewModel.TaskFilter.active)
+                    Text("Completed").tag(TaskViewModel.TaskFilter.completed)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+                
+                // Task list
+                List {
+                    ForEach(viewModel.filteredTasks) { task in
+                        TaskRow(task: task) {
+                            viewModel.toggleCompletion(for: task)
+                        }
+                    }
+                    .onDelete(perform: viewModel.deleteTask)
+                }
+            }
+            .navigationTitle("Tasks")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showingAddTask = true }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddTask) {
+                AddTaskView(viewModel: viewModel)
+            }
+        }
+    }
+}
+
+struct TaskRow: View {
+    let task: Task
+    let onToggle: () -> Void
+    
+    var body: some View {
+        HStack {
+            Button(action: onToggle) {
+                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(task.isCompleted ? .green : .gray)
+            }
+            .buttonStyle(.plain)
+            
+            VStack(alignment: .leading) {
+                Text(task.title)
+                    .strikethrough(task.isCompleted)
+                Text(task.priority.rawValue)
+                    .font(.caption)
+                    .foregroundColor(priorityColor(task.priority))
+            }
+        }
+    }
+    
+    private func priorityColor(_ priority: Task.Priority) -> Color {
+        switch priority {
+        case .low: return .blue
+        case .medium: return .orange
+        case .high: return .red
+        }
+    }
+}
+
+struct StatisticsView: View {
+    let completionRate: Double
+    
+    var body: some View {
+        HStack {
+            Text("Completion Rate:")
+            Text("\(Int(completionRate * 100))%")
+                .bold()
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.1))
+    }
+}
+
+struct AddTaskView: View {
+    @ObservedObject var viewModel: TaskViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var title = ""
+    @State private var priority: Task.Priority = .medium
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Task Title", text: $title)
+                
+                Picker("Priority", selection: $priority) {
+                    ForEach(Task.Priority.allCases, id: \.self) { priority in
+                        Text(priority.rawValue).tag(priority)
+                    }
+                }
+            }
+            .navigationTitle("Add Task")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        viewModel.addTask(title: title, priority: priority)
+                        dismiss()
+                    }
+                    .disabled(title.isEmpty)
+                }
+            }
+        }
+    }
+}
+```
+
+## Property Wrappers: @StateObject vs @ObservedObject
+
+Understanding when to use each property wrapper is crucial:
+
+### @StateObject
+
+Use `@StateObject` when the view **owns** the ViewModel lifecycle. The view creates and manages the ViewModel's lifetime.
+
+```swift
+struct ParentView: View {
+    @StateObject private var viewModel = TaskViewModel()
+    
+    var body: some View {
+        // This view owns the ViewModel
+        TaskListView()
+    }
+}
+```
+
+**When to use**: In the view that creates the ViewModel instance.
+
+### @ObservedObject
+
+Use `@ObservedObject` when the ViewModel is **passed in** from a parent view.
+
+```swift
+struct ChildView: View {
+    @ObservedObject var viewModel: TaskViewModel
+    
+    var body: some View {
+        // This view receives the ViewModel from parent
+        Text("\(viewModel.tasks.count) tasks")
+    }
+}
+```
+
+**When to use**: In child views that receive a ViewModel instance.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Using @MainActor
+
+**Problem**: Updating `@Published` properties from background threads causes runtime warnings and potential crashes.
+
+```swift
+// ❌ Wrong
+class UserViewModel: ObservableObject {
+    @Published var users: [User] = []
+    
+    func loadUsers() {
+        Task {
+            users = try await fetchUsers() // Could be on background thread!
+        }
+    }
+}
+```
+
+**Solution**: Mark the ViewModel with `@MainActor` or explicitly dispatch to main thread.
+
+```swift
+// ✅ Correct
+@MainActor
+class UserViewModel: ObservableObject {
+    @Published var users: [User] = []
+    
+    func loadUsers() async {
+        users = try await fetchUsers() // Guaranteed on main thread
+    }
+}
+```
+
+### Mistake 2: Business Logic in Views
+
+**Problem**: Putting calculations or data transformations in the view.
+
+```swift
+// ❌ Wrong
+struct TaskListView: View {
+    @StateObject private var viewModel = TaskViewModel()
+    
+    var body: some View {
+        let completedCount = viewModel.tasks.filter { $0.isCompleted }.count
+        let percentage = Double(completedCount) / Double(viewModel.tasks.count)
+        
+        Text("Completion: \(Int(percentage * 100))%")
+    }
+}
+```
+
+**Solution**: Move logic to the ViewModel.
+
+```swift
+// ✅ Correct
+@MainActor
+class TaskViewModel: ObservableObject {
+    @Published var tasks: [Task] = []
+    
+    var completionPercentage: Int {
+        guard !tasks.isEmpty else { return 0 }
+        let completed = tasks.filter { $0.isCompleted }.count
+        return Int(Double(completed) / Double(tasks.count) * 100)
+    }
+}
+
+struct TaskListView: View {
+    @StateObject private var viewModel = TaskViewModel()
+    
+    var body: some View {
+        Text("Completion: \(viewModel.completionPercentage)%")
+    }
+}
+```
+
+### Mistake 3: Creating Dependencies Inside ViewModels
+
+**Problem**: Hard-coding dependencies makes testing difficult.
+
+```swift
+// ❌ Wrong
+@MainActor
+class UserViewModel: ObservableObject {
+    func loadUsers() async {
+        let service = NetworkService() // Hard-coded dependency
+        users = try await service.fetchUsers()
+    }
+}
+```
+
+**Solution**: Use dependency injection via initializer.
+
+```swift
+// ✅ Correct
+@MainActor
+class UserViewModel: ObservableObject {
+    private let networkService: NetworkService
+    
+    init(networkService: NetworkService = NetworkService()) {
+        self.networkService = networkService
+    }
+    
+    func loadUsers() async {
+        users = try await networkService.fetchUsers()
+    }
+}
+
+// Now easily testable with mock services
+let mockService = MockNetworkService()
+let viewModel = UserViewModel(networkService: mockService)
+```
+
+### Mistake 4: Using @Published with Value Types Incorrectly
+
+**Problem**: Modifying nested properties doesn't trigger view updates.
+
+```swift
+// ⚠️ Potential issue
+@MainActor
+class ViewModel: ObservableObject {
+    @Published var user: User = User(name: "John")
+    
+    func updateName() {
+        user.name = "Jane" // This WILL trigger update (User is a struct)
+    }
+}
+
+@MainActor
+class ViewModel: ObservableObject {
+    @Published var users: [User] = []
+    
+    func updateFirstUser() {
+        users[0].name = "Jane" // This WILL trigger update (array is a value type)
+    }
+}
+```
+
+Actually, this works fine with value types (structs, arrays). The issue arises with reference types:
+
+```swift
+// ❌ Problem with reference types
+class UserSettings {
+    var theme: String = "dark"
+}
+
+@MainActor
+class ViewModel: ObservableObject {
+    @Published var settings = UserSettings()
+    
+    func changeTheme() {
+        settings.theme = "light" // Won't trigger view update!
+    }
+}
+```
+
+**Solution**: Either use `objectWillChange.send()` or make the property a value type.
+
+```swift
+// ✅ Solution 1: Manual notification
+func changeTheme() {
+    settings.theme = "light"
+    objectWillChange.send()
+}
+
+// ✅ Solution 2: Use struct instead
+struct UserSettings {
+    var theme: String = "dark"
+}
+```
+
+## Testing ViewModels
+
+One of MVVM's biggest advantages is testability. ViewModels can be tested without instantiating views.
+
+```swift
+import XCTest
+@testable import YourApp
+
+@MainActor
+final class TaskViewModelTests: XCTestCase {
+    var viewModel: TaskViewModel!
+    
+    override func setUp() {
+        super.setUp()
+        viewModel = TaskViewModel()
+    }
+    
+    override func tearDown() {
+        viewModel = nil
+        super.tearDown()
+    }
+    
+    func testAddTask() {
+        // Given
+        let initialCount = viewModel.tasks.count
+        
+        // When
+        viewModel.addTask(title: "Test Task", priority: .high)
+        
+        // Then
+        XCTAssertEqual(viewModel.tasks.count, initialCount + 1)
+        XCTAssertEqual(viewModel.tasks.last?.title, "Test Task")
+        XCTAssertEqual(viewModel.tasks.last?.priority, .high)
+    }
+    
+    func testToggleCompletion() {
+        // Given
+        viewModel.addTask(title: "Test", priority: .low)
+        let task = viewModel.tasks.first!
+
+        // When
+        viewModel.toggleCompletion(for: task)
+
+        // Then
+        XCTAssertTrue(viewModel.tasks.first!.isCompleted)
+    }
+
+    func testFilteredTasks() {
+        // Given
+        viewModel.addTask(title: "Active", priority: .low)
+        viewModel.addTask(title: "Done", priority: .high)
+        viewModel.toggleCompletion(for: viewModel.tasks.last!)
+
+        // When
+        viewModel.filter = .completed
+
+        // Then
+        XCTAssertEqual(viewModel.filteredTasks.count, 1)
+        XCTAssertEqual(viewModel.filteredTasks.first?.title, "Done")
+    }
+
+    func testCompletionRate() {
+        // Given
+        viewModel.addTask(title: "Task 1", priority: .low)
+        viewModel.addTask(title: "Task 2", priority: .low)
+        viewModel.toggleCompletion(for: viewModel.tasks.first!)
+
+        // Then
+        XCTAssertEqual(viewModel.completionRate, 0.5, accuracy: 0.01)
+    }
+}
+```
+
+## Modern Alternative: MVVM with @Observable (iOS 17+)
+
+Starting with iOS 17, the `@Observable` macro provides a simpler, more performant way to implement ViewModels. Here's how the same task manager looks using the modern approach:
+
+```swift
+import Observation
+
+@Observable
+@MainActor
+class TaskViewModel {
+    var tasks: [Task] = []
+    var filter: TaskFilter = .all
+
+    enum TaskFilter {
+        case all, active, completed
+    }
+
+    var filteredTasks: [Task] {
+        switch filter {
+        case .all: return tasks
+        case .active: return tasks.filter { !$0.isCompleted }
+        case .completed: return tasks.filter { $0.isCompleted }
+        }
+    }
+
+    var completionRate: Double {
+        guard !tasks.isEmpty else { return 0 }
+        return Double(tasks.filter(\.isCompleted).count) / Double(tasks.count)
+    }
+
+    func addTask(title: String, priority: Task.Priority) {
+        tasks.append(Task(title: title, priority: priority))
+    }
+
+    func toggleCompletion(for task: Task) {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        tasks[index].isCompleted.toggle()
+    }
+}
+```
+
+The view changes are minimal but important:
+
+```swift
+struct TaskListView: View {
+    // @State instead of @StateObject
+    @State private var viewModel = TaskViewModel()
+    @State private var showingAddTask = false
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                StatisticsView(completionRate: viewModel.completionRate)
+
+                Picker("Filter", selection: $viewModel.filter) {
+                    Text("All").tag(TaskViewModel.TaskFilter.all)
+                    Text("Active").tag(TaskViewModel.TaskFilter.active)
+                    Text("Completed").tag(TaskViewModel.TaskFilter.completed)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+
+                List {
+                    ForEach(viewModel.filteredTasks) { task in
+                        TaskRow(task: task) {
+                            viewModel.toggleCompletion(for: task)
+                        }
+                    }
+                    .onDelete { viewModel.tasks.remove(atOffsets: $0) }
+                }
+            }
+            .navigationTitle("Tasks")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showingAddTask = true }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddTask) {
+                AddTaskView(viewModel: viewModel)
+            }
+        }
+    }
+}
+```
+
+**Key differences with @Observable:**
+
+| ObservableObject MVVM | @Observable MVVM |
+|----------------------|-----------------|
+| `class VM: ObservableObject` | `@Observable class VM` |
+| `@Published var` properties | Plain `var` properties |
+| `@StateObject private var vm` | `@State private var vm` |
+| `@ObservedObject var vm` | Pass directly or `@Bindable var vm` |
+| Updates all observing views | Only updates views reading changed properties |
+
+Both approaches are valid. Use `ObservableObject` for iOS 13-16 compatibility, and `@Observable` for iOS 17+ projects.
+
+## Summary Table
+
+| Concept | Role | Key Points |
+|---------|------|------------|
+| **Model** | Data structures | Simple structs, `Codable`, `Identifiable` |
+| **View** | UI display | Observes ViewModel, minimal logic |
+| **ViewModel** | Business logic | `ObservableObject` or `@Observable`, `@MainActor` |
+| `@StateObject` | View-owned VM | Creates and manages lifecycle |
+| `@ObservedObject` | Passed-in VM | Observes VM from parent |
+| `@MainActor` | Thread safety | Ensures UI updates on main thread |
+
+## Official Resources
+
+- [Apple Documentation: Model-View-ViewModel](https://developer.apple.com/documentation/swiftui/model-data)
+- [WWDC 2023: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)
+- [Apple Tutorial: Developing Apps for iOS](https://developer.apple.com/tutorials/app-dev-training)

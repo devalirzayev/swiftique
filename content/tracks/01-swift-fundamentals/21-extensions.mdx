@@ -1,0 +1,502 @@
+---
+title: "Extensions"
+description: "Adding functionality to existing types with extensions"
+sectionId: "1.8-protocols-generics"
+sectionTitle: "Protocols & Generics"
+order: 21
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Extensions in Swift
+
+Extensions allow you to add new functionality to existing types—including classes, structs, enums, and protocols—even when you don't have access to the original source code. This is one of Swift's most powerful features, enabling you to enhance both your own types and those from Apple's frameworks.
+
+## Why Extensions Matter
+
+In many languages, if you want to add functionality to an existing type, you'd need to either modify the original code or create a subclass. Extensions provide a cleaner alternative:
+
+- **Extend types you don't own**: Add methods to `String`, `Int`, or `UIViewController` without subclassing
+- **Organize code**: Split a type's implementation across multiple files based on functionality
+- **Protocol conformance**: Add protocol implementations separately from the main type definition
+- **Maintain type identity**: Unlike subclasses, extensions don't create new types
+
+## Basic Syntax
+
+The basic syntax for declaring an extension is straightforward:
+
+```swift
+extension SomeType {
+    // new functionality goes here
+}
+```
+
+Let's start with a practical example—adding a method to check if an integer is even:
+
+```swift
+extension Int {
+    func isEven() -> Bool {
+        return self % 2 == 0
+    }
+}
+
+let number = 42
+print(number.isEven()) // true
+
+let oddNumber = 7
+print(oddNumber.isEven()) // false
+```
+
+## Computed Properties
+
+Extensions can add computed properties (but not stored properties):
+
+```swift
+extension Double {
+    var km: Double { return self * 1_000.0 }
+    var m: Double { return self }
+    var cm: Double { return self / 100.0 }
+    var mm: Double { return self / 1_000.0 }
+}
+
+let marathon = 42.km
+print(marathon) // 42000.0
+
+let height = 175.cm
+print(height) // 1.75
+```
+
+This creates a readable API for unit conversions—a common use case for extensions.
+
+## Initializers
+
+Extensions can add convenience initializers to classes and any initializers to structs:
+
+```swift
+struct Size {
+    var width: Double
+    var height: Double
+}
+
+extension Size {
+    init(square: Double) {
+        self.init(width: square, height: square)
+    }
+}
+
+let squareSize = Size(square: 50.0)
+print(squareSize) // Size(width: 50.0, height: 50.0)
+```
+
+### Important Limitation for Classes
+
+For classes, extensions can only add convenience initializers, not designated initializers or deinitializers:
+
+```swift
+class Person {
+    var name: String
+    
+    init(name: String) {
+        self.name = name
+    }
+}
+
+extension Person {
+    // This is valid - convenience initializer
+    convenience init() {
+        self.init(name: "Unknown")
+    }
+    
+    // This would cause a compile error - designated initializer
+    // init(name: String, age: Int) {
+    //     self.name = name
+    // }
+}
+```
+
+## Methods
+
+Extensions can add both instance methods and type methods:
+
+```swift
+extension String {
+    func trimmed() -> String {
+        return self.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    mutating func trim() {
+        self = self.trimmed()
+    }
+    
+    static func empty() -> String {
+        return ""
+    }
+}
+
+var greeting = "  Hello, World!  "
+print(greeting.trimmed()) // "Hello, World!"
+
+greeting.trim()
+print(greeting) // "Hello, World!"
+
+let emptyString = String.empty()
+```
+
+Note the difference between `trimmed()` (returns a new value) and `trim()` (mutates self).
+
+## Protocol Conformance
+
+Extensions excel at organizing protocol conformance, keeping your code clean and modular:
+
+```swift
+struct Article {
+    var title: String
+    var author: String
+    var wordCount: Int
+}
+
+extension Article: CustomStringConvertible {
+    var description: String {
+        return "\"\(title)\" by \(author) (\(wordCount) words)"
+    }
+}
+
+extension Article: Comparable {
+    static func < (lhs: Article, rhs: Article) -> Bool {
+        return lhs.wordCount < rhs.wordCount
+    }
+}
+
+let article1 = Article(title: "Swift Basics", author: "Jane", wordCount: 500)
+let article2 = Article(title: "Advanced Swift", author: "John", wordCount: 1200)
+
+print(article1) // "Swift Basics" by Jane (500 words)
+print(article1 < article2) // true
+```
+
+## Protocol Extensions
+
+You can extend protocols themselves to provide default implementations:
+
+```swift
+protocol Identifiable {
+    var id: String { get }
+}
+
+extension Identifiable {
+    func displayID() {
+        print("ID: \(id)")
+    }
+}
+
+struct User: Identifiable {
+    var id: String
+    var name: String
+}
+
+let user = User(id: "user123", name: "Alice")
+user.displayID() // ID: user123
+```
+
+This is powerful because any type conforming to `Identifiable` automatically gets the `displayID()` method.
+
+## Conditional Extensions
+
+You can add functionality only when certain conditions are met using `where` clauses:
+
+```swift
+extension Array where Element: Numeric {
+    func sum() -> Element {
+        return reduce(0, +)
+    }
+}
+
+let numbers = [1, 2, 3, 4, 5]
+print(numbers.sum()) // 15
+
+let doubles = [1.5, 2.5, 3.0]
+print(doubles.sum()) // 7.0
+
+// This won't compile - String is not Numeric
+// let strings = ["a", "b", "c"]
+// print(strings.sum())
+```
+
+## Nested Types
+
+Extensions can add nested types to existing types:
+
+```swift
+extension Int {
+    enum Kind {
+        case negative, zero, positive
+    }
+    
+    var kind: Kind {
+        switch self {
+        case 0:
+            return .zero
+        case let x where x > 0:
+            return .positive
+        default:
+            return .negative
+        }
+    }
+}
+
+let number = -5
+print(number.kind) // negative
+
+let zero = 0
+print(zero.kind) // zero
+```
+
+## Organizing Code with Extensions
+
+A common pattern is to organize your code by splitting implementation across multiple extensions:
+
+```swift
+class ViewController: UIViewController {
+    // Basic view controller setup
+}
+
+// MARK: - UITableViewDataSource
+extension ViewController: UITableViewDataSource {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return 10
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        return UITableViewCell()
+    }
+}
+
+// MARK: - UITableViewDelegate
+extension ViewController: UITableViewDelegate {
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Handle selection
+    }
+}
+```
+
+This approach improves readability by grouping related functionality together.
+
+## Common Mistakes and Limitations
+
+### 1. No Stored Properties
+
+Extensions cannot add stored properties—only computed properties:
+
+```swift
+extension String {
+    // ❌ This will NOT compile
+    // var customProperty: String = ""
+    
+    // ✅ This is fine
+    var uppercasedFirst: String {
+        guard let first = first else { return self }
+        return first.uppercased() + dropFirst()
+    }
+}
+```
+
+### 2. Cannot Override Existing Functionality
+
+Extensions can add new methods but cannot override existing ones:
+
+```swift
+extension Int {
+    // ❌ Cannot override existing method
+    // func advanced(by n: Int) -> Int {
+    //     return self + n + 1
+    // }
+    
+    // ✅ Can add new method with different name
+    func advancedBy(_ n: Int, andMultipliedBy m: Int) -> Int {
+        return (self + n) * m
+    }
+}
+```
+
+### 3. Access Control Considerations
+
+Extensions have the same access level as the original type by default, but you can be more restrictive:
+
+```swift
+public struct APIClient {
+    public var baseURL: String
+}
+
+// This extension is internal by default
+extension APIClient {
+    func makeRequest() {
+        // Internal method
+    }
+}
+
+// Explicitly private extension
+private extension APIClient {
+    func validateCredentials() {
+        // Private method
+    }
+}
+```
+
+### 4. Memberwise Initializers
+
+Adding a custom initializer in an extension to a struct preserves the automatic memberwise initializer:
+
+```swift
+struct Point {
+    var x: Double
+    var y: Double
+}
+
+extension Point {
+    init(both: Double) {
+        self.init(x: both, y: both)
+    }
+}
+
+// Both initializers are available
+let point1 = Point(x: 1.0, y: 2.0) // Memberwise initializer still works
+let point2 = Point(both: 5.0) // Extension initializer
+```
+
+If you add the initializer directly to the struct, you'd lose the memberwise initializer.
+
+### 5. Extensions Are Static
+
+Extensions are resolved at compile time, not runtime. This means they don't participate in dynamic dispatch the same way subclass methods do:
+
+```swift
+class Animal {
+    func makeSound() {
+        print("Some sound")
+    }
+}
+
+extension Animal {
+    func extendedSound() {
+        print("Extended sound")
+    }
+}
+
+class Dog: Animal {
+    override func makeSound() {
+        print("Woof")
+    }
+    
+    // Cannot override extension methods
+    // override func extendedSound() {
+    //     print("Loud woof")
+    // }
+}
+
+let animal: Animal = Dog()
+animal.makeSound() // "Woof" - polymorphic behavior
+animal.extendedSound() // "Extended sound" - no polymorphism
+```
+
+## Real-World Examples
+
+### UIColor Extension for Hex Colors
+
+```swift
+import UIKit
+
+extension UIColor {
+    convenience init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+        
+        var rgb: UInt64 = 0
+        
+        guard Scanner(string: hexSanitized).scanHexInt64(&rgb) else {
+            return nil
+        }
+        
+        guard hexSanitized.count == 6 else {
+            return nil
+        }
+        
+        self.init(
+            red: CGFloat((rgb & 0xFF0000) >> 16) / 255.0,
+            green: CGFloat((rgb & 0x00FF00) >> 8) / 255.0,
+            blue: CGFloat(rgb & 0x0000FF) / 255.0,
+            alpha: 1.0
+        )
+    }
+}
+
+let color = UIColor(hex: "#FF5733")
+```
+
+### Collection Extension for Safe Access
+
+```swift
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
+
+let numbers = [1, 2, 3]
+print(numbers[safe: 5]) // nil instead of crash
+print(numbers[safe: 1]) // Optional(2)
+```
+
+### Date Extension for Readability
+
+```swift
+import Foundation
+
+extension Date {
+    var isToday: Bool {
+        Calendar.current.isDateInToday(self)
+    }
+    
+    var isYesterday: Bool {
+        Calendar.current.isDateInYesterday(self)
+    }
+    
+    func adding(days: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: days, to: self) ?? self
+    }
+}
+
+let today = Date()
+print(today.isToday) // true
+
+let tomorrow = today.adding(days: 1)
+print(tomorrow.isToday) // false
+```
+
+## Summary Table
+
+| Feature | Allowed | Not Allowed |
+|---------|---------|-------------|
+| **Computed Properties** | ✅ Yes | ❌ Stored properties |
+| **Methods** | ✅ Instance and type methods | ❌ Overriding existing methods |
+| **Initializers** | ✅ Convenience (classes), any (structs) | ❌ Designated (classes), deinitializers |
+| **Subscripts** | ✅ Yes | |
+| **Nested Types** | ✅ Yes | |
+| **Protocol Conformance** | ✅ Yes | |
+| **Access Control** | ✅ Same or more restrictive | ❌ Less restrictive than original |
+| **Generics** | ✅ Can use existing type parameters | ❌ Cannot add new type parameters |
+
+## Best Practices
+
+1. **Use extensions for organization**: Split large types across multiple files using extensions
+2. **Prefer extensions for protocol conformance**: Keep protocol implementations separate from the main type
+3. **Name your files descriptively**: Use names like `String+Extensions.swift` or `Array+Utilities.swift`
+4. **Don't overuse**: Not every helper function needs to be an extension—sometimes a standalone function is clearer
+5. **Consider discoverability**: Extensions are great, but too many can make it hard to find where functionality is defined
+6. **Document public extensions**: Especially when extending framework types, make your additions clear with comments
+
+## Reference
+
+For more information about extensions in Swift, consult the [official Swift documentation on Extensions](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/).
+
+Extensions are a cornerstone of idiomatic Swift code. They enable you to write expressive, organized code while maintaining the simplicity and safety that makes Swift powerful. As you develop your Swift skills, you'll find extensions becoming an indispensable tool in your programming toolkit.

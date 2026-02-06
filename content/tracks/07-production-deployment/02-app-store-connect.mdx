@@ -1,0 +1,606 @@
+---
+title: "App Store Connect"
+description: "Setting up your app listing, metadata, screenshots, and pricing"
+sectionId: "7.1-app-store-prep"
+sectionTitle: "App Store Preparation"
+order: 2
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Store Connect: Setting Up Your App Listing
+
+App Store Connect is Apple's web-based platform for managing your apps throughout their entire lifecycle—from initial submission to ongoing updates. Think of it as your command center for everything related to distributing iOS apps on the App Store. While you won't write Swift code to interact with App Store Connect directly, understanding how to properly configure your app listing is crucial because it bridges the gap between your development work and your users discovering and downloading your app.
+
+## Why App Store Connect Matters
+
+You can build the most elegant Swift application with perfect architecture, but if your App Store listing is poorly configured, users won't find it, won't understand what it does, or won't trust it enough to download. App Store Connect is where you:
+
+- Set up app metadata (name, description, keywords)
+- Upload screenshots and preview videos
+- Configure pricing and availability
+- Manage app versions and TestFlight beta testing
+- View analytics and sales data
+- Respond to user reviews
+
+## Prerequisites: Preparing Your Xcode Project
+
+Before diving into App Store Connect, your Xcode project needs proper configuration. The settings you define in Xcode flow directly into App Store Connect.
+
+### Bundle Identifier
+
+Your bundle identifier uniquely identifies your app across Apple's ecosystem. Set this in Xcode under your target's "Signing & Capabilities" tab.
+
+```swift
+// This isn't code you write, but conceptually your bundle identifier
+// looks like: com.yourcompany.yourapp
+// For example: com.acme.todolist
+
+// In your Info.plist (though Xcode usually manages this):
+// CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+```
+
+**Common mistake**: Changing your bundle identifier after initial submission requires creating an entirely new app in App Store Connect. Choose wisely from the start.
+
+### Version and Build Numbers
+
+```swift
+// In your project settings, you'll set:
+// Version: 1.0.0 (Marketing version - what users see)
+// Build: 1 (Internal build number - must increment with each upload)
+
+// You can access these programmatically in your Swift code:
+if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+    print("App Version: \(version)")
+}
+
+if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+    print("Build Number: \(build)")
+}
+```
+
+**Important**: Build numbers must be unique and incrementing. Version numbers follow semantic versioning (major.minor.patch).
+
+### App Icons
+
+Your app icon is defined in the Assets.xcassets catalog. App Store Connect pulls these from your uploaded build.
+
+```swift
+// While you don't code the icon itself, you can access it programmatically:
+if let icon = Bundle.main.icon {
+    // Use the icon image
+}
+
+// Extension to get app icon:
+extension Bundle {
+    var icon: UIImage? {
+        if let icons = infoDictionary?["CFBundleIcons"] as? [String: Any],
+           let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
+           let iconFileName = iconFiles.last {
+            return UIImage(named: iconFileName)
+        }
+        return nil
+    }
+}
+```
+
+## Creating Your App Record in App Store Connect
+
+1. Log into [App Store Connect](https://appstoreconnect.apple.com)
+2. Navigate to "My Apps" and click the "+" button
+3. Select "New App"
+4. Choose your platform (iOS), name, language, bundle identifier, and SKU
+
+The **SKU** is your internal product identifier. It's never shown to users but must be unique across your account.
+
+```swift
+// Example SKU format (this is text you enter, not code):
+// TODOLIST-2024-IOS
+// PREMIUM-SUBSCRIPTION-V2
+```
+
+## App Metadata: Making Your App Discoverable
+
+### App Name and Subtitle
+
+Your app name can be up to 30 characters. The subtitle provides an additional 30 characters to describe your app's purpose.
+
+```swift
+// You might want to display these in your app's About screen:
+struct AboutView: View {
+    let appName = "TaskMaster Pro"
+    let subtitle = "Simple, Powerful Task Management"
+    
+    var body: some View {
+        VStack {
+            Text(appName)
+                .font(.largeTitle)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+}
+```
+
+**Common mistake**: Using keywords in your app name that aren't actually part of your brand. Apple rejects apps with keyword-stuffed names like "TaskMaster - Best Todo List Reminder Calendar App".
+
+### Keywords
+
+You have 100 characters to define searchable keywords, separated by commas (no spaces after commas maximizes your character usage).
+
+```swift
+// Example keyword string (entered in App Store Connect):
+// tasks,todo,productivity,reminder,checklist,organize,planner
+
+// You can implement keyword tracking in your analytics:
+struct AppMetadata {
+    static let keywords = [
+        "tasks", "todo", "productivity", 
+        "reminder", "checklist", "organize", "planner"
+    ]
+    
+    static func trackSearchTerm(_ term: String) {
+        let lowercasedTerm = term.lowercased()
+        if keywords.contains(lowercasedTerm) {
+            // Log that a user found you via this keyword
+            print("User searched for keyword: \(lowercasedTerm)")
+        }
+    }
+}
+```
+
+### Description and Promotional Text
+
+Your description (up to 4,000 characters) tells users what your app does. The first 2-3 lines are critical since that's what appears before "more".
+
+**Promotional text** (170 characters) appears above your description and can be updated anytime without a new app version—perfect for announcing sales or new features.
+
+```swift
+// You might fetch promotional content from your server:
+struct PromotionalContent: Codable {
+    let text: String
+    let expirationDate: Date
+    
+    var isActive: Bool {
+        return Date() < expirationDate
+    }
+}
+
+class PromotionalManager {
+    func fetchCurrentPromotion() async throws -> PromotionalContent? {
+        let url = URL(string: "https://api.yourapp.com/promotion")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(PromotionalContent.self, from: data)
+    }
+}
+```
+
+## Screenshots and App Previews
+
+Screenshots are required for various device sizes. As of iOS 17, you need to provide screenshots for:
+- 6.7" display (iPhone 14 Pro Max, 15 Pro Max)
+- 5.5" display (older iPhones, if you support them)
+
+**Edge case**: If your app is iPad-only, you'll need iPad Pro (12.9") and iPad Pro (11") screenshots.
+
+### Capturing Screenshots Programmatically
+
+While you'll typically use the Simulator to capture screenshots, you can implement screenshot functionality in your app for user support or testing:
+
+```swift
+import UIKit
+
+extension UIView {
+    func asImage() -> UIImage {
+        let renderer = UIGraphicsImageRenderer(bounds: bounds)
+        return renderer.image { rendererContext in
+            layer.render(in: rendererContext.cgContext)
+        }
+    }
+}
+
+// For SwiftUI views:
+extension View {
+    func snapshot() -> UIImage {
+        let controller = UIHostingController(rootView: self)
+        let view = controller.view
+        
+        let targetSize = controller.view.intrinsicContentSize
+        view?.bounds = CGRect(origin: .zero, size: targetSize)
+        view?.backgroundColor = .clear
+        
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in
+            view?.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+        }
+    }
+}
+
+// Usage in your app:
+let screenshot = myView.asImage()
+```
+
+### Screenshot Guidelines
+
+```swift
+// Required screenshot dimensions for various devices:
+enum ScreenshotSize {
+    case iphone67inch    // 1290 x 2796 pixels
+    case iphone65inch    // 1242 x 2688 pixels (older Pros)
+    case iphone55inch    // 1242 x 2208 pixels
+    case ipadPro129      // 2048 x 2732 pixels
+    case ipadPro11       // 1668 x 2388 pixels
+    
+    var size: CGSize {
+        switch self {
+        case .iphone67inch:
+            return CGSize(width: 1290, height: 2796)
+        case .iphone65inch:
+            return CGSize(width: 1242, height: 2688)
+        case .iphone55inch:
+            return CGSize(width: 1242, height: 2208)
+        case .ipadPro129:
+            return CGSize(width: 2048, height: 2732)
+        case .ipadPro11:
+            return CGSize(width: 1668, height: 2388)
+        }
+    }
+}
+```
+
+**Common mistake**: Uploading screenshots with the status bar showing personal information (carrier, battery at 1%, etc.). Use Simulator screenshots with cleaned status bars.
+
+## Pricing and Availability
+
+### Price Tiers
+
+Apple uses a price tier system. Tier 1 is $0.99 USD, Tier 2 is $1.99, and so on.
+
+```swift
+// You can check the user's storefront programmatically:
+import StoreKit
+
+class PricingManager {
+    func getCurrentStorefront() -> String? {
+        return SKPaymentQueue.default().storefront?.countryCode
+    }
+    
+    // Example of handling different price points by region:
+    func localizedPrice(for product: SKProduct) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = product.priceLocale
+        return formatter.string(from: product.price) ?? ""
+    }
+}
+```
+
+### Territory Availability
+
+You can make your app available in specific countries. This is useful for apps with region-specific content or legal restrictions.
+
+```swift
+import Foundation
+
+struct TerritoryManager {
+    // Check if app is available in user's region
+    func isAvailableInCurrentRegion() -> Bool {
+        let currentRegion = Locale.current.regionCode ?? ""
+        let availableRegions = ["US", "CA", "GB", "AU", "DE", "FR"]
+        return availableRegions.contains(currentRegion)
+    }
+    
+    // Show appropriate message for unavailable regions
+    func getAvailabilityMessage() -> String {
+        if isAvailableInCurrentRegion() {
+            return "Full access available"
+        } else {
+            return "Limited features in your region"
+        }
+    }
+}
+```
+
+## App Privacy Details
+
+Since iOS 14.5, you must declare your privacy practices in App Store Connect. This includes what data you collect and how you use it.
+
+```swift
+// Example of data types you might need to declare:
+enum DataCollectionType {
+    case contactInfo        // Email, phone number, name
+    case healthAndFitness   // Health data, fitness data
+    case financialInfo      // Payment info, credit card
+    case location           // Precise or approximate location
+    case userContent        // Photos, videos, audio, documents
+    case identifiers        // Device ID, user ID
+    case diagnostics        // Crash data, performance data
+    
+    // Your privacy policy should match what you declare
+}
+
+// Example: Checking location authorization status
+import CoreLocation
+
+class PrivacyManager: NSObject, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+    
+    func requestLocationPermission() {
+        locationManager.delegate = self
+        locationManager.requestWhenInUseAuthorization()
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
+            print("Location tracking declared in App Store Connect")
+        case .denied, .restricted:
+            print("User denied - must still be declared")
+        case .notDetermined:
+            print("Not yet determined")
+        @unknown default:
+            break
+        }
+    }
+}
+```
+
+**Important**: You must declare data collection even if you only collect crash reports through third-party services like Firebase or Sentry.
+
+## App Review Information
+
+You provide contact information and optionally demo account credentials for App Review.
+
+```swift
+// If your app requires login, create a demo account:
+struct DemoAccount {
+    static let username = "demo@yourapp.com"
+    static let password = "DemoPassword123!"
+    
+    // You might want to programmatically detect demo users:
+    static func isDemoAccount(email: String) -> Bool {
+        return email.lowercased() == username.lowercased()
+    }
+}
+
+// In your authentication system:
+class AuthenticationService {
+    func login(email: String, password: String) async throws -> User {
+        // Give demo account special privileges or pre-loaded data
+        if DemoAccount.isDemoAccount(email: email) {
+            return try await fetchDemoUser()
+        }
+        
+        return try await performStandardLogin(email: email, password: password)
+    }
+    
+    private func fetchDemoUser() async throws -> User {
+        // Return a user with sample data for reviewers
+        return User(
+            id: "demo-user-id",
+            email: DemoAccount.username,
+            name: "Demo User",
+            isPremium: true,  // Show all features
+            createdAt: Date()
+        )
+    }
+    
+    private func performStandardLogin(email: String, password: String) async throws -> User {
+        // Your actual login logic
+        throw NSError(domain: "Auth", code: 401, userInfo: nil)
+    }
+}
+```
+
+## Version Management
+
+### Phased Release
+
+You can enable phased release, which gradually rolls out your update over 7 days.
+
+```swift
+// You might want to track which users have received updates:
+class VersionManager {
+    func checkForUpdates() async throws -> Bool {
+        let currentVersion = getCurrentVersion()
+        let latestVersion = try await fetchLatestVersion()
+        
+        return latestVersion > currentVersion
+    }
+    
+    private func getCurrentVersion() -> String {
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+    
+    private func fetchLatestVersion() async throws -> String {
+        let url = URL(string: "https://itunes.apple.com/lookup?bundleId=com.yourapp.bundleid")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]]
+        return results?.first?["version"] as? String ?? "1.0.0"
+    }
+}
+```
+
+### What's New in This Version
+
+You can provide release notes up to 4,000 characters. Keep them user-friendly, not developer-focused.
+
+```swift
+// Display release notes in your app:
+struct ReleaseNotes: Identifiable {
+    let id = UUID()
+    let version: String
+    let date: Date
+    let features: [String]
+    let bugFixes: [String]
+}
+
+struct WhatsNewView: View {
+    let release = ReleaseNotes(
+        version: "2.1.0",
+        date: Date(),
+        features: [
+            "Dark mode support",
+            "iPad multitasking",
+            "Widget support"
+        ],
+        bugFixes: [
+            "Fixed crash when opening settings",
+            "Improved sync reliability"
+        ]
+    )
+    
+    var body: some View {
+        List {
+            Section("New Features") {
+                ForEach(release.features, id: \.self) { feature in
+                    Label(feature, systemImage: "star.fill")
+                }
+            }
+            
+            Section("Bug Fixes") {
+                ForEach(release.bugFixes, id: \.self) { fix in
+                    Label(fix, systemImage: "checkmark.circle")
+                }
+            }
+        }
+        .navigationTitle("What's New")
+    }
+}
+```
+
+## TestFlight Integration
+
+Before submitting to App Review, use TestFlight to beta test with up to 10,000 external testers.
+
+```swift
+// Detect if running in TestFlight
+var isTestFlight: Bool {
+    guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+        return false
+    }
+    return receiptURL.lastPathComponent == "sandboxReceipt"
+}
+
+// Use this to show beta-only features or logging
+if isTestFlight {
+    print("Running in TestFlight environment")
+    // Enable extra diagnostics, feedback buttons, etc.
+}
+```
+
+### Managing App Versions in App Store Connect
+
+When uploading builds, your version and build number must follow Apple's rules:
+
+```swift
+/*
+ Version (CFBundleShortVersionString): User-facing, e.g., "1.2.0"
+ Build (CFBundleVersion): Internal, must be unique per version, e.g., "42"
+
+ Rules:
+ - Version must increase for each new App Store release
+ - Build number must be unique within each version
+ - Use semantic versioning: MAJOR.MINOR.PATCH
+
+ In App Store Connect:
+ 1. Create new version: + Version or Platform
+ 2. Upload build via Xcode or xcodebuild
+ 3. Select build under "Build" section
+ 4. Fill in "What's New in This Version"
+ 5. Submit for Review
+*/
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Completing App Privacy Details
+
+Since December 2020, App Store Connect requires privacy nutrition labels. Missing these blocks your submission.
+
+```swift
+/*
+ Privacy Details Checklist:
+
+ 1. Go to App Store Connect → Your App → App Privacy
+ 2. For each data type your app collects, declare:
+    - Data type (e.g., Email Address, Location)
+    - Whether it's linked to user identity
+    - Whether it's used for tracking
+    - Purpose (Analytics, App Functionality, etc.)
+ 3. If your app doesn't collect any data, select
+    "No, we do not collect data from this app"
+*/
+```
+
+### Mistake 2: Incorrect Screenshot Sizes
+
+App Store Connect requires specific screenshot dimensions for each device type:
+
+```
+Required screenshot sizes:
+- iPhone 6.7" (1290 × 2796) — iPhone 15 Pro Max
+- iPhone 6.5" (1242 × 2688) — iPhone 11 Pro Max
+- iPhone 5.5" (1242 × 2208) — iPhone 8 Plus
+- iPad Pro 12.9" (2048 × 2732) — 6th gen
+- iPad Pro 12.9" (2048 × 2732) — 2nd gen (if supporting older iPads)
+
+Tips:
+- Use Xcode Simulator to capture pixel-perfect screenshots
+- Tools like fastlane snapshot can automate this across all device sizes
+```
+
+### Mistake 3: Forgetting to Set Availability and Pricing
+
+```swift
+/*
+ Before submitting for review, verify:
+
+ 1. Pricing and Availability:
+    - Set price tier (or Free)
+    - Select available countries/regions
+    - Set pre-order date if applicable
+
+ 2. App Information:
+    - Primary language
+    - Category and subcategory
+    - Content rights (if using third-party content)
+    - Age rating questionnaire
+
+ 3. General → App Information:
+    - Support URL (required)
+    - Marketing URL (optional)
+    - Privacy Policy URL (required for apps with accounts)
+*/
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **App record** | Created once per app | Central hub for all app metadata |
+| **Versions** | Semantic versioning (MAJOR.MINOR.PATCH) | Track releases |
+| **Builds** | Uploaded via Xcode or CLI | Binary for testing and release |
+| **TestFlight** | Beta testing integration | Test before App Store release |
+| **Screenshots** | Device-specific dimensions | App Store listing visuals |
+| **Privacy labels** | Required since Dec 2020 | Disclose data collection practices |
+| **Pricing** | Free or paid tiers | Set app price per region |
+| **App Review** | Submit for Apple review | Required before public release |
+| **Analytics** | Sales, downloads, crashes | Monitor app performance |
+| **Users and roles** | Admin, Developer, Marketing, etc. | Team access management |
+| **API** | App Store Connect REST API | Automate management tasks |
+
+## Official Resources
+
+- [Apple: App Store Connect](https://appstoreconnect.apple.com)
+- [Apple Documentation: App Store Connect](https://developer.apple.com/app-store-connect/)
+- [Apple Documentation: App Store Connect API](https://developer.apple.com/documentation/appstoreconnectapi)
+- [Apple: Screenshot Specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/)
+- [Apple: App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)

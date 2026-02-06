@@ -1,0 +1,602 @@
+---
+title: "State Management Patterns"
+description: "When to use each property wrapper, data flow best practices"
+sectionId: "2.4-state-management"
+sectionTitle: "State Management"
+order: 13
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# State Management Patterns in SwiftUI
+
+State management is how your app tracks and updates data that can change over time. In SwiftUI, managing state correctly is critical because the UI automatically updates when state changes. Choose the wrong property wrapper or data flow pattern, and you'll face bugs, performance issues, or code that's difficult to maintain.
+
+SwiftUI provides several property wrappers for state management: `@State`, `@Binding`, `@ObservedObject`, `@StateObject`, `@EnvironmentObject`, and `@Environment`. Each serves a specific purpose, and knowing when to use which is essential for building reliable iOS apps.
+
+## Why State Management Matters
+
+SwiftUI is a declarative framework—you describe what the UI should look like for a given state, and SwiftUI handles the updates. When state changes, SwiftUI automatically re-renders the affected views. Without proper state management:
+
+- Your UI won't update when data changes
+- You'll create unnecessary view refreshes, hurting performance
+- Data flow becomes unpredictable and hard to debug
+
+## @State: Local View State
+
+`@State` is for simple value types (structs, enums, strings, integers, booleans) that belong to a single view. SwiftUI manages this storage outside the view's struct, so it persists across view updates.
+
+```swift
+struct CounterView: View {
+    @State private var count = 0
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(count)")
+            Button("Increment") {
+                count += 1
+            }
+        }
+    }
+}
+```
+
+**When to use @State:**
+- The state is private to this view
+- The data is a simple value type
+- No other views need to read or write this state
+
+**Best practices:**
+- Always mark `@State` properties as `private`—they shouldn't be set from outside
+- Keep it simple: strings, numbers, booleans, or simple structs
+- Don't use `@State` for reference types (classes)
+
+**Common mistake:**
+
+```swift
+// DON'T: Using @State with a reference type
+class UserData {
+    var name: String = ""
+}
+
+struct BadExample: View {
+    @State private var userData = UserData()
+    
+    var body: some View {
+        TextField("Name", text: $userData.name) // Won't update UI!
+    }
+}
+```
+
+This won't work as expected because SwiftUI tracks changes to the `@State` property itself, not changes inside a reference type. Use `@StateObject` for reference types instead.
+
+## @Binding: Two-Way Data Flow
+
+`@Binding` creates a two-way connection to state owned by a parent view. It doesn't own the data—it's a reference to data owned elsewhere.
+
+```swift
+struct ToggleView: View {
+    @Binding var isOn: Bool
+    
+    var body: some View {
+        Toggle("Enable Feature", isOn: $isOn)
+    }
+}
+
+struct ParentView: View {
+    @State private var featureEnabled = false
+    
+    var body: some View {
+        VStack {
+            ToggleView(isOn: $featureEnabled)
+            Text("Feature is \(featureEnabled ? "on" : "off")")
+        }
+    }
+}
+```
+
+Notice the `$` prefix when passing the binding—this provides read-write access to the state variable.
+
+**When to use @Binding:**
+- A child view needs to read AND modify a parent's state
+- You're breaking a view into smaller components
+- Creating reusable controls
+
+**Common mistake:**
+
+```swift
+// DON'T: Trying to initialize @Binding with a default value
+struct WrongBindingView: View {
+    @Binding var text: String = "default" // Compiler error!
+    
+    var body: some View {
+        TextField("Enter text", text: $text)
+    }
+}
+```
+
+Bindings don't have default values—they're always passed from a parent. For SwiftUI previews, use `.constant()`:
+
+```swift
+#Preview {
+    WrongBindingView(text: .constant("Preview text"))
+}
+```
+
+## @StateObject vs @ObservedObject: Reference Type State
+
+For reference types (classes) that conform to `ObservableObject`, use `@StateObject` or `@ObservedObject`. These property wrappers watch for changes published by the object.
+
+### @StateObject: View Owns the Object
+
+Use `@StateObject` when the view creates and owns the object. SwiftUI ensures the object survives view updates.
+
+```swift
+class ViewModel: ObservableObject {
+    @Published var items: [String] = []
+    
+    func addItem(_ item: String) {
+        items.append(item)
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var viewModel = ViewModel()
+    
+    var body: some View {
+        VStack {
+            ForEach(viewModel.items, id: \.self) { item in
+                Text(item)
+            }
+            Button("Add Item") {
+                viewModel.addItem("Item \(viewModel.items.count + 1)")
+            }
+        }
+    }
+}
+```
+
+The `@Published` wrapper on properties inside the `ObservableObject` tells SwiftUI which changes should trigger view updates.
+
+### @ObservedObject: View Receives the Object
+
+Use `@ObservedObject` when the object is created elsewhere and passed to this view.
+
+```swift
+struct DetailView: View {
+    @ObservedObject var viewModel: ViewModel
+    
+    var body: some View {
+        List(viewModel.items, id: \.self) { item in
+            Text(item)
+        }
+    }
+}
+
+struct ParentView: View {
+    @StateObject private var viewModel = ViewModel()
+    
+    var body: some View {
+        NavigationStack {
+            DetailView(viewModel: viewModel)
+        }
+    }
+}
+```
+
+**Critical difference:**
+
+- `@StateObject`: View **creates** the object. It persists across view recreations.
+- `@ObservedObject`: View **receives** the object. The view doesn't own it.
+
+**Common mistake—using @ObservedObject when you should use @StateObject:**
+
+```swift
+// DON'T: Creating object with @ObservedObject
+struct ProblematicView: View {
+    @ObservedObject private var viewModel = ViewModel() // Will be recreated!
+    
+    var body: some View {
+        Text("Count: \(viewModel.items.count)")
+    }
+}
+```
+
+If SwiftUI recreates `ProblematicView` (which happens frequently), a new `ViewModel` is created and you lose your state. Always use `@StateObject` when the view creates the object.
+
+**When to use @StateObject:**
+- The view creates and initializes the observable object
+- This is the "source of truth" for that object
+
+**When to use @ObservedObject:**
+- The object is passed from a parent view
+- The object's lifecycle is managed elsewhere
+
+## @EnvironmentObject: Dependency Injection
+
+`@EnvironmentObject` allows you to share an object across many views without passing it explicitly through every view's initializer. It's SwiftUI's dependency injection mechanism.
+
+```swift
+class AppSettings: ObservableObject {
+    @Published var username: String = "Guest"
+    @Published var isDarkMode: Bool = false
+}
+
+struct RootView: View {
+    @StateObject private var settings = AppSettings()
+    
+    var body: some View {
+        NavigationStack {
+            ProfileView()
+        }
+        .environmentObject(settings) // Makes it available to all child views
+    }
+}
+
+struct ProfileView: View {
+    @EnvironmentObject var settings: AppSettings
+    
+    var body: some View {
+        VStack {
+            Text("Welcome, \(settings.username)")
+            SettingsView()
+        }
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject var settings: AppSettings
+    
+    var body: some View {
+        Toggle("Dark Mode", isOn: $settings.isDarkMode)
+    }
+}
+```
+
+**When to use @EnvironmentObject:**
+- Multiple unrelated views need the same data
+- Passing through many view layers would be tedious
+- App-wide settings or authentication state
+
+**Common mistake—forgetting to inject:**
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        ProfileView() // Crash! No AppSettings in environment
+    }
+}
+```
+
+The app will crash at runtime with "No observable object of type AppSettings found." Always inject the object at a parent level using `.environmentObject()`.
+
+**Edge case—previews need the object too:**
+
+```swift
+#Preview {
+    ProfileView()
+        .environmentObject(AppSettings()) // Don't forget in previews!
+}
+```
+
+## @Environment: System and Custom Values
+
+`@Environment` accesses values from SwiftUI's environment—both system-provided values and custom ones you define.
+
+### System Values
+
+```swift
+struct AdaptiveView: View {
+    @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.horizontalSizeClass) var sizeClass
+    
+    var body: some View {
+        VStack {
+            Text("Mode: \(colorScheme == .dark ? "Dark" : "Light")")
+            
+            if sizeClass == .compact {
+                CompactLayout()
+            } else {
+                RegularLayout()
+            }
+            
+            Button("Close") {
+                dismiss()
+            }
+        }
+    }
+}
+```
+
+### Custom Environment Values
+
+You can define your own environment values:
+
+```swift
+private struct ThemeKey: EnvironmentKey {
+    static let defaultValue: String = "Default"
+}
+
+extension EnvironmentValues {
+    var theme: String {
+        get { self[ThemeKey.self] }
+        set { self[ThemeKey.self] = newValue }
+    }
+}
+
+struct ThemedView: View {
+    @Environment(\.theme) var theme
+    
+    var body: some View {
+        Text("Current theme: \(theme)")
+    }
+}
+
+struct ParentView: View {
+    var body: some View {
+        ThemedView()
+            .environment(\.theme, "Ocean")
+    }
+}
+```
+
+**When to use @Environment:**
+- Accessing system values (color scheme, size classes, dismissal)
+- Reading custom lightweight values throughout the view hierarchy
+- Configuration that changes based on context
+
+**@Environment vs @EnvironmentObject:**
+- `@Environment`: For value types and system properties
+- `@EnvironmentObject`: For reference types that conform to `ObservableObject`
+
+## Data Flow Best Practices
+
+### Single Source of Truth
+
+Every piece of data should have exactly one source of truth. Other views should either read that data or receive a binding to it.
+
+```swift
+// GOOD: Single source of truth
+struct AppView: View {
+    @StateObject private var userManager = UserManager() // Source of truth
+    
+    var body: some View {
+        TabView {
+            ProfileTab(userManager: userManager) // Passes it down
+            SettingsTab(userManager: userManager)
+        }
+    }
+}
+
+// BAD: Multiple sources of truth
+struct ProblematicApp: View {
+    @StateObject private var userManager1 = UserManager()
+    
+    var body: some View {
+        TabView {
+            ProfileTab(userManager: UserManager()) // New instance!
+            SettingsTab(userManager: UserManager()) // Another new instance!
+        }
+    }
+}
+```
+
+### Data Flows Down, Events Flow Up
+
+Pass data down the view hierarchy and pass callbacks or bindings up.
+
+```swift
+struct ParentView: View {
+    @State private var items: [String] = []
+    
+    var body: some View {
+        VStack {
+            // Data flows down
+            ItemList(items: items)
+            
+            // Events flow up via closure
+            AddItemButton { newItem in
+                items.append(newItem)
+            }
+        }
+    }
+}
+
+struct ItemList: View {
+    let items: [String] // Read-only data
+    
+    var body: some View {
+        ForEach(items, id: \.self) { item in
+            Text(item)
+        }
+    }
+}
+
+struct AddItemButton: View {
+    let onAdd: (String) -> Void // Callback for events
+    
+    var body: some View {
+        Button("Add Item") {
+            onAdd("New Item")
+        }
+    }
+}
+```
+
+### Minimize @EnvironmentObject Usage
+
+While convenient, `@EnvironmentObject` creates implicit dependencies. Prefer explicit parameter passing when:
+- Only a few views need the data
+- The relationship between views and data should be clear
+- You're building reusable components
+
+Use `@EnvironmentObject` for truly app-wide concerns like authentication, theme settings, or global app state.
+
+### Computed Properties Over Redundant State
+
+Don't store data that can be derived from other state.
+
+```swift
+// BAD: Redundant state
+struct DuplicatedStateView: View {
+    @State private var items: [String] = []
+    @State private var itemCount: Int = 0 // Redundant!
+    
+    var body: some View {
+        Text("Count: \(itemCount)")
+    }
+}
+
+// GOOD: Computed property
+struct CleanStateView: View {
+    @State private var items: [String] = []
+    
+    var itemCount: Int {
+        items.count
+    }
+    
+    var body: some View {
+        Text("Count: \(itemCount)")
+    }
+}
+```
+
+## Common Pitfalls and Solutions
+
+### Problem: View Not Updating
+
+**Symptom:** You change data but the UI doesn't update.
+
+**Causes:**
+1. Using `@State` with a reference type
+2. Modifying properties inside a reference type without `@Published`
+3. Forgetting to observe an `ObservableObject`
+
+```swift
+// Problem
+class BadViewModel: ObservableObject {
+    var count = 0 // Missing @Published
+}
+
+// Solution
+class GoodViewModel: ObservableObject {
+    @Published var count = 0
+}
+```
+
+### Problem: State Reset Unexpectedly
+
+**Symptom:** Your state resets when navigating or when the view updates.
+
+**Cause:** Using `@ObservedObject` when you should use `@StateObject`.
+
+```swift
+// Problem: State resets
+struct ResetView: View {
+    @ObservedObject private var vm = ViewModel()
+}
+
+// Solution: State persists
+struct PersistentView: View {
+    @StateObject private var vm = ViewModel()
+}
+```
+
+### Problem: "No Observable Object Found" Crash
+
+**Symptom:** Runtime crash when using `@EnvironmentObject`.
+
+**Cause:** Forgot to inject the object with `.environmentObject()`.
+
+```swift
+// Problem
+struct RootView: View {
+    var body: some View {
+        ChildView() // Crashes if ChildView uses @EnvironmentObject
+    }
+}
+
+// Solution
+struct RootView: View {
+    @StateObject private var settings = AppSettings()
+    
+    var body: some View {
+        ChildView()
+            .environmentObject(settings)
+    }
+}
+```
+
+### Problem: Memory Leaks with Strong Reference Cycles
+
+**Symptom:** Objects not deallocating, increasing memory usage.
+
+**Cause:** Strong reference cycles between observable objects and closures.
+
+```swift
+class ViewModelWithLeak: ObservableObject {
+    @Published var text = ""
+    var cancellable: AnyCancellable?
+    
+    init() {
+        // Problem: self is captured strongly
+        cancellable = $text.sink { value in
+            self.process(value) // Strong reference cycle
+        }
+    }
+    
+    func process(_ value: String) { }
+}
+
+// Solution: Use weak or unowned
+class ViewModelFixed: ObservableObject {
+    @Published var text = ""
+    var cancellable: AnyCancellable?
+    
+    init() {
+        cancellable = $text.sink { [weak self] value in
+            self?.process(value)
+        }
+    }
+    
+    func process(_ value: String) { }
+}
+```
+
+## Quick Reference Table
+
+| Property Wrapper | Use Case | Ownership | Type | Scope |
+|-----------------|----------|-----------|------|-------|
+| `@State` | Simple local view state | View owns it | Value types | Single view |
+| `@Binding` | Two-way connection to parent state | Parent owns it | Value types | Passed from parent |
+| `@StateObject` | Observable object created by view | View owns it | Reference type (`ObservableObject`) | Created here |
+| `@ObservedObject` | Observable object passed to view | External ownership | Reference type (`ObservableObject`) | Passed from parent |
+| `@EnvironmentObject` | Shared observable object across views | Ancestor owns it | Reference type (`ObservableObject`) | Injected via `.environmentObject()` |
+| `@Environment` | System or custom environment values | System/ancestor | Value types | Key path access (`\.colorScheme`) |
+
+> **Modern Alternative (iOS 17+):** The `@Observable` macro simplifies state management by replacing `ObservableObject`, `@Published`, `@StateObject`, and `@ObservedObject`. With `@Observable`, you use `@State` for owned objects and pass them directly—no `@StateObject` or `@ObservedObject` needed. Use `@Environment(MyType.self)` instead of `@EnvironmentObject`. See the [Observable lesson](/tracks/02-swiftui-essentials/12-observable) for details.
+
+## Decision Flowchart
+
+Use this guide when choosing a property wrapper:
+
+1. **Is it a simple value type (String, Int, Bool, struct)?**
+   - Does only this view need it? → `@State`
+   - Does a child view need to modify it? → Pass as `@Binding`
+
+2. **Is it a reference type (class)?**
+   - Does this view create it? → `@StateObject`
+   - Is it passed from a parent? → `@ObservedObject`
+   - Is it shared across many views? → `@EnvironmentObject`
+
+3. **Is it a system or configuration value?**
+   - → `@Environment`
+
+## Official Resources
+
+- [Apple Documentation: State and Data Flow](https://developer.apple.com/documentation/swiftui/state-and-data-flow)
+- [Apple Documentation: Managing Model Data](https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app)
+- [WWDC 2020: Data Essentials in SwiftUI](https://developer.apple.com/videos/play/wwdc2020/10040/)
+- [WWDC 2023: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)

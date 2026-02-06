@@ -1,0 +1,596 @@
+---
+title: "Repository Pattern"
+description: "Abstracting data access behind clean interfaces"
+sectionId: "5.1-design-patterns"
+sectionTitle: "Design Patterns"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Repository Pattern in Swift/iOS Development
+
+The Repository Pattern is a design pattern that creates an abstraction layer between your app's business logic and data sources. Instead of your view controllers or view models directly accessing Core Data, networking APIs, or local storage, they interact with a repository that handles all data operations behind a clean interface.
+
+This pattern matters because iOS apps often need to fetch data from multiple sources—a REST API, local cache, Core Data, UserDefaults, or even CloudKit. Without proper abstraction, your code becomes tightly coupled to specific data sources, making it difficult to test, maintain, or swap implementations.
+
+## Why Use the Repository Pattern?
+
+**Separation of Concerns**: Your business logic doesn't need to know whether data comes from a network, database, or memory cache.
+
+**Testability**: You can easily mock repositories for unit testing without touching real databases or making network calls.
+
+**Flexibility**: Switching from Core Data to Realm, or from URLSession to Alamofire, only requires changing the repository implementation—not every place that uses the data.
+
+**Single Source of Truth**: The repository decides which data source to use, implementing caching strategies and data synchronization logic in one place.
+
+## Basic Implementation
+
+Let's start with a simple example: an app that displays a list of users.
+
+First, define your model:
+
+```swift
+struct User: Codable, Identifiable {
+    let id: Int
+    let name: String
+    let email: String
+}
+```
+
+Without a repository, you might see code like this scattered throughout your app:
+
+```swift
+// DON'T DO THIS - Tight coupling to URLSession
+class UserListViewModel {
+    func fetchUsers() async throws -> [User] {
+        let url = URL(string: "https://api.example.com/users")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode([User].self, from: data)
+    }
+}
+```
+
+This approach has problems: the view model knows about networking details, it's hard to test, and if you want to add caching, you'll need to modify every place that fetches users.
+
+## Creating a Repository Protocol
+
+Define a protocol that describes what operations are available, without specifying how they're implemented:
+
+```swift
+protocol UserRepositoryProtocol {
+    func fetchUsers() async throws -> [User]
+    func fetchUser(id: Int) async throws -> User
+    func createUser(_ user: User) async throws -> User
+    func updateUser(_ user: User) async throws -> User
+    func deleteUser(id: Int) async throws
+}
+```
+
+Now implement a concrete repository:
+
+```swift
+class RemoteUserRepository: UserRepositoryProtocol {
+    private let baseURL = "https://api.example.com"
+    private let session: URLSession
+    
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+    
+    func fetchUsers() async throws -> [User] {
+        guard let url = URL(string: "\(baseURL)/users") else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        return try JSONDecoder().decode([User].self, from: data)
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        guard let url = URL(string: "\(baseURL)/users/\(id)") else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, _) = try await session.data(from: url)
+        return try JSONDecoder().decode(User.self, from: data)
+    }
+    
+    func createUser(_ user: User) async throws -> User {
+        guard let url = URL(string: "\(baseURL)/users") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(user)
+        
+        let (data, _) = try await session.data(for: request)
+        return try JSONDecoder().decode(User.self, from: data)
+    }
+    
+    func updateUser(_ user: User) async throws -> User {
+        guard let url = URL(string: "\(baseURL)/users/\(user.id)") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(user)
+        
+        let (data, _) = try await session.data(for: request)
+        return try JSONDecoder().decode(User.self, from: data)
+    }
+    
+    func deleteUser(id: Int) async throws {
+        guard let url = URL(string: "\(baseURL)/users/\(id)") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        
+        _ = try await session.data(for: request)
+    }
+}
+```
+
+Now your view model becomes much simpler:
+
+```swift
+@MainActor
+class UserListViewModel: ObservableObject {
+    @Published var users: [User] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private let repository: UserRepositoryProtocol
+    
+    init(repository: UserRepositoryProtocol) {
+        self.repository = repository
+    }
+    
+    func loadUsers() async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            users = try await repository.fetchUsers()
+        } catch {
+            errorMessage = "Failed to load users: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+}
+```
+
+## Adding a Caching Layer
+
+One of the repository pattern's biggest advantages is implementing caching transparently. Let's create a repository that uses both remote and local data:
+
+```swift
+class CachedUserRepository: UserRepositoryProtocol {
+    private let remoteRepository: UserRepositoryProtocol
+    private let cache: NSCache<NSNumber, UserBox>
+    private let userDefaults: UserDefaults
+    private let cacheKey = "cached_users"
+    
+    // NSCache requires class types, so we wrap User
+    private class UserBox {
+        let user: User
+        init(_ user: User) { self.user = user }
+    }
+    
+    init(
+        remoteRepository: UserRepositoryProtocol,
+        userDefaults: UserDefaults = .standard
+    ) {
+        self.remoteRepository = remoteRepository
+        self.cache = NSCache<NSNumber, UserBox>()
+        self.userDefaults = userDefaults
+    }
+    
+    func fetchUsers() async throws -> [User] {
+        // Try to get cached users first
+        if let cached = getCachedUsers(), !cached.isEmpty {
+            return cached
+        }
+        
+        // Fetch from remote
+        let users = try await remoteRepository.fetchUsers()
+        
+        // Cache the results
+        cacheUsers(users)
+        
+        return users
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        // Check in-memory cache
+        if let cached = cache.object(forKey: NSNumber(value: id)) {
+            return cached.user
+        }
+        
+        // Fetch from remote
+        let user = try await remoteRepository.fetchUser(id: id)
+        
+        // Cache it
+        cache.setObject(UserBox(user), forKey: NSNumber(value: id))
+        
+        return user
+    }
+    
+    func createUser(_ user: User) async throws -> User {
+        let created = try await remoteRepository.createUser(user)
+        cache.setObject(UserBox(created), forKey: NSNumber(value: created.id))
+        invalidateUsersCache()
+        return created
+    }
+    
+    func updateUser(_ user: User) async throws -> User {
+        let updated = try await remoteRepository.updateUser(user)
+        cache.setObject(UserBox(updated), forKey: NSNumber(value: updated.id))
+        invalidateUsersCache()
+        return updated
+    }
+    
+    func deleteUser(id: Int) async throws {
+        try await remoteRepository.deleteUser(id: id)
+        cache.removeObject(forKey: NSNumber(value: id))
+        invalidateUsersCache()
+    }
+    
+    // MARK: - Private Helpers
+    
+    private func getCachedUsers() -> [User]? {
+        guard let data = userDefaults.data(forKey: cacheKey) else {
+            return nil
+        }
+        return try? JSONDecoder().decode([User].self, from: data)
+    }
+    
+    private func cacheUsers(_ users: [User]) {
+        let data = try? JSONEncoder().encode(users)
+        userDefaults.set(data, forKey: cacheKey)
+        
+        // Also populate in-memory cache
+        users.forEach { user in
+            cache.setObject(UserBox(user), forKey: NSNumber(value: user.id))
+        }
+    }
+    
+    private func invalidateUsersCache() {
+        userDefaults.removeObject(forKey: cacheKey)
+    }
+}
+```
+
+The beauty here is that your view model doesn't change at all—it still uses the same `UserRepositoryProtocol` interface:
+
+```swift
+// In your app initialization
+let remoteRepo = RemoteUserRepository()
+let cachedRepo = CachedUserRepository(remoteRepository: remoteRepo)
+let viewModel = UserListViewModel(repository: cachedRepo)
+```
+
+## Core Data Repository Implementation
+
+For apps using Core Data, you can create a repository that abstracts database operations. First, ensure you have a Core Data model with a `UserEntity`:
+
+```swift
+import CoreData
+
+class CoreDataUserRepository: UserRepositoryProtocol {
+    private let context: NSManagedObjectContext
+    
+    init(context: NSManagedObjectContext) {
+        self.context = context
+    }
+    
+    func fetchUsers() async throws -> [User] {
+        let request = NSFetchRequest<UserEntity>(entityName: "UserEntity")
+        request.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
+        
+        return try await context.perform {
+            let entities = try self.context.fetch(request)
+            return entities.map { $0.toUser() }
+        }
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        let request = NSFetchRequest<UserEntity>(entityName: "UserEntity")
+        request.predicate = NSPredicate(format: "id == %d", id)
+        request.fetchLimit = 1
+        
+        return try await context.perform {
+            guard let entity = try self.context.fetch(request).first else {
+                throw NSError(domain: "UserRepository", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "User not found"
+                ])
+            }
+            return entity.toUser()
+        }
+    }
+    
+    func createUser(_ user: User) async throws -> User {
+        try await context.perform {
+            let entity = UserEntity(context: self.context)
+            entity.id = Int32(user.id)
+            entity.name = user.name
+            entity.email = user.email
+            
+            try self.context.save()
+            return entity.toUser()
+        }
+    }
+    
+    func updateUser(_ user: User) async throws -> User {
+        try await context.perform {
+            let request = NSFetchRequest<UserEntity>(entityName: "UserEntity")
+            request.predicate = NSPredicate(format: "id == %d", user.id)
+            
+            guard let entity = try self.context.fetch(request).first else {
+                throw NSError(domain: "UserRepository", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "User not found"
+                ])
+            }
+            
+            entity.name = user.name
+            entity.email = user.email
+            
+            try self.context.save()
+            return entity.toUser()
+        }
+    }
+    
+    func deleteUser(id: Int) async throws {
+        try await context.perform {
+            let request = NSFetchRequest<UserEntity>(entityName: "UserEntity")
+            request.predicate = NSPredicate(format: "id == %d", id)
+            
+            guard let entity = try self.context.fetch(request).first else {
+                throw NSError(domain: "UserRepository", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "User not found"
+                ])
+            }
+            
+            self.context.delete(entity)
+            try self.context.save()
+        }
+    }
+}
+
+// Extension to convert between Core Data entity and model
+extension UserEntity {
+    func toUser() -> User {
+        User(
+            id: Int(self.id),
+            name: self.name ?? "",
+            email: self.email ?? ""
+        )
+    }
+}
+```
+
+## Composite Repository Pattern
+
+For complex scenarios, you might want a repository that tries multiple sources in order—for example, checking local storage first, then hitting the network:
+
+```swift
+class CompositeUserRepository: UserRepositoryProtocol {
+    private let localRepository: UserRepositoryProtocol
+    private let remoteRepository: UserRepositoryProtocol
+    
+    init(
+        localRepository: UserRepositoryProtocol,
+        remoteRepository: UserRepositoryProtocol
+    ) {
+        self.localRepository = localRepository
+        self.remoteRepository = remoteRepository
+    }
+    
+    func fetchUsers() async throws -> [User] {
+        // Try local first
+        do {
+            let localUsers = try await localRepository.fetchUsers()
+            if !localUsers.isEmpty {
+                // Refresh in background
+                Task {
+                    try? await refreshFromRemote()
+                }
+                return localUsers
+            }
+        } catch {
+            // Local failed, continue to remote
+        }
+        
+        // Fetch from remote and sync to local
+        let remoteUsers = try await remoteRepository.fetchUsers()
+        
+        // Save to local repository
+        for user in remoteUsers {
+            try? await localRepository.createUser(user)
+        }
+        
+        return remoteUsers
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        // Try local first
+        if let user = try? await localRepository.fetchUser(id: id) {
+            return user
+        }
+        
+        // Fetch from remote
+        let user = try await remoteRepository.fetchUser(id: id)
+        
+        // Save to local
+        try? await localRepository.createUser(user)
+        
+        return user
+    }
+    
+    func createUser(_ user: User) async throws -> User {
+        // Create on remote first
+        let created = try await remoteRepository.createUser(user)
+        
+        // Sync to local
+        try? await localRepository.createUser(created)
+        
+        return created
+    }
+    
+    func updateUser(_ user: User) async throws -> User {
+        let updated = try await remoteRepository.updateUser(user)
+        try? await localRepository.updateUser(updated)
+        return updated
+    }
+    
+    func deleteUser(id: Int) async throws {
+        try await remoteRepository.deleteUser(id: id)
+        try? await localRepository.deleteUser(id: id)
+    }
+    
+    private func refreshFromRemote() async throws {
+        let remoteUsers = try await remoteRepository.fetchUsers()
+        for user in remoteUsers {
+            try? await localRepository.updateUser(user)
+        }
+    }
+}
+```
+
+## Testing with Mock Repositories
+
+The repository pattern shines when writing tests. Create a mock repository for testing:
+
+```swift
+class MockUserRepository: UserRepositoryProtocol {
+    var users: [User] = []
+    var shouldThrowError = false
+    var fetchUsersCallCount = 0
+    
+    func fetchUsers() async throws -> [User] {
+        fetchUsersCallCount += 1
+        
+        if shouldThrowError {
+            throw NSError(domain: "Test", code: 1, userInfo: nil)
+        }
+        
+        return users
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        if shouldThrowError {
+            throw NSError(domain: "Test", code: 1, userInfo: nil)
+        }
+
+        return users.first { $0.id == id } ?? User(id: id, name: "Unknown", email: "unknown@example.com")
+    }
+
+    func createUser(_ user: User) async throws -> User {
+        if shouldThrowError {
+            throw NSError(domain: "Test", code: 1, userInfo: nil)
+        }
+
+        users.append(user)
+        return user
+    }
+
+    func updateUser(_ user: User) async throws -> User {
+        if shouldThrowError {
+            throw NSError(domain: "Test", code: 1, userInfo: nil)
+        }
+
+        if let index = users.firstIndex(where: { $0.id == user.id }) {
+            users[index] = user
+        }
+        return user
+    }
+
+    func deleteUser(id: Int) async throws {
+        if shouldThrowError {
+            throw NSError(domain: "Test", code: 1, userInfo: nil)
+        }
+
+        users.removeAll { $0.id == id }
+    }
+}
+
+// Tests using the mock
+class UserListViewModelTests: XCTestCase {
+
+    func testLoadUsersSuccess() async {
+        // Arrange
+        let mockRepo = MockUserRepository()
+        mockRepo.users = [
+            User(id: 1, name: "Alice", email: "alice@example.com"),
+            User(id: 2, name: "Bob", email: "bob@example.com")
+        ]
+        let viewModel = UserListViewModel(repository: mockRepo)
+
+        // Act
+        await viewModel.loadUsers()
+
+        // Assert
+        XCTAssertEqual(viewModel.users.count, 2)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(mockRepo.fetchUsersCallCount, 1)
+    }
+
+    func testLoadUsersFailure() async {
+        // Arrange
+        let mockRepo = MockUserRepository()
+        mockRepo.shouldThrowError = true
+        let viewModel = UserListViewModel(repository: mockRepo)
+
+        // Act
+        await viewModel.loadUsers()
+
+        // Assert
+        XCTAssertTrue(viewModel.users.isEmpty)
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+}
+```
+
+## Common Mistakes
+
+**Leaking implementation details through the protocol.** Don't include database-specific types or networking types in repository protocols — they should use your domain models only.
+
+**Making repositories too granular.** Don't create a separate repository for every model. Group related operations into logical repositories (e.g., `UserRepository` handles users and user preferences).
+
+**Not invalidating caches on writes.** When creating, updating, or deleting data through a cached repository, always clear or update the relevant cache entries.
+
+**Testing with production repositories.** Always inject mock repositories in tests. Never let unit tests hit real APIs or databases.
+
+## Summary Table
+
+| Concept | Purpose | Implementation | When to Use |
+|---------|---------|---------------|-------------|
+| **Repository Protocol** | Define data operations interface | `protocol UserRepositoryProtocol` | Always — foundation of the pattern |
+| **Remote Repository** | Network-backed data access | URLSession + Codable | When data comes from an API |
+| **Local Repository** | Database-backed data access | Core Data, SwiftData, or file storage | When data persists locally |
+| **Cached Repository** | Add caching layer | NSCache + UserDefaults wrapping remote | When reducing network calls |
+| **Composite Repository** | Local + remote with sync | Try local first, fall back to remote | When offline support is needed |
+| **Mock Repository** | Test double for unit tests | In-memory arrays with configurable behavior | All unit tests |
+| **View Model** | Consume repository via protocol | `init(repository: UserRepositoryProtocol)` | Always — keeps VMs testable |
+
+## Official Resources
+
+- [Apple Documentation: URLSession](https://developer.apple.com/documentation/foundation/urlsession)
+- [Apple Documentation: Core Data](https://developer.apple.com/documentation/coredata)
+- [Apple Documentation: NSCache](https://developer.apple.com/documentation/foundation/nscache)
+- [Swift by Sundell: The Repository Pattern](https://www.swiftbysundell.com/articles/the-repository-pattern-in-swift/)
+- [WWDC23: Meet SwiftData](https://developer.apple.com/videos/play/wwdc2023/10187/)

@@ -1,0 +1,571 @@
+---
+title: "Access Control"
+description: "open, public, internal, fileprivate, private access levels"
+sectionId: "1.10-memory-advanced"
+sectionTitle: "Memory & Advanced Topics"
+order: 26
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Access Control in Swift
+
+Access control restricts access to parts of your code from code in other source files and modules. This mechanism lets you hide implementation details and specify a preferred interface through which code can be accessed and used.
+
+In Swift, you can set access levels for individual types (classes, structs, enums), properties, methods, initializers, and subscripts. Access control applies at the module and source file level, making it essential for building maintainable, secure applications.
+
+## Why Access Control Matters
+
+Without proper access control:
+
+- **Encapsulation breaks down**: Internal implementation details become exposed, making refactoring risky
+- **API boundaries blur**: It's unclear which parts of your code are meant for public use versus internal use
+- **Unintended dependencies form**: Other modules might depend on implementation details you wanted to keep private
+- **Testing becomes harder**: Over-exposed internals make it difficult to know what needs testing
+
+## The Five Access Levels
+
+Swift provides five access levels, from most restrictive to most open:
+
+1. **private** - Available only within the enclosing declaration and extensions in the same file
+2. **fileprivate** - Available anywhere within the source file
+3. **internal** - Available anywhere within the same module (default)
+4. **public** - Available to code in other modules, but can't be subclassed or overridden
+5. **open** - Available to code in other modules and can be subclassed and overridden
+
+### Private
+
+The most restrictive level. Use `private` when you want to hide implementation details within a single type.
+
+```swift
+class BankAccount {
+    private var balance: Double = 0.0
+    
+    func deposit(_ amount: Double) {
+        balance += amount
+    }
+    
+    func withdraw(_ amount: Double) -> Bool {
+        guard balance >= amount else { return false }
+        balance -= amount
+        return true
+    }
+}
+
+let account = BankAccount()
+account.deposit(100)
+// account.balance // Error: 'balance' is inaccessible due to 'private' protection level
+```
+
+**Important**: Extensions to the same type in the same file can access `private` members:
+
+```swift
+class UserProfile {
+    private var userId: String = ""
+}
+
+extension UserProfile {
+    func debugDescription() -> String {
+        return "User ID: \(userId)" // This works!
+    }
+}
+```
+
+### Fileprivate
+
+Use `fileprivate` when multiple types in the same file need to share implementation details, but you don't want them accessible outside the file.
+
+```swift
+// File: NetworkManager.swift
+
+fileprivate class RequestBuilder {
+    fileprivate func buildRequest(url: URL) -> URLRequest {
+        return URLRequest(url: url)
+    }
+}
+
+class NetworkManager {
+    fileprivate let builder = RequestBuilder()
+    
+    func fetchData(from url: URL) {
+        let request = builder.buildRequest(url: url)
+        // Use request...
+    }
+}
+
+// In another file:
+let manager = NetworkManager()
+// manager.builder // Error: 'builder' is inaccessible due to 'fileprivate' protection level
+```
+
+**Common use case**: Protocol conformance helpers that shouldn't leak outside the file:
+
+```swift
+// File: ViewController.swift
+
+class MyViewController: UIViewController {
+    fileprivate var cachedData: [String] = []
+}
+
+fileprivate extension MyViewController {
+    func loadCache() {
+        // Implementation details that don't need to be public
+        cachedData = ["item1", "item2"]
+    }
+}
+```
+
+### Internal
+
+The default access level. If you don't specify an access level, Swift uses `internal`. Code is accessible anywhere within the same module (app or framework).
+
+```swift
+// No access modifier = internal by default
+class AppConfiguration {
+    var apiKey: String = "abc123"
+    var baseURL: URL
+    
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+    }
+}
+
+// Accessible throughout your app/module
+let config = AppConfiguration(baseURL: URL(string: "https://api.example.com")!)
+print(config.apiKey) // Works fine within the same module
+```
+
+**Module definition**: A module is a single unit of code distribution — an app bundle or framework. In Xcode, each target is a separate module.
+
+### Public
+
+Use `public` when you want code to be accessible from other modules, but you want to prevent subclassing or overriding. This is common for frameworks and libraries.
+
+```swift
+// In a framework module
+
+public class DataManager {
+    public var configuration: String
+    
+    public init(configuration: String) {
+        self.configuration = configuration
+    }
+    
+    public func fetchData() {
+        // Implementation
+    }
+}
+
+// In an app that imports this framework:
+import MyFramework
+
+let manager = DataManager(configuration: "prod")
+manager.fetchData() // Works!
+
+// class CustomManager: DataManager {} // Error: Cannot inherit from non-open class
+```
+
+**Important**: Public initializers must be explicitly marked as public:
+
+```swift
+public class Logger {
+    // This initializer is internal by default, even though the class is public!
+    init() {}
+    
+    // Correct way:
+    public init() {}
+}
+```
+
+### Open
+
+The most permissive access level. Use `open` when you want code to be subclassable and overridable in other modules. Only classes and class members can be `open`.
+
+```swift
+// In a framework module
+
+open class BaseViewController: UIViewController {
+    open func setupUI() {
+        // Default implementation
+    }
+    
+    open var themeColor: UIColor {
+        return .blue
+    }
+}
+
+// In an app that imports this framework:
+import MyFramework
+
+class CustomViewController: BaseViewController {
+    override func setupUI() {
+        super.setupUI()
+        // Custom implementation
+    }
+    
+    override var themeColor: UIColor {
+        return .red
+    }
+}
+```
+
+**Key difference between `public` and `open`**:
+
+```swift
+// Framework code
+public class NetworkClient { } // Cannot be subclassed outside module
+open class BaseNetworkClient { } // Can be subclassed outside module
+
+public class Container {
+    public func process() { } // Cannot be overridden outside module
+}
+
+open class OpenContainer {
+    open func process() { } // Can be overridden outside module
+}
+```
+
+## Access Level Rules and Guidelines
+
+### Rule 1: No entity can be defined in terms of another entity that has a more restrictive access level
+
+```swift
+// Error: Function cannot be public because parameter type is internal
+internal struct Configuration { }
+
+public func setup(config: Configuration) { } // Compile error!
+
+// Fix: Make Configuration public or make function internal
+public struct Configuration { }
+public func setup(config: Configuration) { } // OK
+```
+
+### Rule 2: Subclass access level cannot exceed superclass
+
+```swift
+internal class BaseClass { }
+
+// Error: Class cannot be more accessible than its superclass
+public class DerivedClass: BaseClass { } // Compile error!
+
+// Fix:
+internal class DerivedClass: BaseClass { } // OK
+```
+
+However, you can override inherited methods to make them more accessible:
+
+```swift
+public class BaseClass {
+    fileprivate func doSomething() { }
+}
+
+public class DerivedClass: BaseClass {
+    override internal func doSomething() { } // OK - making it more accessible
+}
+```
+
+### Rule 3: Variables, constants, and properties cannot be more public than their types
+
+```swift
+private class PrivateClass { }
+
+// Error: Property cannot be internal because its type is private
+var instance: PrivateClass // Compile error!
+
+// Fix:
+private var instance: PrivateClass // OK
+```
+
+### Rule 4: Getters and setters have the same access level as their variable/property
+
+You can make setters more restrictive than getters:
+
+```swift
+public class Counter {
+    // Getter is public, setter is private
+    private(set) public var count: Int = 0
+    
+    public func increment() {
+        count += 1
+    }
+}
+
+let counter = Counter()
+print(counter.count) // OK - getter is public
+// counter.count = 5 // Error: Cannot assign to property with private setter
+```
+
+Other examples:
+
+```swift
+class Document {
+    fileprivate(set) var wordCount: Int = 0
+    internal(set) public var title: String = ""
+}
+```
+
+## Common Patterns and Best Practices
+
+### Pattern 1: Hiding Implementation Details
+
+```swift
+public class PasswordValidator {
+    // Public interface
+    public func validate(_ password: String) -> Bool {
+        return meetsLengthRequirement(password) && 
+               containsSpecialCharacter(password)
+    }
+    
+    // Private implementation
+    private func meetsLengthRequirement(_ password: String) -> Bool {
+        return password.count >= 8
+    }
+    
+    private func containsSpecialCharacter(_ password: String) -> Bool {
+        let specialCharacters = CharacterSet(charactersIn: "!@#$%^&*")
+        return password.rangeOfCharacter(from: specialCharacters) != nil
+    }
+}
+```
+
+### Pattern 2: Protocol-Based APIs
+
+```swift
+// Public protocol defining the interface
+public protocol DataStore {
+    func save(_ data: Data) throws
+    func load() -> Data?
+}
+
+// Internal implementation
+class FileSystemDataStore: DataStore {
+    private let fileURL: URL
+    
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+    
+    func save(_ data: Data) throws {
+        try data.write(to: fileURL)
+    }
+    
+    func load() -> Data? {
+        return try? Data(contentsOf: fileURL)
+    }
+}
+
+// Public factory
+public class DataStoreFactory {
+    public static func createStore() -> DataStore {
+        let url = FileManager.default.urls(
+            for: .documentDirectory, 
+            in: .userDomainMask
+        )[0].appendingPathComponent("data.bin")
+        return FileSystemDataStore(fileURL: url)
+    }
+}
+```
+
+### Pattern 3: Nested Types
+
+Nested types inherit the access level of their enclosing type (unless specified otherwise):
+
+```swift
+public class OuterClass {
+    // This nested class is also public
+    class NestedClass {
+        var value: Int = 0
+    }
+    
+    // Making it explicitly private
+    private class PrivateNestedClass {
+        var secret: String = ""
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting to mark initializers as public
+
+```swift
+public struct User {
+    public var name: String
+    
+    // This init is internal by default!
+    init(name: String) {
+        self.name = name
+    }
+}
+
+// In another module:
+// let user = User(name: "Alice") // Error!
+
+// Fix:
+public struct User {
+    public var name: String
+    
+    public init(name: String) {
+        self.name = name
+    }
+}
+```
+
+### Mistake 2: Exposing internal types through public interfaces
+
+```swift
+internal struct InternalModel {
+    var data: String
+}
+
+public class DataProcessor {
+    // Error: Method cannot be public with internal return type
+    public func process() -> InternalModel {
+        return InternalModel(data: "test")
+    }
+}
+```
+
+### Mistake 3: Not understanding protocol conformance access
+
+When a type conforms to a protocol, the protocol's access level affects the implementation:
+
+```swift
+internal protocol InternalProtocol {
+    func doSomething()
+}
+
+public class PublicClass: InternalProtocol {
+    // This must be at least internal (matching protocol)
+    func doSomething() {
+        // Implementation
+    }
+}
+```
+
+For public protocols:
+
+```swift
+public protocol PublicProtocol {
+    func doSomething()
+}
+
+public class PublicClass: PublicProtocol {
+    // Must be public to satisfy protocol
+    public func doSomething() {
+        // Implementation
+    }
+}
+```
+
+### Edge Case: Extensions and Access Control
+
+Extensions cannot have an explicit access level modifier, but you can set access for individual members:
+
+```swift
+public class MyClass {
+    private var value: Int = 0
+}
+
+extension MyClass {
+    // Each member needs its own access modifier
+    public func publicMethod() { }
+    private func privateMethod() { }
+}
+```
+
+You can use an extension to adopt a protocol with a specific access level:
+
+```swift
+public class DataManager { }
+
+private extension DataManager: CustomDebugStringConvertible {
+    var debugDescription: String {
+        return "DataManager instance"
+    }
+}
+```
+
+### Edge Case: Unit Testing and Access Control
+
+By default, your tests can't access `internal` code from your app. Use `@testable import` to make internal code visible:
+
+```swift
+// In your test file
+@testable import MyApp
+
+class MyTests: XCTestCase {
+    func testInternalFunction() {
+        // Can now access internal members from MyApp
+        let result = internalFunction()
+        XCTAssertEqual(result, expectedValue)
+    }
+}
+```
+
+Note: `@testable` only exposes `internal` members, not `private` or `fileprivate`.
+
+## Access Control in Frameworks vs. Apps
+
+When building an **app**, access control is primarily about code organization:
+- Most code can remain `internal`
+- Use `private` and `fileprivate` to hide implementation details
+- `public` and `open` are rarely needed unless you have multiple modules
+
+When building a **framework**, access control defines your API:
+- Explicitly mark everything that's part of your public API as `public` or `open`
+- Keep implementation details `internal`, `fileprivate`, or `private`
+- Be conservative — it's easier to make things more accessible later than to remove public APIs
+
+```swift
+// Framework design example
+public class APIClient {
+    // Public API surface
+    public func fetchUsers() async throws -> [User] {
+        let request = buildRequest() // Uses internal helper
+        return try await execute(request)
+    }
+    
+    // Internal implementation
+    func buildRequest() -> URLRequest {
+        // Details hidden from framework consumers
+        return URLRequest(url: baseURL)
+    }
+    
+    // Private state
+    private let baseURL: URL
+    private let session: URLSession
+    
+    public init(baseURL: URL) {
+        self.baseURL = baseURL
+        self.session = URLSession.shared
+    }
+}
+```
+
+## Summary Table
+
+| Access Level | Visibility | Can Subclass/Override | Common Use Case |
+|-------------|-----------|---------------------|-----------------|
+| **private** | Within the same declaration and extensions in the same file | No | Hide implementation details within a type |
+| **fileprivate** | Within the same source file | Only in same file | Share implementation between types in one file |
+| **internal** | Within the same module (default) | Within module only | General app code, internal framework code |
+| **public** | Across module boundaries | No | Framework public API that shouldn't be subclassed |
+| **open** | Across module boundaries | Yes | Framework classes/methods designed for inheritance |
+
+### Quick Decision Guide
+
+- **Building an app?** Start with `internal` (the default), use `private` for implementation details
+- **Building a framework API?** Use `public` for your API surface, `internal` for everything else
+- **Need inheritance across modules?** Use `open` for classes and methods
+- **Sharing between types in one file?** Use `fileprivate`
+- **Hiding within one type?** Use `private`
+- **Need read-only access?** Use `private(set)` or `fileprivate(set)`
+
+## References
+
+For more information, see:
+- [The Swift Programming Language - Access Control](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/)
+- [Swift Evolution - SE-0025: Scoped Access Level](https://github.com/apple/swift-evolution/blob/main/proposals/0025-scoped-access-level.md)
+- [Swift Evolution - SE-0117: Allow distinguishing between public access and public overridability](https://github.com/apple/swift-evolution/blob/main/proposals/0117-non-public-subclassable-by-default.md)

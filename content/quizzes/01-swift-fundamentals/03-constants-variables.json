@@ -1,0 +1,65 @@
+{
+  "articleSlug": "03-constants-variables",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What is the main advantage of using `let` over `var` in Swift?",
+      "options": [
+        "It allows for mutable objects.",
+        "It prevents accidental modifications and enables compiler optimizations.",
+        "It supports dynamic typing.",
+        "It can be reassigned multiple times."
+      ],
+      "correctAnswer": 1,
+      "explanation": "Using `let` ensures that the value cannot be changed, promoting immutability which helps prevent accidental modifications and allows the compiler to optimize code."
+    },
+    {
+      "id": "q2",
+      "question": "Which code snippet will result in a compile-time error?",
+      "options": [
+        "let pi = 3.14159",
+        "var username = \"John\"; username = \"Doe\"",
+        "let maxAttempts = 3; maxAttempts = 5",
+        "var greeting = \"Hello\"; greeting = \"Hi\""
+      ],
+      "correctAnswer": 2,
+      "explanation": "Attempting to change the value of `maxAttempts` after it's been declared with `let` will cause a compile-time error because `let` is used for constants, which are immutable."
+    },
+    {
+      "id": "q3",
+      "question": "Why might you choose to use a type annotation in Swift?",
+      "options": [
+        "To always make a variable mutable.",
+        "To enable dynamic method dispatch.",
+        "To provide clarity in complex expressions or when automatic type inference is incorrect.",
+        "To avoid initialization of variables."
+      ],
+      "correctAnswer": 2,
+      "explanation": "Type annotations provide clarity and ensure that the correct type is used, especially in complex expressions or when Swift’s type inference might default to an undesired type."
+    },
+    {
+      "id": "q4",
+      "question": "What will happen if you try to modify a property of a struct instance declared with `let`?",
+      "options": [
+        "The property will be successfully changed.",
+        "A compile-time error will occur.",
+        "The value will be changed at runtime but not compile-time.",
+        "A runtime error will occur."
+      ],
+      "correctAnswer": 1,
+      "explanation": "For value types like structs, declaring an instance with `let` makes the entire value immutable, hence attempting to modify any property will result in a compile-time error."
+    },
+    {
+      "id": "q5",
+      "question": "Consider the following code: `let person = Person(name: \"Alice\"); person.name = \"Bob\"`. What does this illustrate about `let`?",
+      "options": [
+        "`let` prevents any changes to the object and its properties.",
+        "Constants declared with `let` must have all immutable properties.",
+        "`let` ensures the reference to the object is immutable, but not its properties.",
+        "The `let` keyword has no impact on class instances."
+      ],
+      "correctAnswer": 2,
+      "explanation": "This code shows that while `let` prevents reassignment of the reference itself, it does not make the object's properties immutable if they are declared as variables."
+    }
+  ]
+}

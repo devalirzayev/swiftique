@@ -1,0 +1,637 @@
+---
+title: "TestFlight"
+description: "Beta testing with internal and external testers"
+sectionId: "7.2-testing-distribution"
+sectionTitle: "Testing & Distribution"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# TestFlight: Beta Testing Your iOS Apps
+
+TestFlight is Apple's official platform for distributing pre-release versions of your iOS, iPadOS, watchOS, and tvOS apps to beta testers. It allows you to gather feedback, identify bugs, and validate features before submitting your app to the App Store. TestFlight supports two types of testing: **internal testing** (for up to 100 members of your App Store Connect team) and **external testing** (for up to 10,000 testers outside your team).
+
+## Why TestFlight Matters
+
+Before launching your app to millions of users, you need to ensure it works reliably across different devices, iOS versions, and real-world usage scenarios. TestFlight provides a controlled environment where you can:
+
+- Test on actual devices without requiring testers' UDIDs
+- Distribute builds quickly without App Store review (for internal testing)
+- Collect crash reports and feedback automatically
+- Test In-App Purchases in a sandbox environment
+- Validate your app on devices and OS versions you don't own
+
+## Prerequisites
+
+Before using TestFlight, you need:
+
+1. An active **Apple Developer Program** membership ($99/year)
+2. An **App Store Connect** account
+3. A properly configured app with a **valid bundle identifier**
+4. An **archive** built with a **Distribution certificate**
+
+## Preparing Your App for TestFlight
+
+### 1. Configure Your App's Build Settings
+
+Your app must be configured correctly to create TestFlight builds. Here's what you need to verify:
+
+```swift
+// In your project settings, ensure:
+// - Bundle Identifier matches App Store Connect
+// - Version number follows semantic versioning (e.g., 1.0.0)
+// - Build number is unique and incremented for each upload
+
+// You can access these programmatically:
+if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+    print("App Version: \(version)")
+}
+
+if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+    print("Build Number: \(build)")
+}
+```
+
+### 2. Increment Build Numbers
+
+Each TestFlight upload requires a unique build number. You can automate this with a build phase script:
+
+```bash
+# Add this as a "Run Script" build phase in Xcode
+buildNumber=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${PROJECT_DIR}/${INFOPLIST_FILE}")
+buildNumber=$(($buildNumber + 1))
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $buildNumber" "${PROJECT_DIR}/${INFOPLIST_FILE}"
+```
+
+**Common Mistake**: Using the same build number for different versions. Apple rejects this. Always increment the build number, even if your version number stays the same.
+
+### 3. Configure App Transport Security (If Needed)
+
+If your beta app connects to development servers without HTTPS, configure `Info.plist`:
+
+```swift
+// While this is configured in Info.plist, you should check connectivity programmatically:
+import Foundation
+
+func checkNetworkConfiguration() {
+    #if DEBUG
+    // In development, you might use http://
+    let devURL = URL(string: "http://dev-api.example.com")!
+    #else
+    // In TestFlight and production, always use https://
+    let devURL = URL(string: "https://api.example.com")!
+    #endif
+    
+    print("Connecting to: \(devURL)")
+}
+```
+
+**Important**: TestFlight builds should use production-like configurations. Don't ship builds with ATS exceptions unless absolutely necessary, and document them clearly in your test information.
+
+## Detecting TestFlight Builds in Code
+
+You often need to know if your app is running via TestFlight to enable specific behaviors:
+
+```swift
+import Foundation
+
+extension Bundle {
+    /// Returns true if the app is running through TestFlight
+    var isTestFlight: Bool {
+        // Check for the embedded.mobileprovision file
+        guard let path = Bundle.main.appStoreReceiptURL?.path else {
+            return false
+        }
+        
+        // TestFlight builds have "sandboxReceipt" in the receipt path
+        return path.contains("sandboxReceipt")
+    }
+    
+    /// Returns true if running in a simulator
+    var isSimulator: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
+}
+
+// Usage:
+func configureApp() {
+    if Bundle.main.isTestFlight {
+        print("Running in TestFlight - enabling beta features")
+        enableDebugLogging()
+        showBetaFeedbackButton()
+    } else if Bundle.main.isSimulator {
+        print("Running in Simulator")
+    } else {
+        print("Running in Production")
+    }
+}
+```
+
+**Edge Case**: This detection isn't 100% reliable for all scenarios. For critical feature flags, consider using remote configuration (like Firebase Remote Config) instead.
+
+## Conditional Compilation for Beta Builds
+
+Use compilation flags to include or exclude code:
+
+```swift
+// Add a custom flag in Build Settings > Swift Compiler > Custom Flags
+// Under "Other Swift Flags" add: -DTESTFLIGHT
+
+#if TESTFLIGHT
+func logDetailedAnalytics(_ event: String, parameters: [String: Any]) {
+    print("🔍 Analytics: \(event)")
+    print("Parameters: \(parameters)")
+    // Send to your analytics service
+}
+#else
+func logDetailedAnalytics(_ event: String, parameters: [String: Any]) {
+    // Minimal logging in production
+}
+#endif
+
+// You can also use DEBUG flag that Xcode provides automatically
+#if DEBUG
+let apiBaseURL = "https://dev-api.example.com"
+#else
+let apiBaseURL = "https://api.example.com"
+#endif
+```
+
+## Creating and Uploading a Build
+
+### 1. Archive Your App
+
+In Xcode:
+1. Select "Any iOS Device" or a real device as your build destination (not Simulator)
+2. Choose **Product > Archive**
+3. Wait for the archive to complete
+
+### 2. Upload to App Store Connect
+
+```swift
+// While upload is done through Xcode, you might want to log upload metadata:
+struct BuildMetadata: Codable {
+    let version: String
+    let buildNumber: String
+    let uploadDate: Date
+    let releaseNotes: String
+    
+    static func current(releaseNotes: String) -> BuildMetadata {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+        
+        return BuildMetadata(
+            version: version,
+            buildNumber: buildNumber,
+            uploadDate: Date(),
+            releaseNotes: releaseNotes
+        )
+    }
+}
+
+// Save this locally for record-keeping
+func saveBuildMetadata(_ metadata: BuildMetadata) {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    
+    if let data = try? encoder.encode(metadata) {
+        // Save to your build artifacts or CI system
+        print("Build metadata saved: \(metadata)")
+    }
+}
+```
+
+**Common Mistake**: Forgetting to select a real device or "Any iOS Device" before archiving. If you select a Simulator, the Archive option will be grayed out.
+
+## Setting Up Internal Testing
+
+Internal testers are members of your App Store Connect team. They can access builds immediately after processing (usually 10-15 minutes).
+
+### Adding Internal Testers
+
+1. Go to **App Store Connect > Users and Access**
+2. Add users with appropriate roles (Admin, App Manager, Developer, or Marketing)
+3. In **TestFlight > Internal Testing**, add these users to your internal group
+
+```swift
+// You can provide internal testers with additional tools
+class BetaToolsViewController: UIViewController {
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Only show beta tools to internal testers
+        if isInternalBuild() {
+            setupInternalTestingTools()
+        }
+    }
+    
+    private func isInternalBuild() -> Bool {
+        // Check if this is an internal TestFlight build
+        // You might use a combination of factors:
+        return Bundle.main.isTestFlight && isInternalTesterEmail()
+    }
+    
+    private func isInternalTesterEmail() -> Bool {
+        // If you're using authentication, check the email domain
+        let internalDomains = ["yourcompany.com"]
+        // Implementation depends on your auth system
+        return false // Placeholder
+    }
+    
+    private func setupInternalTestingTools() {
+        // Add debugging tools, feature flags UI, etc.
+        let debugButton = UIButton(type: .system)
+        debugButton.setTitle("Debug Tools", for: .normal)
+        debugButton.addTarget(self, action: #selector(showDebugTools), for: .touchUpInside)
+        // Add to view...
+    }
+    
+    @objc private func showDebugTools() {
+        // Present debug menu
+    }
+}
+```
+
+## Setting Up External Testing
+
+External testing requires more steps because builds undergo **Beta App Review** (usually 24-48 hours) before testers can access them.
+
+### 1. Provide Test Information
+
+You must complete:
+- **Beta App Description**: What testers should know
+- **Feedback Email**: Where testers can reach you
+- **Test Information**: Instructions for testers, including test credentials if needed
+
+```swift
+// Create a test credentials system for external testers
+struct TestCredentials {
+    static let testAccounts = [
+        TestAccount(email: "tester1@example.com", password: "TestPass123!"),
+        TestAccount(email: "tester2@example.com", password: "TestPass123!")
+    ]
+    
+    struct TestAccount {
+        let email: String
+        let password: String
+    }
+    
+    /// Displays test credentials to beta testers
+    static func showCredentialsIfNeeded() {
+        #if TESTFLIGHT
+        // Show a prominent banner with test credentials
+        NotificationCenter.default.post(
+            name: .showTestCredentials,
+            object: nil,
+            userInfo: ["accounts": testAccounts]
+        )
+        #endif
+    }
+}
+
+extension Notification.Name {
+    static let showTestCredentials = Notification.Name("showTestCredentials")
+}
+```
+
+### 2. Add External Testers
+
+You can add external testers by:
+- **Email**: Send invitations to specific email addresses
+- **Public Link**: Generate a public link anyone can use (up to 10,000 testers)
+
+```swift
+// Track which testers have used which features
+class TestFlightAnalytics {
+    
+    static func trackFeatureUsage(_ feature: String) {
+        guard Bundle.main.isTestFlight else { return }
+        
+        let event = FeatureUsageEvent(
+            feature: feature,
+            timestamp: Date(),
+            buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown",
+            userId: getCurrentTesterId()
+        )
+        
+        // Send to your analytics backend
+        sendAnalytics(event)
+    }
+    
+    private static func getCurrentTesterId() -> String {
+        // In TestFlight, you can't directly identify users
+        // Use your own authentication system or generate a stable ID
+        let defaults = UserDefaults.standard
+        
+        if let existingId = defaults.string(forKey: "testerUUID") {
+            return existingId
+        }
+        
+        let newId = UUID().uuidString
+        defaults.set(newId, forKey: "testerUUID")
+        return newId
+    }
+    
+    private static func sendAnalytics(_ event: FeatureUsageEvent) {
+        // Implementation depends on your analytics service
+        print("📊 Feature used: \(event.feature) by \(event.userId)")
+    }
+    
+    struct FeatureUsageEvent {
+        let feature: String
+        let timestamp: Date
+        let buildNumber: String
+        let userId: String
+    }
+}
+
+// Usage in your app:
+func didTapNewFeature() {
+    TestFlightAnalytics.trackFeatureUsage("NewDashboard")
+    // Continue with feature logic
+}
+```
+
+## Collecting Feedback from Testers
+
+TestFlight provides built-in feedback mechanisms, but you can supplement these with custom solutions:
+
+```swift
+import UIKit
+import MessageUI
+
+class FeedbackViewController: UIViewController, MFMailComposeViewControllerDelegate {
+    
+    private let feedbackTextView = UITextView()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Send Feedback"
+        setupUI()
+    }
+    
+    private func setupUI() {
+        // Setup your UI...
+        let sendButton = UIBarButtonItem(
+            title: "Send",
+            style: .done,
+            target: self,
+            action: #selector(sendFeedback)
+        )
+        navigationItem.rightBarButtonItem = sendButton
+    }
+    
+    @objc private func sendFeedback() {
+        guard MFMailComposeViewController.canSendMail() else {
+            showEmailNotAvailableAlert()
+            return
+        }
+        
+        let composer = MFMailComposeViewController()
+        composer.mailComposeDelegate = self
+        composer.setToRecipients(["feedback@yourapp.com"])
+        composer.setSubject("TestFlight Feedback - Build \(currentBuildNumber())")
+        
+        let body = createFeedbackBody()
+        composer.setMessageBody(body, isHTML: false)
+        
+        // Attach app logs if available
+        if let logData = getAppLogs() {
+            composer.addAttachmentData(logData, mimeType: "text/plain", fileName: "app-logs.txt")
+        }
+        
+        present(composer, animated: true)
+    }
+    
+    private func createFeedbackBody() -> String {
+        var body = feedbackTextView.text ?? ""
+        body += "\n\n--- System Information ---\n"
+        body += "App Version: \(currentVersion())\n"
+        body += "Build Number: \(currentBuildNumber())\n"
+        body += "iOS Version: \(UIDevice.current.systemVersion)\n"
+        body += "Device: \(UIDevice.current.model)\n"
+        body += "Device Name: \(UIDevice.current.name)\n"
+        
+        return body
+    }
+    
+    private func currentVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+    }
+    
+    private func currentBuildNumber() -> String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+    }
+    
+    private func getAppLogs() -> Data? {
+        // Return your app's log data if you're collecting logs
+        // This is a placeholder implementation
+        let logs = "Sample log data..."
+        return logs.data(using: .utf8)
+    }
+    
+    private func showEmailNotAvailableAlert() {
+        let alert = UIAlertController(
+            title: "Email Not Available",
+            message: "Please configure an email account on your device or contact us at feedback@yourapp.com",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    func mailComposeController(_ controller: MFMailComposeViewController, 
+                              didFinishWith result: MFMailComposeResult, 
+                              error: Error?) {
+        controller.dismiss(animated: true)
+        
+        switch result {
+        case .sent:
+            showThankYouMessage()
+        case .failed:
+            showErrorMessage()
+        default:
+            break
+        }
+    }
+    
+    private func showThankYouMessage() {
+        let alert = UIAlertController(
+            title: "Thank You!",
+            message: "Your feedback has been sent.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    private func showErrorMessage() {
+        let alert = UIAlertController(
+            title: "Error",
+            message: "Failed to send feedback. Please try again.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Managing Build Numbers
+
+Each TestFlight upload requires a unique build number. Forgetting to increment it causes upload failures.
+
+```swift
+// In your CI/CD or build script:
+// Automatically increment CFBundleVersion
+
+/*
+ agvtool next-version -all
+ // Or set explicitly:
+ agvtool new-version -all 42
+*/
+
+// Programmatically check build number
+let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+print("Current build: \(buildNumber ?? "unknown")")
+```
+
+### Mistake 2: Forgetting Beta App Description
+
+External testers see a beta-specific description. If you leave it blank, testers won't know what to test.
+
+```
+✅ Good Beta Description:
+"This beta includes the new photo editor feature. Please test:
+1. Applying filters to photos
+2. Cropping and rotating
+3. Saving edited photos to your library
+Report any crashes or visual glitches."
+
+❌ Bad Beta Description:
+"Beta version"
+```
+
+### Mistake 3: Not Using TestFlight Groups Effectively
+
+```swift
+/*
+ Recommended group structure:
+
+ 1. "Internal Team" (App Store Connect users)
+    - Automatic access, no review needed
+    - Up to 100 testers
+
+ 2. "Beta Testers" (external, invited)
+    - Requires beta app review
+    - Specific test instructions per group
+    - Up to 10,000 testers
+
+ 3. "Public Link" (external, open)
+    - Anyone with the link can join
+    - Set a tester limit (e.g., 1,000)
+    - Good for open betas
+*/
+```
+
+### Mistake 4: Not Handling Beta Expiration
+
+TestFlight builds expire after 90 days. Handle this gracefully:
+
+```swift
+class BetaExpirationChecker {
+    static func checkExpiration() {
+        guard let buildDate = getBuildDate() else { return }
+
+        let daysSinceBuild = Calendar.current.dateComponents(
+            [.day],
+            from: buildDate,
+            to: Date()
+        ).day ?? 0
+
+        if daysSinceBuild > 80 {
+            // Warn user that beta will expire soon
+            NotificationCenter.default.post(
+                name: .betaExpiringSoon,
+                object: nil,
+                userInfo: ["daysRemaining": 90 - daysSinceBuild]
+            )
+        }
+    }
+
+    private static func getBuildDate() -> Date? {
+        guard let infoPath = Bundle.main.path(forResource: "Info", ofType: "plist"),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: infoPath),
+              let creationDate = attributes[.creationDate] as? Date else {
+            return nil
+        }
+        return creationDate
+    }
+}
+```
+
+### Edge Case: Detecting TestFlight Environment
+
+```swift
+enum AppEnvironment {
+    case appStore
+    case testFlight
+    case debug
+
+    static var current: AppEnvironment {
+        #if DEBUG
+        return .debug
+        #else
+        if let receiptURL = Bundle.main.appStoreReceiptURL,
+           receiptURL.lastPathComponent == "sandboxReceipt" {
+            return .testFlight
+        }
+        return .appStore
+        #endif
+    }
+}
+
+// Usage
+switch AppEnvironment.current {
+case .debug:
+    print("Running in Xcode")
+case .testFlight:
+    print("Running via TestFlight")
+    // Show feedback button, extra logging, etc.
+case .appStore:
+    print("Running from App Store")
+}
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Internal testing** | Up to 100 App Store Connect users | Quick team testing, no review |
+| **External testing** | Up to 10,000 invited testers | Broader beta testing |
+| **Public link** | Open enrollment with limit | Open beta programs |
+| **Beta review** | Required for external testers | Apple reviews first external build |
+| **Build numbers** | Must be unique per upload | `agvtool` or CI auto-increment |
+| **Test instructions** | Per-group descriptions | Guide testers on what to test |
+| **Crash reports** | Automatic in App Store Connect | Monitor beta stability |
+| **Feedback** | Screenshot + annotation tool | Testers report issues easily |
+| **Expiration** | 90 days from upload | Builds stop working after expiry |
+| **Environment detection** | `sandboxReceipt` check | Differentiate TestFlight vs App Store |
+| **Groups** | Organize testers by role | Target builds to specific audiences |
+
+## Official Resources
+
+- [Apple Documentation: TestFlight](https://developer.apple.com/testflight/)
+- [Apple Documentation: Distributing Your App for Beta Testing](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+- [Apple: TestFlight for Testers](https://developer.apple.com/testflight/testers/)
+- [Apple Documentation: App Store Connect API — Beta Testing](https://developer.apple.com/documentation/appstoreconnectapi/prerelease_versions_and_beta_testers)
+- [WWDC 2023: Simplify Distribution in Xcode and Xcode Cloud](https://developer.apple.com/videos/play/wwdc2023/10224/)

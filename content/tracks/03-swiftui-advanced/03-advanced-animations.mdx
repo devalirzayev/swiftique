@@ -1,0 +1,610 @@
+---
+title: "Advanced Animations"
+description: "Spring animations, keyframes, phaseAnimator, and AnimatableModifier"
+sectionId: "3.1-animations"
+sectionTitle: "Animations & Transitions"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Advanced Animations in SwiftUI
+
+Animations bring your iOS apps to life, transforming static interfaces into engaging, intuitive experiences. While basic animations like `.animation()` are straightforward, advanced animation techniques give you precise control over timing, physics, and complex multi-stage movements. In this article, we'll explore spring animations, keyframe animations, phase-based animations, and custom animatable modifiers—tools that separate good animations from great ones.
+
+## Why Advanced Animations Matter
+
+Advanced animations help you:
+- Create natural, physics-based motion that feels intuitive
+- Build complex, multi-stage animations with precise timing
+- Animate custom properties beyond built-in modifiers
+- Reduce boilerplate when animating between discrete states
+
+These techniques are essential for professional-grade iOS apps where polish and user experience are paramount.
+
+## Spring Animations
+
+Spring animations simulate real-world physics, creating motion that feels natural and responsive. Unlike linear or ease-in-out animations, springs bounce and settle, mimicking how objects move in the physical world.
+
+### Basic Spring Animation
+
+```swift
+import SwiftUI
+
+struct SpringAnimationView: View {
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.blue)
+                .frame(width: isExpanded ? 300 : 100, height: 100)
+                .animation(.spring(), value: isExpanded)
+            
+            Button("Toggle") {
+                isExpanded.toggle()
+            }
+        }
+    }
+}
+```
+
+### Customizing Spring Behavior
+
+SwiftUI provides several ways to configure springs. The most common approach uses `response` and `dampingFraction`:
+
+```swift
+struct CustomSpringView: View {
+    @State private var offset: CGFloat = 0
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            // Bouncy spring (low damping)
+            Circle()
+                .fill(.red)
+                .frame(width: 50, height: 50)
+                .offset(x: offset)
+                .animation(
+                    .spring(response: 0.5, dampingFraction: 0.3),
+                    value: offset
+                )
+            
+            // Smooth spring (high damping)
+            Circle()
+                .fill(.green)
+                .frame(width: 50, height: 50)
+                .offset(x: offset)
+                .animation(
+                    .spring(response: 0.5, dampingFraction: 0.9),
+                    value: offset
+                )
+            
+            // Critical damping (no bounce)
+            Circle()
+                .fill(.blue)
+                .frame(width: 50, height: 50)
+                .offset(x: offset)
+                .animation(
+                    .spring(response: 0.5, dampingFraction: 1.0),
+                    value: offset
+                )
+            
+            Button("Animate") {
+                offset = offset == 0 ? 100 : 0
+            }
+        }
+    }
+}
+```
+
+**Key Parameters:**
+- `response`: Duration of the spring animation (in seconds). Lower values = faster animation.
+- `dampingFraction`: How quickly the spring settles. 0 = bounces forever, 1 = no bounce, 0.5-0.7 = pleasant bounce.
+
+### Spring with Velocity
+
+For interrupting ongoing animations smoothly, you can specify initial velocity:
+
+```swift
+struct SpringVelocityView: View {
+    @State private var position: CGFloat = 0
+    
+    var body: some View {
+        Circle()
+            .fill(.purple)
+            .frame(width: 50, height: 50)
+            .offset(y: position)
+            .animation(
+                .spring(response: 0.6, dampingFraction: 0.7, blendDuration: 0),
+                value: position
+            )
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        position = value.translation.height
+                    }
+                    .onEnded { _ in
+                        position = 0
+                    }
+            )
+    }
+}
+```
+
+### Common Mistakes with Springs
+
+**Mistake 1: Not specifying the animated value**
+
+```swift
+// ❌ Wrong - animation applies to all state changes
+.animation(.spring())
+
+// ✅ Correct - animation only applies to specific value
+.animation(.spring(), value: isExpanded)
+```
+
+**Mistake 2: Using springs for duration-specific animations**
+
+Springs don't have a fixed duration—they settle based on physics. If you need precise timing, use `easeInOut` or keyframes instead.
+
+## Keyframe Animations
+
+Keyframe animations let you orchestrate complex, multi-stage animations with precise timing. They're perfect for choreographing multiple properties or creating animations that can't be expressed as simple A-to-B transitions.
+
+### Basic Keyframe Animation
+
+```swift
+struct KeyframeAnimationView: View {
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.orange)
+                .frame(width: 100, height: 100)
+                .keyframeAnimator(
+                    initialValue: AnimationValues(),
+                    trigger: isAnimating
+                ) { content, value in
+                    content
+                        .scaleEffect(value.scale)
+                        .rotationEffect(value.rotation)
+                        .offset(y: value.verticalOffset)
+                } keyframes: { _ in
+                    KeyframeTrack(\.scale) {
+                        CubicKeyframe(1.5, duration: 0.3)
+                        CubicKeyframe(1.0, duration: 0.2)
+                    }
+                    
+                    KeyframeTrack(\.rotation) {
+                        CubicKeyframe(.degrees(0), duration: 0.2)
+                        CubicKeyframe(.degrees(180), duration: 0.3)
+                        CubicKeyframe(.degrees(360), duration: 0.2)
+                    }
+                    
+                    KeyframeTrack(\.verticalOffset) {
+                        SpringKeyframe(-50, duration: 0.3, spring: .bouncy)
+                        SpringKeyframe(0, duration: 0.4, spring: .bouncy)
+                    }
+                }
+            
+            Button("Animate") {
+                isAnimating.toggle()
+            }
+        }
+    }
+}
+
+struct AnimationValues {
+    var scale: CGFloat = 1.0
+    var rotation: Angle = .degrees(0)
+    var verticalOffset: CGFloat = 0
+}
+```
+
+### Understanding Keyframe Types
+
+SwiftUI provides several keyframe interpolation types:
+
+```swift
+struct KeyframeTypesView: View {
+    @State private var trigger = false
+    
+    var body: some View {
+        HStack(spacing: 30) {
+            // Linear interpolation - constant speed
+            Circle()
+                .fill(.red)
+                .frame(width: 50, height: 50)
+                .keyframeAnimator(initialValue: 0.0, trigger: trigger) { content, value in
+                    content.offset(y: value)
+                } keyframes: { _ in
+                    LinearKeyframe(100, duration: 0.5)
+                    LinearKeyframe(0, duration: 0.5)
+                }
+            
+            // Cubic interpolation - smooth acceleration/deceleration
+            Circle()
+                .fill(.green)
+                .frame(width: 50, height: 50)
+                .keyframeAnimator(initialValue: 0.0, trigger: trigger) { content, value in
+                    content.offset(y: value)
+                } keyframes: { _ in
+                    CubicKeyframe(100, duration: 0.5)
+                    CubicKeyframe(0, duration: 0.5)
+                }
+            
+            // Spring interpolation - physics-based
+            Circle()
+                .fill(.blue)
+                .frame(width: 50, height: 50)
+                .keyframeAnimator(initialValue: 0.0, trigger: trigger) { content, value in
+                    content.offset(y: value)
+                } keyframes: { _ in
+                    SpringKeyframe(100, duration: 0.5, spring: .bouncy)
+                    SpringKeyframe(0, duration: 0.5, spring: .bouncy)
+                }
+        }
+        .onAppear { trigger = true }
+    }
+}
+```
+
+### Complex Multi-Property Keyframes
+
+Here's a practical example of a card flip animation:
+
+```swift
+struct CardFlipView: View {
+    @State private var isFlipped = false
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 20)
+            .fill(
+                LinearGradient(
+                    colors: [.blue, .purple],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 200, height: 300)
+            .overlay {
+                Text(isFlipped ? "Back" : "Front")
+                    .font(.title)
+                    .foregroundStyle(.white)
+            }
+            .keyframeAnimator(
+                initialValue: CardValues(),
+                trigger: isFlipped
+            ) { content, value in
+                content
+                    .rotation3DEffect(
+                        value.rotation,
+                        axis: (x: 0, y: 1, z: 0),
+                        perspective: 0.5
+                    )
+                    .scaleEffect(value.scale)
+                    .offset(y: value.verticalOffset)
+            } keyframes: { _ in
+                KeyframeTrack(\.rotation) {
+                    CubicKeyframe(.degrees(90), duration: 0.3)
+                    CubicKeyframe(.degrees(180), duration: 0.3)
+                }
+                
+                KeyframeTrack(\.scale) {
+                    CubicKeyframe(0.95, duration: 0.15)
+                    CubicKeyframe(1.0, duration: 0.45)
+                }
+                
+                KeyframeTrack(\.verticalOffset) {
+                    SpringKeyframe(-20, duration: 0.3, spring: .smooth)
+                    SpringKeyframe(0, duration: 0.3, spring: .smooth)
+                }
+            }
+            .onTapGesture {
+                isFlipped.toggle()
+            }
+    }
+}
+
+struct CardValues {
+    var rotation: Angle = .degrees(0)
+    var scale: CGFloat = 1.0
+    var verticalOffset: CGFloat = 0
+}
+```
+
+### Common Keyframe Mistakes
+
+**Mistake 1: Not matching total keyframe duration**
+
+```swift
+// ❌ Inconsistent - tracks have different total durations
+KeyframeTrack(\.scale) {
+    CubicKeyframe(1.5, duration: 0.3)  // Total: 0.3s
+}
+
+KeyframeTrack(\.rotation) {
+    CubicKeyframe(.degrees(180), duration: 0.5)  // Total: 0.5s
+}
+
+// ✅ Better - tracks have matching durations
+KeyframeTrack(\.scale) {
+    CubicKeyframe(1.5, duration: 0.5)
+}
+
+KeyframeTrack(\.rotation) {
+    CubicKeyframe(.degrees(180), duration: 0.5)
+}
+```
+
+**Mistake 2: Forgetting the initial value**
+
+Keyframes always start from the `initialValue` defined in `keyframeAnimator`. Make sure your first keyframe acknowledges this.
+
+## Phase-Based Animations (PhaseAnimator)
+
+When you need to cycle through distinct animation states, `phaseAnimator` is cleaner than managing multiple boolean states. It's perfect for loading indicators, state transitions, or any animation that moves through predefined phases.
+
+### Basic Phase Animation
+
+```swift
+struct PhaseAnimationView: View {
+    enum Phase: CaseIterable {
+        case initial
+        case move
+        case scale
+        case rotate
+        
+        var offset: CGFloat {
+            switch self {
+            case .initial: return 0
+            case .move: return 100
+            case .scale: return 100
+            case .rotate: return 0
+            }
+        }
+        
+        var scale: CGFloat {
+            switch self {
+            case .initial: return 1.0
+            case .move: return 1.0
+            case .scale: return 1.5
+            case .rotate: return 1.0
+            }
+        }
+        
+        var rotation: Angle {
+            switch self {
+            case .initial: return .degrees(0)
+            case .move: return .degrees(0)
+            case .scale: return .degrees(0)
+            case .rotate: return .degrees(360)
+            }
+        }
+    }
+    
+    var body: some View {
+        PhaseAnimator(Phase.allCases, trigger: ()) { phase in
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.teal)
+                .frame(width: 100, height: 100)
+                .offset(x: phase.offset)
+                .scaleEffect(phase.scale)
+                .rotationEffect(phase.rotation)
+        } animation: { phase in
+            switch phase {
+            case .initial: return .easeInOut(duration: 0.3)
+            case .move: return .spring(response: 0.4, dampingFraction: 0.6)
+            case .scale: return .easeOut(duration: 0.3)
+            case .rotate: return .linear(duration: 0.5)
+            }
+        }
+    }
+}
+```
+
+### Practical Example: Loading Indicator
+
+```swift
+struct LoadingIndicatorView: View {
+    enum LoadingPhase: CaseIterable {
+        case dot1, dot2, dot3, dot4
+    }
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            ForEach(0..<3, id: \.self) { index in
+                PhaseAnimator(LoadingPhase.allCases) { phase in
+                    Circle()
+                        .fill(.blue)
+                        .frame(width: 20, height: 20)
+                        .scaleEffect(shouldScale(index: index, phase: phase) ? 1.5 : 1.0)
+                        .opacity(shouldScale(index: index, phase: phase) ? 1.0 : 0.5)
+                } animation: { _ in
+                    .easeInOut(duration: 0.4)
+                }
+            }
+        }
+    }
+    
+    func shouldScale(index: Int, phase: LoadingPhase) -> Bool {
+        let phaseIndex = LoadingPhase.allCases.firstIndex(of: phase) ?? 0
+        return phaseIndex % 3 == index
+    }
+}
+```
+
+### Triggering Phase Animations
+
+You can control when phase animations run using a trigger value:
+
+```swift
+struct TriggeredPhaseView: View {
+    @State private var animationTrigger = 0
+    
+    enum Phase: CaseIterable {
+        case start, middle, end
+    }
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            PhaseAnimator(
+                Phase.allCases,
+                trigger: animationTrigger
+            ) { phase in
+                Circle()
+                    .fill(color(for: phase))
+                    .frame(width: 100, height: 100)
+            } animation: { _ in
+                .spring(response: 0.4, dampingFraction: 0.7)
+            }
+            
+            Button("Animate") {
+                animationTrigger += 1
+            }
+        }
+    }
+    
+    func color(for phase: Phase) -> Color {
+        switch phase {
+        case .start: return .red
+        case .middle: return .orange
+        case .end: return .green
+        }
+    }
+}
+```
+
+### PhaseAnimator vs. State Management
+
+**Use PhaseAnimator when:**
+- You have 3+ discrete states to cycle through
+- Animations automatically loop
+- State changes happen in sequence
+
+**Use regular @State when:**
+- You have binary states (on/off, expanded/collapsed)
+- User input determines animation direction
+- You need fine control over when animations occur
+
+## Custom Animatable Modifiers
+
+For animating custom properties that SwiftUI doesn't provide built-in modifiers for, you'll need `AnimatableModifier`. This protocol lets you create smooth animations for any numeric property by telling SwiftUI how to interpolate values:
+
+```swift
+struct CountingModifier: AnimatableModifier {
+    var number: Double
+
+    var animatableData: Double {
+        get { number }
+        set { number = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            Text("\(Int(number))")
+                .font(.largeTitle.bold())
+        )
+    }
+}
+
+extension View {
+    func countingNumber(_ number: Double) -> some View {
+        modifier(CountingModifier(number: number))
+    }
+}
+
+// Usage
+struct ScoreView: View {
+    @State private var score: Double = 0
+
+    var body: some View {
+        Color.clear
+            .frame(width: 200, height: 100)
+            .countingNumber(score)
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 1.0)) {
+                    score += 100
+                }
+            }
+    }
+}
+```
+
+The key is the `animatableData` property — SwiftUI calls the setter repeatedly with interpolated values during the animation, and each intermediate value triggers a view redraw.
+
+### Animating Multiple Properties
+
+For animating two properties simultaneously, use `AnimatablePair`:
+
+```swift
+struct WaveModifier: AnimatableModifier {
+    var frequency: Double
+    var amplitude: Double
+
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(frequency, amplitude) }
+        set {
+            frequency = newValue.first
+            amplitude = newValue.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content.offset(
+            x: amplitude * sin(frequency * .pi * 2),
+            y: 0
+        )
+    }
+}
+```
+
+For more than two properties, nest `AnimatablePair` values:
+
+```swift
+// Three properties
+var animatableData: AnimatablePair<Double, AnimatablePair<Double, Double>> {
+    get { AnimatablePair(a, AnimatablePair(b, c)) }
+    set {
+        a = newValue.first
+        b = newValue.second.first
+        c = newValue.second.second
+    }
+}
+```
+
+## Common Mistakes
+
+**Forgetting `withAnimation` when changing state.** Simply changing a value won't animate — you need to wrap the change in `withAnimation` or apply `.animation()` to the view.
+
+**Using `.animation()` without a `value` parameter.** The deprecated parameterless `.animation(.spring())` animates every change. Always specify what triggers the animation: `.animation(.spring(), value: isExpanded)`.
+
+**Nesting conflicting animations.** When parent and child views both specify animations, they can conflict. Use `Transaction` to override child animations when needed.
+
+**Over-animating.** Not every state change needs animation. Excessive animations feel janky and can hurt performance. Use animation purposefully to guide user attention.
+
+## Summary Table
+
+| Concept | API | Purpose | Example |
+|---------|-----|---------|---------|
+| **Phase Animator** | `PhaseAnimator` | Cycle through discrete states | Loading spinners, multi-step effects |
+| **Keyframe Animator** | `KeyframeAnimator` | Timeline-based property animation | Bounce effects, complex motion paths |
+| **Keyframe Tracks** | `KeyframeTrack` | Animate specific properties over time | `.move(to:)`, `.cubicCurve(to:...)` |
+| **Spring Keyframes** | `SpringKeyframe` | Physics-based keyframe segments | Natural bouncing motion |
+| **Linear Keyframes** | `LinearKeyframe` | Constant-speed keyframe segments | Steady transitions |
+| **Cubic Keyframes** | `CubicKeyframe` | Bezier-curved keyframe segments | Smooth ease-in/out |
+| **AnimatableModifier** | `AnimatableModifier` | Animate custom numeric properties | Counting numbers, wave effects |
+| **AnimatablePair** | `AnimatablePair` | Animate two properties together | Simultaneous x/y animation |
+| **Custom Timing** | `CustomAnimation` | Create reusable timing curves | Branded animation presets |
+| **Transaction** | `Transaction` | Override or disable animations | Prevent child animation conflicts |
+| **Matched Geometry** | `matchedGeometryEffect` | Shared element transitions | Hero animations between views |
+
+## Official Resources
+
+- [Apple Documentation: Animation](https://developer.apple.com/documentation/swiftui/animation)
+- [Apple Documentation: PhaseAnimator](https://developer.apple.com/documentation/swiftui/phaseanimator)
+- [Apple Documentation: KeyframeAnimator](https://developer.apple.com/documentation/swiftui/keyframeanimator)
+- [WWDC23: Explore SwiftUI Animation](https://developer.apple.com/videos/play/wwdc2023/10156/)
+- [WWDC23: Wind Your Way Through Advanced Animations](https://developer.apple.com/videos/play/wwdc2023/10158/)

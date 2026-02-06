@@ -1,0 +1,637 @@
+---
+title: "Transitions"
+description: "AnyTransition, custom transitions, matched geometry effect"
+sectionId: "3.1-animations"
+sectionTitle: "Animations & Transitions"
+order: 2
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Transitions in SwiftUI
+
+Transitions in SwiftUI define how views appear and disappear from the screen. When you add or remove a view from the hierarchy, SwiftUI can animate that change smoothly instead of just popping it in or out. Think of transitions as the "entrance and exit animations" for your views.
+
+Without transitions, views appear and disappear instantly. With transitions, you create polished, professional animations that guide users' attention and make your app feel responsive and delightful.
+
+## Why Transitions Matter
+
+Transitions serve three key purposes:
+
+1. **Visual continuity**: Smooth transitions help users understand what's happening in your app
+2. **Context preservation**: They show the relationship between UI states
+3. **Professional polish**: Well-executed transitions make your app feel refined
+
+## Basic Transitions with AnyTransition
+
+SwiftUI provides several built-in transitions through the `AnyTransition` type. Let's start with the simplest example:
+
+```swift
+import SwiftUI
+
+struct BasicTransitionView: View {
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Button("Toggle View") {
+                withAnimation {
+                    isVisible.toggle()
+                }
+            }
+            
+            if isVisible {
+                Text("Hello, I'm animated!")
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                    .transition(.opacity)
+            }
+        }
+    }
+}
+```
+
+**Key point**: Transitions only work when combined with `withAnimation`. The transition defines *how* the view changes, while `withAnimation` triggers the animation.
+
+## Built-in Transitions
+
+SwiftUI provides several standard transitions:
+
+```swift
+struct BuiltInTransitionsView: View {
+    @State private var transitionType = 0
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Picker("Transition Type", selection: $transitionType) {
+                Text("Opacity").tag(0)
+                Text("Scale").tag(1)
+                Text("Slide").tag(2)
+                Text("Move").tag(3)
+            }
+            .pickerStyle(.segmented)
+            
+            Button("Toggle") {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    isVisible.toggle()
+                }
+            }
+            
+            if isVisible {
+                Rectangle()
+                    .fill(Color.purple)
+                    .frame(width: 200, height: 200)
+                    .transition(currentTransition)
+            }
+        }
+        .padding()
+    }
+    
+    var currentTransition: AnyTransition {
+        switch transitionType {
+        case 0:
+            return .opacity
+        case 1:
+            return .scale
+        case 2:
+            return .slide
+        case 3:
+            return .move(edge: .bottom)
+        default:
+            return .opacity
+        }
+    }
+}
+```
+
+### Available Built-in Transitions
+
+- **`.opacity`**: Fades in and out
+- **`.scale`**: Grows from or shrinks to a point
+- **`.slide`**: Slides in from the leading edge
+- **`.move(edge:)`**: Moves in from a specific edge
+- **`.identity`**: No transition (instant appearance)
+
+## Combining Transitions
+
+You can combine multiple transitions using `.combined(with:)`:
+
+```swift
+struct CombinedTransitionView: View {
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack {
+            Button("Toggle") {
+                withAnimation {
+                    isVisible.toggle()
+                }
+            }
+            
+            if isVisible {
+                Text("Combined Animation")
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                    .transition(
+                        .scale.combined(with: .opacity)
+                    )
+            }
+        }
+    }
+}
+```
+
+## Asymmetric Transitions
+
+Sometimes you want different animations for insertion and removal. Use `.asymmetric(insertion:removal:)`:
+
+```swift
+struct AsymmetricTransitionView: View {
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack {
+            Button("Toggle") {
+                withAnimation(.spring()) {
+                    isVisible.toggle()
+                }
+            }
+            
+            if isVisible {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange)
+                    .frame(width: 150, height: 150)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .move(edge: .trailing).combined(with: .scale)
+                    ))
+            }
+        }
+    }
+}
+```
+
+When this view appears, it slides in from the left while fading in. When it disappears, it slides out to the right while scaling down.
+
+## Custom Transitions
+
+For more control, create custom transitions using the `AnyTransition.modifier(active:identity:)` method. This requires creating two `ViewModifier` instances: one for the "active" state (when the view is not visible) and one for the "identity" state (when fully visible).
+
+```swift
+// Custom modifier for the active (invisible) state
+struct RotationModifier: ViewModifier {
+    let rotation: Double
+    let opacity: Double
+    
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(rotation))
+            .opacity(opacity)
+    }
+}
+
+// Extension to make the transition easy to use
+extension AnyTransition {
+    static var rotateAndFade: AnyTransition {
+        .modifier(
+            active: RotationModifier(rotation: 360, opacity: 0),
+            identity: RotationModifier(rotation: 0, opacity: 1)
+        )
+    }
+}
+
+struct CustomTransitionView: View {
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack {
+            Button("Toggle") {
+                withAnimation(.easeInOut(duration: 1.0)) {
+                    isVisible.toggle()
+                }
+            }
+            
+            if isVisible {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.yellow)
+                    .transition(.rotateAndFade)
+            }
+        }
+    }
+}
+```
+
+### Custom Transition with Offset and Scale
+
+Here's a more practical example that creates a "popup" effect:
+
+```swift
+struct ScaleAndOffsetModifier: ViewModifier {
+    let scale: CGFloat
+    let offset: CGFloat
+    
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale)
+            .offset(y: offset)
+    }
+}
+
+extension AnyTransition {
+    static var popup: AnyTransition {
+        .modifier(
+            active: ScaleAndOffsetModifier(scale: 0.5, offset: -100),
+            identity: ScaleAndOffsetModifier(scale: 1.0, offset: 0)
+        )
+        .combined(with: .opacity)
+    }
+}
+
+struct PopupTransitionView: View {
+    @State private var showAlert = false
+    
+    var body: some View {
+        ZStack {
+            Button("Show Popup") {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                    showAlert = true
+                }
+            }
+            
+            if showAlert {
+                VStack(spacing: 15) {
+                    Text("Success!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Text("Your operation completed successfully")
+                        .multilineTextAlignment(.center)
+                    
+                    Button("Dismiss") {
+                        withAnimation {
+                            showAlert = false
+                        }
+                    }
+                }
+                .padding(30)
+                .background(Color.white)
+                .cornerRadius(20)
+                .shadow(radius: 20)
+                .transition(.popup)
+            }
+        }
+    }
+}
+```
+
+## Matched Geometry Effect
+
+The matched geometry effect creates seamless transitions between two views by matching their position and size. This is perfect for "morphing" one view into another, creating hero animations, or animating between list and detail views.
+
+### Basic Matched Geometry
+
+```swift
+struct MatchedGeometryBasicView: View {
+    @Namespace private var animation
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack {
+            if !isExpanded {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue)
+                    .matchedGeometryEffect(id: "shape", in: animation)
+                    .frame(width: 100, height: 100)
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            isExpanded = true
+                        }
+                    }
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue)
+                    .matchedGeometryEffect(id: "shape", in: animation)
+                    .frame(width: 300, height: 200)
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            isExpanded = false
+                        }
+                    }
+            }
+        }
+    }
+}
+```
+
+**How it works**:
+
+1. Create a `@Namespace` property to identify the animation scope
+2. Apply `.matchedGeometryEffect(id:in:)` to both views with the same `id`
+3. SwiftUI automatically animates between the two states
+
+### Matched Geometry with Different Views
+
+You can match geometry between completely different view types:
+
+```swift
+struct MatchedGeometryDifferentViewsView: View {
+    @Namespace private var heroAnimation
+    @State private var showDetail = false
+    
+    var body: some View {
+        ZStack {
+            if !showDetail {
+                VStack {
+                    Spacer()
+                    
+                    HStack {
+                        Circle()
+                            .fill(Color.purple)
+                            .matchedGeometryEffect(id: "avatar", in: heroAnimation)
+                            .frame(width: 50, height: 50)
+                        
+                        Text("John Doe")
+                            .matchedGeometryEffect(id: "name", in: heroAnimation)
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                            showDetail = true
+                        }
+                    }
+                }
+            } else {
+                VStack {
+                    HStack {
+                        Circle()
+                            .fill(Color.purple)
+                            .matchedGeometryEffect(id: "avatar", in: heroAnimation)
+                            .frame(width: 100, height: 100)
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    
+                    Text("John Doe")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .matchedGeometryEffect(id: "name", in: heroAnimation)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    
+                    Text("Detailed information about John Doe would go here...")
+                        .padding()
+                    
+                    Spacer()
+                    
+                    Button("Back") {
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                            showDetail = false
+                        }
+                    }
+                    .padding()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.white)
+            }
+        }
+    }
+}
+```
+
+### Matched Geometry Properties
+
+You can control which properties are matched using the `properties` parameter:
+
+```swift
+struct MatchedGeometryPropertiesView: View {
+    @Namespace private var animation
+    @State private var matchPosition = true
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Toggle("Match Position", isOn: $matchPosition)
+                .padding()
+            
+            HStack {
+                if matchPosition {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 50, height: 50)
+                        .matchedGeometryEffect(
+                            id: "circle",
+                            in: animation,
+                            properties: .position
+                        )
+                }
+                
+                Spacer()
+                
+                if !matchPosition {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 50, height: 50)
+                        .matchedGeometryEffect(
+                            id: "circle",
+                            in: animation,
+                            properties: .position
+                        )
+                }
+            }
+            .padding()
+            .animation(.spring(), value: matchPosition)
+        }
+    }
+}
+```
+
+Available properties:
+
+- `.position`: Matches the position
+- `.size`: Matches the size
+- `.frame`: Matches both position and size (default)
+
+### Matched Geometry in Lists
+
+A common use case is animating between a list item and a detail view:
+
+```swift
+struct Item: Identifiable {
+    let id = UUID()
+    let name: String
+    let color: Color
+}
+
+struct MatchedGeometryListView: View {
+    @Namespace private var animation
+    @State private var items = [
+        Item(name: "Item 1", color: .red),
+        Item(name: "Item 2", color: .blue),
+        Item(name: "Item 3", color: .green)
+    ]
+    @State private var selectedItem: Item?
+    
+    var body: some View {
+        ZStack {
+            // List view
+            if selectedItem == nil {
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(items) { item in
+                            HStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(item.color)
+                                    .matchedGeometryEffect(id: item.id, in: animation)
+                                    .frame(width: 60, height: 60)
+                                
+                                Text(item.name)
+                                    .matchedGeometryEffect(id: "\(item.id)-text", in: animation)
+                                
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(10)
+                            .onTapGesture {
+                                withAnimation(.spring()) {
+                                    selectedItem = item
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+            
+            // Detail view
+            if let item = selectedItem {
+                VStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(item.color)
+                        .matchedGeometryEffect(id: item.id, in: animation)
+                        .frame(width: 200, height: 200)
+                    
+                    Text(item.name)
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .matchedGeometryEffect(id: "\(item.id)-text", in: animation)
+                    
+                    Text("Detailed information about \(item.name)")
+                        .padding()
+                    
+                    Button("Close") {
+                        withAnimation(.spring()) {
+                            selectedItem = nil
+                        }
+                    }
+                    .padding()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.white)
+            }
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting withAnimation
+
+```swift
+// ❌ Wrong - no animation occurs
+if isVisible {
+    Text("Hello")
+        .transition(.scale)
+}
+
+Button("Toggle") {
+    isVisible.toggle() // Missing withAnimation
+}
+
+// ✅ Correct
+Button("Toggle") {
+    withAnimation {
+        isVisible.toggle()
+    }
+}
+```
+
+### Mistake 2: Transition on Wrong View
+
+```swift
+// ❌ Wrong - transition applied to the container
+VStack {
+    if isVisible {
+        Text("Hello")
+    }
+}
+.transition(.slide) // Won't animate the Text
+
+// ✅ Correct - transition on the conditional view
+VStack {
+    if isVisible {
+        Text("Hello")
+            .transition(.slide)
+    }
+}
+```
+
+### Mistake 3: Using Transition Without if/switch
+
+Transitions only work when views are inserted or removed from the hierarchy:
+
+```swift
+// ❌ Wrong - opacity change, not insertion/removal
+Text("Hello")
+    .opacity(isVisible ? 1 : 0)
+    .transition(.scale) // Never triggers
+
+// ✅ Correct - view is conditionally inserted
+if isVisible {
+    Text("Hello")
+        .transition(.scale)
+}
+```
+
+### Mistake 4: Asymmetric Transition Direction Confusion
+
+```swift
+// The insertion animation plays when the view appears,
+// and the removal animation plays when it disappears
+.transition(.asymmetric(
+    insertion: .move(edge: .leading),  // Slides in from the left
+    removal: .move(edge: .trailing)    // Slides out to the right
+))
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **Basic transition** | `.transition(.slide)` | Animate view insertion/removal |
+| **Opacity** | `.transition(.opacity)` | Fade in/out |
+| **Scale** | `.transition(.scale)` | Grow/shrink |
+| **Slide** | `.transition(.slide)` | Slide from leading edge |
+| **Move** | `.transition(.move(edge: .bottom))` | Slide from specific edge |
+| **Asymmetric** | `.transition(.asymmetric(insertion:removal:))` | Different animations for appear/disappear |
+| **Combined** | `.transition(.scale.combined(with: .opacity))` | Multiple effects together |
+| **Custom** | `struct MyTransition: ViewModifier` | Fully custom transition |
+| **withAnimation** | `withAnimation { }` | Required to trigger transitions |
+
+## Official Resources
+
+- [Apple Documentation: Transition](https://developer.apple.com/documentation/swiftui/transition)
+- [Apple Documentation: AnyTransition](https://developer.apple.com/documentation/swiftui/anytransition)
+- [Apple Documentation: withAnimation](https://developer.apple.com/documentation/swiftui/withanimation(_:_:))
+- [Human Interface Guidelines: Motion](https://developer.apple.com/design/human-interface-guidelines/motion)

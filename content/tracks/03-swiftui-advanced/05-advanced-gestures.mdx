@@ -1,0 +1,610 @@
+---
+title: "Advanced Gestures"
+description: "MagnificationGesture, RotationGesture, simultaneous and sequenced gestures"
+sectionId: "3.2-gestures"
+sectionTitle: "Gestures & Interactions"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Advanced Gestures in SwiftUI
+
+While basic tap and drag gestures cover many use cases, SwiftUI provides powerful advanced gestures that enable richer, more intuitive user interactions. This guide focuses on `MagnificationGesture` and `RotationGesture`, as well as how to combine gestures using simultaneous and sequential composition.
+
+Understanding these advanced techniques allows you to build interfaces that feel natural and responsive—think pinch-to-zoom on images, rotate-to-adjust controls, or complex multi-touch interactions.
+
+## Why Advanced Gestures Matter
+
+Advanced gestures enable you to:
+
+- Create photo viewing experiences with pinch-to-zoom and rotation
+- Build drawing or design apps with multi-touch manipulation
+- Implement custom controls that respond to multiple input types
+- Craft interfaces that feel polished and professional
+
+Apple's documentation on gestures can be found in the [SwiftUI Gestures framework reference](https://developer.apple.com/documentation/swiftui/gestures).
+
+## MagnificationGesture: Pinch to Zoom
+
+`MagnificationGesture` detects pinch gestures, commonly used for zooming. It provides a scale value that represents how much the user has pinched or spread their fingers.
+
+### Basic Implementation
+
+```swift
+import SwiftUI
+
+struct MagnificationExample: View {
+    @State private var scale: CGFloat = 1.0
+    
+    var body: some View {
+        Image(systemName: "star.fill")
+            .font(.system(size: 100))
+            .foregroundColor(.yellow)
+            .scaleEffect(scale)
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        scale = value
+                    }
+                    .onEnded { value in
+                        scale = value
+                    }
+            )
+    }
+}
+```
+
+### Better Approach: Cumulative Scaling
+
+The basic approach has a problem—each new gesture resets from 1.0, causing the view to snap back. Here's the correct way:
+
+```swift
+struct ImprovedMagnificationExample: View {
+    @State private var currentScale: CGFloat = 1.0
+    @State private var finalScale: CGFloat = 1.0
+    
+    var body: some View {
+        Image(systemName: "photo")
+            .font(.system(size: 100))
+            .foregroundColor(.blue)
+            .scaleEffect(finalScale * currentScale)
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        currentScale = value
+                    }
+                    .onEnded { value in
+                        finalScale *= currentScale
+                        currentScale = 1.0
+                    }
+            )
+    }
+}
+```
+
+**Key insight**: Separate the ongoing gesture value (`currentScale`) from the accumulated result (`finalScale`). This prevents the jarring reset effect.
+
+### Common Mistakes with MagnificationGesture
+
+**Mistake 1: Not resetting the gesture value**
+
+```swift
+// WRONG - scale keeps growing indefinitely
+.onEnded { value in
+    scale = value // This doesn't reset currentScale
+}
+```
+
+**Mistake 2: Forgetting to clamp values**
+
+```swift
+// BETTER - prevent scales that are too small or too large
+.onEnded { value in
+    finalScale *= currentScale
+    finalScale = min(max(finalScale, 0.5), 3.0) // Clamp between 0.5x and 3x
+    currentScale = 1.0
+}
+```
+
+## RotationGesture: Twist to Rotate
+
+`RotationGesture` detects rotation gestures using two fingers. It returns an `Angle` representing the rotation amount.
+
+### Basic Implementation
+
+```swift
+import SwiftUI
+
+struct RotationExample: View {
+    @State private var currentRotation: Angle = .zero
+    @State private var finalRotation: Angle = .zero
+    
+    var body: some View {
+        Rectangle()
+            .fill(.purple)
+            .frame(width: 200, height: 200)
+            .rotationEffect(finalRotation + currentRotation)
+            .gesture(
+                RotationGesture()
+                    .onChanged { value in
+                        currentRotation = value
+                    }
+                    .onEnded { value in
+                        finalRotation += currentRotation
+                        currentRotation = .zero
+                    }
+            )
+    }
+}
+```
+
+### Practical Example: Image Manipulation
+
+Combining rotation with visual feedback:
+
+```swift
+struct ImageRotationView: View {
+    @State private var currentRotation: Angle = .zero
+    @State private var finalRotation: Angle = .zero
+    
+    var totalRotation: Angle {
+        finalRotation + currentRotation
+    }
+    
+    var body: some View {
+        VStack {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.system(size: 150))
+                .foregroundColor(.green)
+                .rotationEffect(totalRotation)
+                .gesture(
+                    RotationGesture()
+                        .onChanged { value in
+                            currentRotation = value
+                        }
+                        .onEnded { value in
+                            finalRotation += currentRotation
+                            currentRotation = .zero
+                        }
+                )
+            
+            Text("Rotation: \(totalRotation.degrees, specifier: "%.1f")°")
+                .font(.headline)
+                .padding()
+        }
+    }
+}
+```
+
+### Common Mistake: Angle Accumulation
+
+`Angle` values can grow unbounded. While this often isn't a problem, you might want to normalize:
+
+```swift
+extension Angle {
+    func normalized() -> Angle {
+        let degrees = self.degrees.truncatingRemainder(dividingBy: 360)
+        return Angle(degrees: degrees)
+    }
+}
+
+// Usage
+.onEnded { value in
+    finalRotation = (finalRotation + currentRotation).normalized()
+    currentRotation = .zero
+}
+```
+
+## Simultaneous Gestures
+
+Simultaneous gestures allow multiple gestures to recognize at the same time. This is perfect for implementing pinch-to-zoom with rotation—like in Photos apps.
+
+### Syntax
+
+Use the `simultaneously(with:)` modifier or the `SimultaneousGesture` type:
+
+```swift
+struct SimultaneousGesturesExample: View {
+    @State private var currentScale: CGFloat = 1.0
+    @State private var finalScale: CGFloat = 1.0
+    
+    @State private var currentRotation: Angle = .zero
+    @State private var finalRotation: Angle = .zero
+    
+    var body: some View {
+        Image(systemName: "hexagon.fill")
+            .font(.system(size: 150))
+            .foregroundColor(.orange)
+            .scaleEffect(finalScale * currentScale)
+            .rotationEffect(finalRotation + currentRotation)
+            .gesture(
+                SimultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            currentScale = value
+                        }
+                        .onEnded { value in
+                            finalScale *= currentScale
+                            currentScale = 1.0
+                        },
+                    RotationGesture()
+                        .onChanged { value in
+                            currentRotation = value
+                        }
+                        .onEnded { value in
+                            finalRotation += currentRotation
+                            currentRotation = .zero
+                        }
+                )
+            )
+    }
+}
+```
+
+### Alternative Syntax
+
+You can also chain gestures:
+
+```swift
+.gesture(
+    MagnificationGesture()
+        .onChanged { /* ... */ }
+        .simultaneously(with: RotationGesture()
+            .onChanged { /* ... */ })
+)
+```
+
+### Complete Photo Viewer Example
+
+Here's a realistic implementation with position, scale, and rotation:
+
+```swift
+struct PhotoViewer: View {
+    @State private var currentScale: CGFloat = 1.0
+    @State private var finalScale: CGFloat = 1.0
+    
+    @State private var currentRotation: Angle = .zero
+    @State private var finalRotation: Angle = .zero
+    
+    @State private var currentOffset: CGSize = .zero
+    @State private var finalOffset: CGSize = .zero
+    
+    var body: some View {
+        VStack {
+            Image(systemName: "photo.fill")
+                .font(.system(size: 150))
+                .foregroundColor(.blue)
+                .scaleEffect(finalScale * currentScale)
+                .rotationEffect(finalRotation + currentRotation)
+                .offset(
+                    x: finalOffset.width + currentOffset.width,
+                    y: finalOffset.height + currentOffset.height
+                )
+                .gesture(
+                    SimultaneousGesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                currentScale = value
+                            }
+                            .onEnded { value in
+                                finalScale *= currentScale
+                                finalScale = min(max(finalScale, 0.5), 4.0)
+                                currentScale = 1.0
+                            },
+                        SimultaneousGesture(
+                            RotationGesture()
+                                .onChanged { value in
+                                    currentRotation = value
+                                }
+                                .onEnded { value in
+                                    finalRotation += currentRotation
+                                    currentRotation = .zero
+                                },
+                            DragGesture()
+                                .onChanged { value in
+                                    currentOffset = value.translation
+                                }
+                                .onEnded { value in
+                                    finalOffset.width += currentOffset.width
+                                    finalOffset.height += currentOffset.height
+                                    currentOffset = .zero
+                                }
+                        )
+                    )
+                )
+            
+            Button("Reset") {
+                withAnimation(.spring()) {
+                    finalScale = 1.0
+                    finalRotation = .zero
+                    finalOffset = .zero
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+**Note**: You can nest `SimultaneousGesture` to combine more than two gestures.
+
+## Sequenced Gestures
+
+Sequential gestures require one gesture to complete before another begins. Use `SequenceGesture` or the `sequenced(before:)` modifier.
+
+### Basic Example: Long Press Then Drag
+
+```swift
+struct SequencedGestureExample: View {
+    @State private var offset: CGSize = .zero
+    @State private var isLongPressing = false
+    
+    var body: some View {
+        Circle()
+            .fill(isLongPressing ? .green : .blue)
+            .frame(width: 100, height: 100)
+            .offset(offset)
+            .gesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .onChanged { _ in
+                        isLongPressing = true
+                    }
+                    .sequenced(before: DragGesture())
+                    .onEnded { value in
+                        switch value {
+                        case .first(true):
+                            // Long press completed, but no drag
+                            isLongPressing = false
+                        case .second(true, let drag):
+                            // Drag completed after long press
+                            if let translation = drag?.translation {
+                                offset.width += translation.width
+                                offset.height += translation.height
+                            }
+                            isLongPressing = false
+                        default:
+                            isLongPressing = false
+                        }
+                    }
+            )
+    }
+}
+```
+
+### Understanding SequenceGesture Values
+
+The `onEnded` closure receives a `SequenceGesture.Value` enum with these cases:
+
+- `.first(Bool)`: First gesture state (succeeded or not)
+- `.second(Bool, SecondValue?)`: Second gesture state, with optional value from first gesture
+
+### Practical Use Case: Drag to Delete
+
+```swift
+struct DragToDeleteExample: View {
+    @State private var offset: CGFloat = 0
+    @State private var isDeleted = false
+    
+    var body: some View {
+        if !isDeleted {
+            Text("Swipe to delete")
+                .padding()
+                .background(.red)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .offset(x: offset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            // Only allow leftward drag
+                            offset = min(0, value.translation.width)
+                        }
+                        .onEnded { value in
+                            if offset < -100 {
+                                withAnimation {
+                                    offset = -500 // Animate off screen
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    isDeleted = true
+                                }
+                            } else {
+                                withAnimation(.spring()) {
+                                    offset = 0
+                                }
+                            }
+                        }
+                )
+        }
+    }
+}
+```
+
+## Gesture Modifiers and Priority
+
+### Gesture Priority
+
+SwiftUI processes gestures from child to parent. Use `.highPriorityGesture()` or `.simultaneousGesture()` to control priority:
+
+```swift
+VStack {
+    Text("Child")
+        .frame(width: 100, height: 100)
+        .background(.blue)
+        .gesture(
+            TapGesture()
+                .onEnded { print("Child tapped") }
+        )
+}
+.gesture(
+    TapGesture()
+        .onEnded { print("Parent tapped") }
+)
+// Tapping the blue area prints "Child tapped"
+
+VStack {
+    Text("Child")
+        .frame(width: 100, height: 100)
+        .background(.blue)
+        .gesture(
+            TapGesture()
+                .onEnded { print("Child tapped") }
+        )
+}
+.highPriorityGesture(
+    TapGesture()
+        .onEnded { print("Parent tapped") }
+)
+// Tapping the blue area prints "Parent tapped"
+```
+
+### Gesture Modifiers
+
+- `.gesture()`: Normal priority (child wins)
+- `.highPriorityGesture()`: Parent wins over child
+- `.simultaneousGesture()`: Both fire
+
+## Edge Cases and Gotchas
+
+### 1. Simulator vs Device
+
+**Issue**: Many advanced gestures require multiple touches, which are difficult to simulate.
+
+**Solution**: 
+- Use a real device for testing
+- In Simulator, hold Option key to create a second touch point
+- Consider building debugging controls for testing
+
+```swift
+#if DEBUG
+struct GestureDebugView: View {
+    @Binding var scale: CGFloat
+    @Binding var rotation: Angle
+    
+    var body: some View {
+        VStack {
+            HStack {
+                Button("-") { scale -= 0.1 }
+                Text("Scale: \(scale, specifier: "%.2f")")
+                Button("+") { scale += 0.1 }
+            }
+            HStack {
+                Button("↺") { rotation -= .degrees(15) }
+                Text("Rotation: \(rotation.degrees, specifier: "%.0f")°")
+                Button("↻") { rotation += .degrees(15) }
+            }
+        }
+        .padding()
+        .background(.gray.opacity(0.2))
+    }
+}
+#endif
+```
+
+### 2. State Updates During Gestures
+
+**Issue**: Excessive state updates can cause performance problems.
+
+**Solution**: Use `@GestureState` for temporary gesture values:
+
+```swift
+struct GestureStateExample: View {
+    @State private var finalScale: CGFloat = 1.0
+    @GestureState private var gestureScale: CGFloat = 1.0
+    
+    var body: some View {
+        Circle()
+            .fill(.purple)
+            .frame(width: 100, height: 100)
+            .scaleEffect(finalScale * gestureScale)
+            .gesture(
+                MagnificationGesture()
+                    .updating($gestureScale) { value, state, _ in
+                        state = value
+                    }
+                    .onEnded { value in
+                        finalScale *= value
+                    }
+            )
+    }
+}
+```
+
+**Advantage**: `@GestureState` automatically resets when the gesture ends, and the `.updating` modifier is more efficient than `.onChanged`.
+
+### 3. Coordinate Spaces and Transforms
+
+**Issue**: Applying multiple transforms can lead to unexpected behavior because transform order matters. Rotation after offset produces different results than offset after rotation.
+
+**Solution**: Apply transforms in a consistent order and use the gesture's coordinate space:
+
+```swift
+struct ConsistentTransformView: View {
+    @State private var offset: CGSize = .zero
+    @State private var rotation: Angle = .zero
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.blue)
+            .frame(width: 100, height: 100)
+            // Apply offset first, then rotation
+            .offset(offset)
+            .rotationEffect(rotation)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        offset = value.translation
+                    }
+            )
+            .gesture(
+                RotationGesture()
+                    .onChanged { value in
+                        rotation = value
+                    }
+            )
+    }
+}
+```
+
+### 4. Gesture Priority Conflicts
+
+When parent and child views both have gestures, use `.highPriorityGesture()` or `.simultaneousGesture()` to control which takes precedence:
+
+```swift
+VStack {
+    Circle()
+        .fill(Color.red)
+        .frame(width: 100, height: 100)
+        .onTapGesture {
+            print("Circle tapped") // This fires first
+        }
+}
+.highPriorityGesture(
+    TapGesture()
+        .onEnded {
+            print("VStack tapped") // This overrides child
+        }
+)
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **Simultaneous** | `.simultaneousGesture()` | Run two gestures at once |
+| **Sequenced** | `first.sequenced(before: second)` | Run gestures in order |
+| **Exclusive** | `first.exclusively(before: second)` | Only one gesture wins |
+| **High priority** | `.highPriorityGesture()` | Parent overrides child |
+| **GestureState** | `@GestureState` | Auto-resetting transient state |
+| **Composing** | Combine drag + rotation + magnification | Multi-touch interactions |
+| **Minimum distance** | `DragGesture(minimumDistance:)` | Control gesture activation |
+| **Coordinate space** | `DragGesture(coordinateSpace:)` | Control reference frame |
+
+## Official Resources
+
+- [Apple Documentation: Composing Gestures](https://developer.apple.com/documentation/swiftui/composing-swiftui-gestures)
+- [Apple Documentation: SimultaneousGesture](https://developer.apple.com/documentation/swiftui/simultaneousgesture)
+- [Apple Documentation: SequenceGesture](https://developer.apple.com/documentation/swiftui/sequencegesture)
+- [Apple Documentation: ExclusiveGesture](https://developer.apple.com/documentation/swiftui/exclusivegesture)
+- [Human Interface Guidelines: Gestures](https://developer.apple.com/design/human-interface-guidelines/gestures)

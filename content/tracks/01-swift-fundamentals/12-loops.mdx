@@ -1,0 +1,506 @@
+---
+title: "Loops"
+description: "for-in, while, repeat-while loops and control transfer"
+sectionId: "1.5-control-flow"
+sectionTitle: "Control Flow"
+order: 12
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Loops in Swift
+
+Loops are control flow statements that allow you to execute a block of code multiple times. Swift provides three primary loop constructs: `for-in`, `while`, and `repeat-while`. Understanding when and how to use each type is essential for writing efficient, readable Swift code.
+
+## Why Loops Matter
+
+Whether you're iterating through a collection of user data, processing network responses, or updating UI elements, loops are fundamental building blocks. Swift's loop syntax is clean and type-safe, with powerful features like pattern matching and functional alternatives that make common tasks more expressive than in many other languages.
+
+## For-In Loops
+
+The `for-in` loop iterates over sequences like arrays, ranges, dictionaries, strings, and any type that conforms to the `Sequence` protocol.
+
+### Basic Array Iteration
+
+```swift
+let fruits = ["Apple", "Banana", "Cherry"]
+
+for fruit in fruits {
+    print(fruit)
+}
+// Output:
+// Apple
+// Banana
+// Cherry
+```
+
+### Iterating with Ranges
+
+Swift's range operators create sequences perfect for loops:
+
+```swift
+// Closed range (includes both endpoints)
+for number in 1...5 {
+    print(number)
+}
+// Output: 1, 2, 3, 4, 5
+
+// Half-open range (excludes upper bound)
+for number in 1..<5 {
+    print(number)
+}
+// Output: 1, 2, 3, 4
+```
+
+### When You Don't Need the Value
+
+Use an underscore when you don't need the loop variable:
+
+```swift
+for _ in 1...3 {
+    print("Hello")
+}
+// Output:
+// Hello
+// Hello
+// Hello
+```
+
+### Dictionary Iteration
+
+Dictionaries provide key-value tuples during iteration:
+
+```swift
+let ages = ["Alice": 25, "Bob": 30, "Carol": 28]
+
+for (name, age) in ages {
+    print("\(name) is \(age) years old")
+}
+```
+
+**Important:** Dictionary iteration order is not guaranteed. If you need a specific order, sort the keys first:
+
+```swift
+for name in ages.keys.sorted() {
+    print("\(name): \(ages[name]!)")
+}
+```
+
+### Enumerated Iteration
+
+When you need both the index and value:
+
+```swift
+let colors = ["Red", "Green", "Blue"]
+
+for (index, color) in colors.enumerated() {
+    print("Item \(index): \(color)")
+}
+// Output:
+// Item 0: Red
+// Item 1: Green
+// Item 2: Blue
+```
+
+### Stride for Custom Intervals
+
+Use `stride(from:to:by:)` or `stride(from:through:by:)` for non-sequential iteration:
+
+```swift
+// Counting by 2s (to: excludes endpoint)
+for number in stride(from: 0, to: 10, by: 2) {
+    print(number)
+}
+// Output: 0, 2, 4, 6, 8
+
+// Counting backwards (through: includes endpoint)
+for number in stride(from: 10, through: 0, by: -2) {
+    print(number)
+}
+// Output: 10, 8, 6, 4, 2, 0
+```
+
+## While Loops
+
+A `while` loop evaluates its condition **before** each iteration. It's ideal when you don't know in advance how many times you'll loop.
+
+```swift
+var countdown = 5
+
+while countdown > 0 {
+    print(countdown)
+    countdown -= 1
+}
+print("Liftoff!")
+```
+
+### Practical Example: Processing Until a Condition
+
+```swift
+var numbers = [1, 2, 3, 4, 5]
+
+while !numbers.isEmpty {
+    let number = numbers.removeFirst()
+    print("Processing: \(number)")
+}
+```
+
+**Common Mistake:** Forgetting to modify the condition variable leads to infinite loops:
+
+```swift
+// ⚠️ INFINITE LOOP - Don't run this!
+var counter = 0
+while counter < 10 {
+    print("This will never stop!")
+    // Forgot to increment counter
+}
+```
+
+## Repeat-While Loops
+
+A `repeat-while` loop evaluates its condition **after** each iteration, guaranteeing at least one execution. This is equivalent to `do-while` in other languages.
+
+```swift
+var attempts = 0
+
+repeat {
+    print("Attempting connection...")
+    attempts += 1
+} while attempts < 3
+
+// Output:
+// Attempting connection...
+// Attempting connection...
+// Attempting connection...
+```
+
+### When to Use Repeat-While
+
+Use `repeat-while` when you need to execute the loop body at least once, even if the condition starts false:
+
+```swift
+var userInput = ""
+
+repeat {
+    print("Enter 'quit' to exit:")
+    // userInput = readLine() ?? ""
+    // Simulating user input
+    userInput = "quit"
+} while userInput != "quit"
+```
+
+**Key Difference:** The condition is checked **after** the first iteration, so the body always runs at least once.
+
+```swift
+// This prints "Executed once" even though condition is false
+var value = 10
+repeat {
+    print("Executed once")
+} while value < 5
+```
+
+## Control Transfer Statements
+
+Swift provides several statements to alter loop execution flow.
+
+### Continue
+
+Skips the current iteration and proceeds to the next:
+
+```swift
+for number in 1...5 {
+    if number == 3 {
+        continue
+    }
+    print(number)
+}
+// Output: 1, 2, 4, 5 (skips 3)
+```
+
+**Practical Use Case:** Filtering during iteration:
+
+```swift
+let scores = [45, 67, 89, 32, 91, 78]
+
+for score in scores {
+    if score < 50 {
+        continue  // Skip failing scores
+    }
+    print("Passing score: \(score)")
+}
+```
+
+### Break
+
+Exits the loop entirely:
+
+```swift
+for number in 1...100 {
+    if number > 5 {
+        break
+    }
+    print(number)
+}
+// Output: 1, 2, 3, 4, 5
+```
+
+**Finding the First Match:**
+
+```swift
+let names = ["John", "Sarah", "Mike", "Emily"]
+var found = false
+
+for name in names {
+    if name == "Mike" {
+        print("Found: \(name)")
+        found = true
+        break
+    }
+}
+```
+
+### Labeled Statements
+
+Use labels to break or continue outer loops from within nested loops:
+
+```swift
+outerLoop: for i in 1...3 {
+    for j in 1...3 {
+        if i == 2 && j == 2 {
+            break outerLoop  // Exits both loops
+        }
+        print("i: \(i), j: \(j)")
+    }
+}
+// Output:
+// i: 1, j: 1
+// i: 1, j: 2
+// i: 1, j: 3
+// i: 2, j: 1
+```
+
+**Without a label**, `break` only exits the inner loop:
+
+```swift
+for i in 1...3 {
+    for j in 1...3 {
+        if i == 2 && j == 2 {
+            break  // Only exits inner loop
+        }
+        print("i: \(i), j: \(j)")
+    }
+}
+// Continues with i: 3...
+```
+
+### Where Clauses
+
+Filter elements directly in the loop declaration:
+
+```swift
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+for number in numbers where number % 2 == 0 {
+    print(number)
+}
+// Output: 2, 4, 6, 8, 10
+```
+
+This is cleaner than using `continue`:
+
+```swift
+// Less elegant approach
+for number in numbers {
+    if number % 2 != 0 {
+        continue
+    }
+    print(number)
+}
+```
+
+## Edge Cases and Common Mistakes
+
+### Empty Collections
+
+Loops over empty collections simply don't execute:
+
+```swift
+let emptyArray: [Int] = []
+
+for item in emptyArray {
+    print("This never prints")
+}
+```
+
+### Modifying Collections During Iteration
+
+**Dangerous:** Modifying a collection while iterating can cause crashes or unexpected behavior:
+
+```swift
+var numbers = [1, 2, 3, 4, 5]
+
+// ⚠️ DANGEROUS - Don't do this!
+for number in numbers {
+    if number % 2 == 0 {
+        numbers.remove(at: numbers.firstIndex(of: number)!)
+    }
+}
+```
+
+**Safe Alternative:** Create a filtered copy or iterate in reverse:
+
+```swift
+// Safe: Create new collection
+let oddNumbers = numbers.filter { $0 % 2 != 0 }
+
+// Safe: Iterate in reverse when removing
+for i in (0..<numbers.count).reversed() {
+    if numbers[i] % 2 == 0 {
+        numbers.remove(at: i)
+    }
+}
+```
+
+### Infinite Loops Prevention
+
+Always ensure your loop condition will eventually become false:
+
+```swift
+// Good: Condition will eventually be false
+var count = 0
+while count < 10 {
+    count += 1
+}
+
+// Bad: Forgot to update condition variable
+var flag = true
+while flag {
+    print("Running...")
+    // flag never changes!
+}
+```
+
+### Integer Overflow in Loops
+
+Be careful with ranges near integer limits:
+
+```swift
+// This will crash with integer overflow!
+// let hugeRange = Int.max - 1...Int.max + 1
+
+// Safe: Use appropriate types or bounds checking
+let safeRange = (Int.max - 10)...(Int.max)
+for number in safeRange {
+    // Process safely
+}
+```
+
+## Functional Alternatives
+
+Swift provides functional methods that are often more expressive than loops:
+
+```swift
+let numbers = [1, 2, 3, 4, 5]
+
+// Instead of for-in with accumulation
+var sum = 0
+for number in numbers {
+    sum += number
+}
+
+// Use reduce
+let sum2 = numbers.reduce(0, +)
+
+// Instead of for-in with transformation
+var doubled: [Int] = []
+for number in numbers {
+    doubled.append(number * 2)
+}
+
+// Use map
+let doubled2 = numbers.map { $0 * 2 }
+
+// Instead of for-in with filtering
+var evens: [Int] = []
+for number in numbers {
+    if number % 2 == 0 {
+        evens.append(number)
+    }
+}
+
+// Use filter
+let evens2 = numbers.filter { $0 % 2 == 0 }
+```
+
+These functional approaches are generally preferred in modern Swift for their clarity and immutability.
+
+## Performance Considerations
+
+### For-In Performance
+
+`for-in` loops are highly optimized by the Swift compiler and are generally the fastest option for collection iteration:
+
+```swift
+// Optimal
+for element in array {
+    process(element)
+}
+
+// Slower: Index-based iteration
+for i in 0..<array.count {
+    process(array[i])
+}
+```
+
+### Lazy Sequences
+
+For large datasets, consider lazy evaluation to avoid creating intermediate arrays:
+
+```swift
+let largeArray = Array(1...1_000_000)
+
+// Creates intermediate arrays
+let result1 = largeArray
+    .filter { $0 % 2 == 0 }
+    .map { $0 * 2 }
+    .prefix(10)
+
+// More efficient: evaluates on-demand
+let result2 = largeArray
+    .lazy
+    .filter { $0 % 2 == 0 }
+    .map { $0 * 2 }
+    .prefix(10)
+```
+
+## Official Documentation References
+
+For more information, see:
+- [Control Flow - The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/)
+- [Sequence Protocol](https://developer.apple.com/documentation/swift/sequence)
+- [Collection Protocol](https://developer.apple.com/documentation/swift/collection)
+
+## Summary Table
+
+| Loop Type | Condition Check | Use When | Example |
+|-----------|----------------|----------|---------|
+| **for-in** | Per iteration | Iterating over sequences, ranges, or collections | `for item in array { }` |
+| **while** | Before each iteration | Number of iterations unknown; may not execute at all | `while condition { }` |
+| **repeat-while** | After each iteration | Need at least one execution; number of iterations unknown | `repeat { } while condition` |
+
+| Control Statement | Effect | Use Case |
+|-------------------|--------|----------|
+| **break** | Exits the entire loop | Found what you need; no point continuing |
+| **continue** | Skips to next iteration | Skip certain values; keep looping |
+| **labeled break/continue** | Exits/skips specific labeled loop | Control nested loop behavior from inner loop |
+| **where clause** | Filters iterations | Cleaner than using continue for simple conditions |
+
+**Key Takeaways:**
+- Use `for-in` for known sequences and collections
+- Use `while` when the iteration count depends on runtime conditions
+- Use `repeat-while` when you need guaranteed first execution
+- Prefer functional methods (`map`, `filter`, `reduce`) for transforming collections
+- Never modify a collection while iterating over it directly
+- Use labeled statements sparingly and only for complex nested loops
+- Consider `where` clauses for cleaner filtering in loops

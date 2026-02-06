@@ -1,0 +1,653 @@
+---
+title: "Lists & ForEach"
+description: "List, ForEach, swipe actions, sections, and dynamic content"
+sectionId: "2.3-common-views"
+sectionTitle: "Common Views & Controls"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Lists & ForEach in SwiftUI
+
+Lists are one of the most fundamental UI components in iOS development. Whether you're building a todo app, displaying user profiles, or showing settings options, you'll inevitably need to present collections of data in a scrollable, performant way. SwiftUI's `List` view provides this functionality with minimal code, while `ForEach` enables dynamic content generation from data collections.
+
+## Why Lists Matter
+
+In UIKit (the predecessor to SwiftUI), creating lists required setting up `UITableView` with delegates, data sources, and cell registration—a verbose process. SwiftUI's `List` eliminates this boilerplate while providing automatic scrolling, lazy loading, and native iOS styling. Understanding Lists and ForEach is essential because:
+
+- **Ubiquity**: Most iOS apps display collections of data
+- **Performance**: Lists are optimized for large datasets through view recycling
+- **Flexibility**: They support static content, dynamic content, sections, and custom interactions
+- **Native Feel**: Lists automatically adopt iOS design patterns users expect
+
+## Basic List Creation
+
+### Static Lists
+
+The simplest list contains fixed content:
+
+```swift
+import SwiftUI
+
+struct StaticListView: View {
+    var body: some View {
+        List {
+            Text("First Item")
+            Text("Second Item")
+            Text("Third Item")
+        }
+    }
+}
+```
+
+Static lists work well for settings screens or menus with predetermined options.
+
+### Dynamic Lists with ForEach
+
+For data-driven content, use `ForEach` inside a `List`:
+
+```swift
+struct DynamicListView: View {
+    let fruits = ["Apple", "Banana", "Cherry", "Date", "Elderberry"]
+    
+    var body: some View {
+        List {
+            ForEach(fruits, id: \.self) { fruit in
+                Text(fruit)
+            }
+        }
+    }
+}
+```
+
+The `id: \.self` parameter tells SwiftUI how to uniquely identify each element—critical for performance and animations.
+
+## Understanding ForEach and Identity
+
+`ForEach` is not a loop; it's a view that generates child views from a collection. The `id` parameter is crucial for SwiftUI to track which views correspond to which data items.
+
+### Using Identifiable Protocol
+
+For custom types, conform to `Identifiable` for cleaner syntax:
+
+```swift
+struct Task: Identifiable {
+    let id = UUID()
+    var title: String
+    var isCompleted: Bool
+}
+
+struct TaskListView: View {
+    let tasks = [
+        Task(title: "Buy groceries", isCompleted: false),
+        Task(title: "Walk the dog", isCompleted: true),
+        Task(title: "Write code", isCompleted: false)
+    ]
+    
+    var body: some View {
+        List {
+            ForEach(tasks) { task in
+                HStack {
+                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(task.isCompleted ? .green : .gray)
+                    Text(task.title)
+                }
+            }
+        }
+    }
+}
+```
+
+By conforming to `Identifiable`, you don't need to specify `id:` in `ForEach`.
+
+### Common Mistake: Using Array Index as ID
+
+```swift
+// ❌ WRONG: Fragile and can cause bugs
+ForEach(0..<items.count, id: \.self) { index in
+    Text(items[index])
+}
+
+// ✅ CORRECT: Use the proper identifier
+ForEach(items, id: \.self) { item in
+    Text(item)
+}
+```
+
+Using indices as identifiers breaks when items are reordered or deleted, causing UI glitches or crashes.
+
+## List Styles
+
+SwiftUI provides several built-in list styles:
+
+```swift
+struct ListStylesView: View {
+    let items = ["Item 1", "Item 2", "Item 3"]
+    
+    var body: some View {
+        VStack {
+            // Default style (varies by platform)
+            List(items, id: \.self) { item in
+                Text(item)
+            }
+            .listStyle(.automatic)
+            
+            // Inset grouped (common in Settings)
+            List(items, id: \.self) { item in
+                Text(item)
+            }
+            .listStyle(.insetGrouped)
+            
+            // Plain style
+            List(items, id: \.self) { item in
+                Text(item)
+            }
+            .listStyle(.plain)
+            
+            // Sidebar style (for navigation)
+            List(items, id: \.self) { item in
+                Text(item)
+            }
+            .listStyle(.sidebar)
+        }
+    }
+}
+```
+
+## Sections in Lists
+
+Organize related items into sections with headers and footers:
+
+```swift
+struct SectionedListView: View {
+    var body: some View {
+        List {
+            Section(header: Text("Fruits")) {
+                Text("Apple")
+                Text("Banana")
+                Text("Cherry")
+            }
+            
+            Section(header: Text("Vegetables"), footer: Text("All organic")) {
+                Text("Carrot")
+                Text("Broccoli")
+                Text("Spinach")
+            }
+            
+            Section {
+                Text("Other")
+            } header: {
+                Text("Miscellaneous")
+            }
+        }
+    }
+}
+```
+
+With dynamic data:
+
+```swift
+struct Category: Identifiable {
+    let id = UUID()
+    var name: String
+    var items: [String]
+}
+
+struct DynamicSectionsView: View {
+    let categories = [
+        Category(name: "Fruits", items: ["Apple", "Banana", "Cherry"]),
+        Category(name: "Vegetables", items: ["Carrot", "Broccoli", "Spinach"])
+    ]
+    
+    var body: some View {
+        List {
+            ForEach(categories) { category in
+                Section(header: Text(category.name)) {
+                    ForEach(category.items, id: \.self) { item in
+                        Text(item)
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## Swipe Actions
+
+Swipe actions provide contextual commands for list items:
+
+```swift
+struct SwipeActionsView: View {
+    @State private var tasks = [
+        Task(title: "Buy groceries", isCompleted: false),
+        Task(title: "Walk the dog", isCompleted: true),
+        Task(title: "Write code", isCompleted: false)
+    ]
+    
+    var body: some View {
+        List {
+            ForEach(tasks) { task in
+                Text(task.title)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            deleteTask(task)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        
+                        Button {
+                            toggleCompletion(task)
+                        } label: {
+                            Label("Toggle", systemImage: "checkmark")
+                        }
+                        .tint(.green)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            shareTask(task)
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .tint(.blue)
+                    }
+            }
+        }
+    }
+    
+    private func deleteTask(_ task: Task) {
+        tasks.removeAll { $0.id == task.id }
+    }
+    
+    private func toggleCompletion(_ task: Task) {
+        if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+            tasks[index].isCompleted.toggle()
+        }
+    }
+    
+    private func shareTask(_ task: Task) {
+        // Share implementation
+    }
+}
+```
+
+### Full Swipe Actions
+
+Make an action trigger on full swipe:
+
+```swift
+.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+    Button(role: .destructive) {
+        deleteTask(task)
+    } label: {
+        Label("Delete", systemImage: "trash")
+    }
+}
+```
+
+## Editing Lists: Delete and Move
+
+Enable deletion and reordering with `onDelete` and `onMove`:
+
+```swift
+struct EditableListView: View {
+    @State private var items = ["Apple", "Banana", "Cherry", "Date"]
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(items, id: \.self) { item in
+                    Text(item)
+                }
+                .onDelete(perform: deleteItems)
+                .onMove(perform: moveItems)
+            }
+            .navigationTitle("Fruits")
+            .toolbar {
+                EditButton()
+            }
+        }
+    }
+    
+    private func deleteItems(at offsets: IndexSet) {
+        items.remove(atOffsets: offsets)
+    }
+    
+    private func moveItems(from source: IndexSet, to destination: Int) {
+        items.move(fromOffsets: source, toOffset: destination)
+    }
+}
+```
+
+**Important**: `onDelete` and `onMove` must be applied directly to `ForEach`, not to the `List`.
+
+### Edge Case: Handling Empty States
+
+Always handle the possibility of empty lists:
+
+```swift
+struct EmptyStateListView: View {
+    @State private var items: [String] = []
+    
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                VStack {
+                    Image(systemName: "tray")
+                        .font(.largeTitle)
+                        .foregroundColor(.gray)
+                    Text("No items yet")
+                        .font(.headline)
+                }
+            } else {
+                List(items, id: \.self) { item in
+                    Text(item)
+                }
+            }
+        }
+    }
+}
+```
+
+## Performance: List vs ForEach
+
+Understanding when to use `List` versus `ForEach` alone is important:
+
+```swift
+// ✅ CORRECT: ForEach inside List for complex layouts
+List {
+    Text("Header")
+    ForEach(items) { item in
+        Text(item.name)
+    }
+    Text("Footer")
+}
+
+// ✅ ALSO CORRECT: Direct List initialization for simple cases
+List(items) { item in
+    Text(item.name)
+}
+
+// ❌ WRONG: ForEach alone doesn't provide scrolling
+ForEach(items) { item in
+    Text(item.name)
+}
+```
+
+`ForEach` generates views but doesn't create a container. Use it inside `List`, `VStack`, or other containers. For simple lists, `List(items)` is more concise than `List { ForEach(items) }`.
+
+## Combining Static and Dynamic Content
+
+Mix static and dynamic content freely:
+
+```swift
+struct MixedContentListView: View {
+    let recentItems = ["Item 1", "Item 2", "Item 3"]
+    
+    var body: some View {
+        List {
+            Section(header: Text("Quick Actions")) {
+                Button("Add New") { }
+                Button("Refresh") { }
+            }
+            
+            Section(header: Text("Recent")) {
+                ForEach(recentItems, id: \.self) { item in
+                    Text(item)
+                }
+            }
+            
+            Section {
+                NavigationLink("Settings") {
+                    Text("Settings View")
+                }
+            }
+        }
+    }
+}
+```
+
+## Working with Bindings in Lists
+
+For interactive list items, use bindings:
+
+```swift
+struct Todo: Identifiable {
+    let id = UUID()
+    var title: String
+    var isCompleted: Bool
+}
+
+struct TodoListView: View {
+    @State private var todos = [
+        Todo(title: "Buy milk", isCompleted: false),
+        Todo(title: "Walk dog", isCompleted: true)
+    ]
+    
+    var body: some View {
+        List {
+            ForEach($todos) { $todo in
+                HStack {
+                    Toggle(todo.title, isOn: $todo.isCompleted)
+                }
+            }
+        }
+    }
+}
+```
+
+The `$` prefix creates a binding, allowing child views to modify the original data.
+
+## List Appearance Customization
+
+### Row Separators
+
+Control separator visibility:
+
+```swift
+List {
+    ForEach(items) { item in
+        Text(item.name)
+    }
+}
+.listRowSeparator(.hidden) // Hide all separators
+
+// Or per-row
+List {
+    ForEach(items) { item in
+        Text(item.name)
+            .listRowSeparator(.hidden)
+    }
+}
+```
+
+### Row Background
+
+Customize row backgrounds:
+
+```swift
+List {
+    ForEach(items) { item in
+        Text(item.name)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.blue.opacity(0.1))
+                    .padding(.horizontal, 4)
+            )
+    }
+}
+```
+
+### Row Insets
+
+Adjust row padding:
+
+```swift
+List {
+    ForEach(items) { item in
+        Text(item.name)
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+    }
+}
+```
+
+## Searchable Lists
+
+Add search functionality to lists:
+
+```swift
+struct SearchableListView: View {
+    @State private var searchText = ""
+    let allItems = ["Apple", "Banana", "Cherry", "Date", "Elderberry"]
+    
+    var filteredItems: [String] {
+        if searchText.isEmpty {
+            return allItems
+        } else {
+            return allItems.filter { $0.localizedCaseInsensitiveContains(searchText) }
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(filteredItems, id: \.self) { item in
+                    Text(item)
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search fruits")
+            .navigationTitle("Fruits")
+        }
+    }
+}
+```
+
+## Refreshable Lists
+
+Add pull-to-refresh functionality:
+
+```swift
+struct RefreshableListView: View {
+    @State private var items = ["Item 1", "Item 2", "Item 3"]
+    
+    var body: some View {
+        List(items, id: \.self) { item in
+            Text(item)
+        }
+        .refreshable {
+            await loadMoreItems()
+        }
+    }
+    
+    private func loadMoreItems() async {
+        // Simulate network delay
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        items.append("New Item")
+    }
+}
+```
+
+## Common Mistakes and Pitfalls
+
+### 1. Modifying Arrays During Iteration
+
+```swift
+// ❌ WRONG: Can cause crashes
+ForEach(items) { item in
+    Button("Delete") {
+        items.removeAll { $0.id == item.id } // Modifying during iteration
+    }
+}
+
+// ✅ CORRECT: Use onDelete or ensure safe modification
+ForEach(items) { item in
+    Button("Delete") {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items.remove(at: index)
+        }
+    }
+}
+```
+
+### 2. Forgetting NavigationStack for NavigationLinks
+
+```swift
+// ❌ WRONG: NavigationLink won't work properly
+List {
+    NavigationLink("Details", destination: Text("Details"))
+}
+
+// ✅ CORRECT: Wrap in NavigationStack
+NavigationStack {
+    List {
+        NavigationLink("Details", destination: Text("Details"))
+    }
+}
+```
+
+### 3. Non-Unique Identifiers
+
+```swift
+struct Item: Identifiable {
+    let id: String // ❌ If multiple items have same name
+    var name: String
+}
+
+// Can cause view identity issues
+let items = [
+    Item(id: "Apple", name: "Apple"),
+    Item(id: "Apple", name: "Apple") // Duplicate ID!
+]
+
+// ✅ Use UUID for guaranteed uniqueness
+struct Item: Identifiable {
+    let id = UUID()
+    var name: String
+}
+```
+
+### 4. Performance Issues with Complex Row Views
+
+```swift
+// ❌ WRONG: Heavy computation in row views
+List(items) { item in
+    VStack {
+        Text(item.name)
+        Text(processExpensiveData(item)) // Called on every scroll!
+    }
+}
+
+// ✅ CORRECT: Pre-compute or cache expensive data
+List(items) { item in
+    VStack {
+        Text(item.name)
+        Text(item.cachedDescription) // Pre-computed
+    }
+}
+```
+
+## Summary Table
+
+| Feature | Syntax | Purpose |
+|---------|--------|---------|
+| **Static List** | `List { Text("...") }` | Fixed content lists |
+| **Dynamic List** | `List(items) { }` or `List { ForEach(items) { } }` | Data-driven lists |
+| **Identifiable** | `struct Item: Identifiable` | Automatic identity for ForEach |
+| **Sections** | `Section(header:) { }` | Group related items |
+| **Swipe Actions** | `.swipeActions(edge:) { }` | Contextual row commands |
+| **Delete** | `.onDelete(perform:)` | Swipe-to-delete on ForEach |
+| **Move** | `.onMove(perform:)` | Drag-to-reorder on ForEach |
+| **List Style** | `.listStyle(.insetGrouped)` | Change list appearance |
+| **Searchable** | `.searchable(text:)` | Add search bar |
+| **Refreshable** | `.refreshable { }` | Pull-to-refresh |
+| **Bindings** | `ForEach($items) { $item in }` | Two-way data binding in rows |
+| **Row Customization** | `.listRowSeparator()`, `.listRowBackground()` | Per-row appearance |
+
+## Official Resources
+
+- [Apple Documentation: List](https://developer.apple.com/documentation/swiftui/list)
+- [Apple Documentation: ForEach](https://developer.apple.com/documentation/swiftui/foreach)
+- [Apple Documentation: Section](https://developer.apple.com/documentation/swiftui/section)
+- [Human Interface Guidelines: Lists and Tables](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables)

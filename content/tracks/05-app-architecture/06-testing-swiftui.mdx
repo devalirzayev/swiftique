@@ -1,0 +1,538 @@
+---
+title: "Testing SwiftUI Views"
+description: "ViewInspector, snapshot testing, and UI testing with XCUITest"
+sectionId: "5.2-testing"
+sectionTitle: "Testing"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Testing SwiftUI Views
+
+Testing SwiftUI views is fundamentally different from testing UIKit views. SwiftUI's declarative nature and tight coupling with data make traditional UI testing approaches less effective. Instead, you have three main strategies: using ViewInspector to examine view hierarchies, snapshot testing to catch visual regressions, and XCUITest for end-to-end integration testing.
+
+Understanding how to test SwiftUI views is critical because your UI is often where business logic, presentation logic, and user interaction converge. Untested views lead to broken user experiences that only surface in production.
+
+## Why SwiftUI Testing Is Different
+
+SwiftUI views are structs that return opaque types (`some View`). You can't instantiate them in tests and inspect their subviews like you could with UIKit's view hierarchy. This opacity is intentional—SwiftUI manages the actual rendering—but it makes testing challenging.
+
+```swift
+// This SwiftUI view is just a struct
+struct UserProfileView: View {
+    let username: String
+    @State private var isFollowing = false
+    
+    var body: some View {
+        VStack {
+            Text(username)
+            Button(isFollowing ? "Unfollow" : "Follow") {
+                isFollowing.toggle()
+            }
+        }
+    }
+}
+
+// You can't do this in a test:
+// let view = UserProfileView(username: "Alice")
+// let button = view.subviews.first(where: { $0 is Button }) // ❌ No subviews property
+```
+
+## Strategy 1: ViewInspector
+
+ViewInspector is a community library that uses Swift's runtime introspection to access SwiftUI's internal view hierarchy. It's maintained by Alexey Naumov and available at [github.com/nalexn/ViewInspector](https://github.com/nalexn/ViewInspector).
+
+### Setting Up ViewInspector
+
+Add ViewInspector to your test target via Swift Package Manager:
+
+```
+https://github.com/nalexn/ViewInspector.git
+```
+
+**Important:** Only add it to your test target, not your main app target.
+
+### Basic ViewInspector Usage
+
+```swift
+import XCTest
+import ViewInspector
+@testable import YourApp
+
+final class UserProfileViewTests: XCTestCase {
+    
+    func testUsernameDisplayed() throws {
+        let view = UserProfileView(username: "Alice")
+        
+        // Find the Text view and verify its content
+        let text = try view.inspect().find(text: "Alice")
+        XCTAssertNotNil(text)
+    }
+    
+    func testButtonInitialState() throws {
+        let view = UserProfileView(username: "Alice")
+        
+        // Find the button and check its label
+        let button = try view.inspect().find(button: "Follow")
+        XCTAssertNotNil(button)
+    }
+}
+```
+
+### Testing State Changes
+
+Testing `@State` requires special handling because state changes trigger view updates asynchronously:
+
+```swift
+func testFollowButtonToggle() throws {
+    let view = UserProfileView(username: "Alice")
+    
+    // Use expectation for async state updates
+    let expectation = view.inspection.inspect { view in
+        // Initial state
+        XCTAssertNoThrow(try view.find(button: "Follow"))
+        
+        // Tap the button
+        try view.find(button: "Follow").tap()
+        
+        // After tap, button should show "Unfollow"
+        XCTAssertNoThrow(try view.find(button: "Unfollow"))
+    }
+    
+    ViewHosting.host(view: view)
+    wait(for: [expectation], timeout: 1.0)
+}
+```
+
+**Common Mistake:** Expecting synchronous state updates. SwiftUI batches view updates, so you must use expectations or the inspection callback pattern.
+
+### Testing with Dependencies
+
+Real views depend on view models, environment objects, or services. Always inject these dependencies:
+
+```swift
+class UserViewModel: ObservableObject {
+    @Published var username: String
+    @Published var isFollowing: Bool
+    
+    init(username: String, isFollowing: Bool = false) {
+        self.username = username
+        self.isFollowing = isFollowing
+    }
+    
+    func toggleFollow() {
+        isFollowing.toggle()
+    }
+}
+
+struct UserProfileView: View {
+    @ObservedObject var viewModel: UserViewModel
+    
+    var body: some View {
+        VStack {
+            Text(viewModel.username)
+            Button(viewModel.isFollowing ? "Unfollow" : "Follow") {
+                viewModel.toggleFollow()
+            }
+        }
+    }
+}
+```
+
+Now your tests control the view model:
+
+```swift
+func testViewModelIntegration() throws {
+    let viewModel = UserViewModel(username: "Bob", isFollowing: false)
+    let view = UserProfileView(viewModel: viewModel)
+    
+    // Find and tap button
+    let button = try view.inspect().find(button: "Follow")
+    try button.tap()
+    
+    // Verify view model updated
+    XCTAssertTrue(viewModel.isFollowing)
+}
+```
+
+### ViewInspector Limitations
+
+ViewInspector doesn't work well with:
+- Custom modifiers that hide complexity
+- Heavy use of `AnyView` type erasure
+- Third-party UI component libraries
+- Complex gesture recognizers
+
+For these cases, consider snapshot or UI testing instead.
+
+## Strategy 2: Snapshot Testing
+
+Snapshot testing captures a reference image of your view and compares future test runs against it. This catches unintended visual regressions without manually verifying every pixel.
+
+The most popular library is [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) by Point-Free.
+
+### Setting Up Snapshot Testing
+
+Add via Swift Package Manager:
+
+```
+https://github.com/pointfreeco/swift-snapshot-testing.git
+```
+
+### Basic Snapshot Test
+
+```swift
+import XCTest
+import SnapshotTesting
+import SwiftUI
+@testable import YourApp
+
+final class UserProfileSnapshotTests: XCTestCase {
+    
+    func testUserProfileAppearance() {
+        let viewModel = UserViewModel(username: "Alice", isFollowing: false)
+        let view = UserProfileView(viewModel: viewModel)
+        
+        // Wrap in UIHostingController for rendering
+        let hostingController = UIHostingController(rootView: view)
+        hostingController.view.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+        
+        // Assert snapshot matches
+        assertSnapshot(matching: hostingController, as: .image)
+    }
+}
+```
+
+**First run:** This creates a reference image in `__Snapshots__/YourTestFile/testUserProfileAppearance.png`.
+
+**Subsequent runs:** The test compares against this reference. If pixels differ, the test fails.
+
+### Testing Different States
+
+```swift
+func testFollowingState() {
+    let viewModel = UserViewModel(username: "Alice", isFollowing: true)
+    let view = UserProfileView(viewModel: viewModel)
+    let hostingController = UIHostingController(rootView: view)
+    hostingController.view.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+    
+    assertSnapshot(matching: hostingController, as: .image)
+}
+```
+
+### Testing Dark Mode and Accessibility
+
+```swift
+func testDarkMode() {
+    let viewModel = UserViewModel(username: "Alice", isFollowing: false)
+    let view = UserProfileView(viewModel: viewModel)
+    let hostingController = UIHostingController(rootView: view)
+    hostingController.view.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+    hostingController.overrideUserInterfaceStyle = .dark
+    
+    assertSnapshot(matching: hostingController, as: .image)
+}
+
+func testAccessibilityExtraLarge() {
+    let viewModel = UserViewModel(username: "Alice", isFollowing: false)
+    let view = UserProfileView(viewModel: viewModel)
+    let hostingController = UIHostingController(rootView: view)
+    hostingController.view.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+    
+    // Set accessibility content size
+    let traits = UITraitCollection(preferredContentSizeCategory: .accessibilityExtraLarge)
+    hostingController.setOverrideTraitCollection(traits, forChild: hostingController)
+    
+    assertSnapshot(matching: hostingController, as: .image)
+}
+```
+
+### Recording New Snapshots
+
+When you intentionally change UI, update reference images:
+
+```swift
+func testUserProfileAppearance() {
+    let viewModel = UserViewModel(username: "Alice", isFollowing: false)
+    let view = UserProfileView(viewModel: viewModel)
+    let hostingController = UIHostingController(rootView: view)
+    hostingController.view.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+    
+    // Set record mode to true temporarily
+    assertSnapshot(matching: hostingController, as: .image, record: true)
+    // Change back to false after recording
+}
+```
+
+Or set recording globally in scheme environment variables: `SNAPSHOT_RECORDING=1`.
+
+### Snapshot Testing Edge Cases
+
+**Animations:** Disable or complete animations before snapshotting:
+
+```swift
+UIView.setAnimationsEnabled(false)
+assertSnapshot(matching: hostingController, as: .image)
+UIView.setAnimationsEnabled(true)
+```
+
+**Non-deterministic content:** Avoid random data or timestamps. Use fixed test data:
+
+```swift
+// Bad: Uses current date
+Text("Today is \(Date())")
+
+// Good for testing: Uses fixed date
+let testDate = Date(timeIntervalSince1970: 1609459200)
+Text("Today is \(testDate, style: .date)")
+```
+
+**Device-specific rendering:** Always specify frame sizes explicitly. Otherwise, snapshots differ between iPhone and iPad simulators.
+
+## Strategy 3: XCUITest
+
+XCUITest is Apple's official UI testing framework. It launches your app in a simulator/device and interacts with it like a real user would. This is end-to-end testing—it's slow but catches integration issues.
+
+[Apple's XCUITest Documentation](https://developer.apple.com/documentation/xctest/user_interface_tests)
+
+### Creating an XCUITest Target
+
+When you create a new Xcode project, check "Include UI Tests." Otherwise, add a UI Testing Bundle target manually.
+
+### Basic XCUITest
+
+```swift
+import XCTest
+
+final class UserProfileUITests: XCTestCase {
+    
+    var app: XCUIApplication!
+    
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launch()
+    }
+    
+    func testFollowButtonInteraction() {
+        // Find elements by accessibility identifier
+        let followButton = app.buttons["followButton"]
+        XCTAssertTrue(followButton.exists)
+        XCTAssertEqual(followButton.label, "Follow")
+        
+        // Tap button
+        followButton.tap()
+        
+        // Verify it changed
+        XCTAssertEqual(followButton.label, "Unfollow")
+    }
+}
+```
+
+### Adding Accessibility Identifiers
+
+XCUITest finds views via accessibility identifiers. Add them to your SwiftUI views:
+
+```swift
+struct UserProfileView: View {
+    @ObservedObject var viewModel: UserViewModel
+    
+    var body: some View {
+        VStack {
+            Text(viewModel.username)
+                .accessibilityIdentifier("usernameLabel")
+            
+            Button(viewModel.isFollowing ? "Unfollow" : "Follow") {
+                viewModel.toggleFollow()
+            }
+            .accessibilityIdentifier("followButton")
+        }
+    }
+}
+```
+
+**Common Mistake:** Forgetting accessibility identifiers. Without them, XCUITest can only find views by their text content, which breaks when text changes or localizes.
+
+### Testing Navigation
+
+```swift
+func testNavigationToProfile() {
+    let profilesTab = app.tabBars.buttons["Profiles"]
+    profilesTab.tap()
+    
+    let userCell = app.cells["user-Alice"]
+    XCTAssertTrue(userCell.waitForExistence(timeout: 2))
+    userCell.tap()
+    
+    // Verify navigation happened
+    let usernameLabel = app.staticTexts["usernameLabel"]
+    XCTAssertTrue(usernameLabel.waitForExistence(timeout: 2))
+    XCTAssertEqual(usernameLabel.label, "Alice")
+}
+```
+
+### Testing Alerts and Sheets
+
+```swift
+func testLogoutAlert() {
+    let logoutButton = app.buttons["logoutButton"]
+    logoutButton.tap()
+    
+    // Wait for alert
+    let alert = app.alerts["Confirm Logout"]
+    XCTAssertTrue(alert.waitForExistence(timeout: 1))
+    
+    // Tap confirm
+    alert.buttons["Confirm"].tap()
+    
+    // Verify returned to login screen
+    XCTAssertTrue(app.textFields["emailField"].exists)
+}
+```
+
+### Launch Arguments for Testing
+
+Control app behavior during UI tests:
+
+```swift
+override func setUp() {
+    super.setUp()
+    app = XCUIApplication()
+    app.launchArguments = ["UI-TESTING", "DISABLE-ANIMATIONS"]
+    app.launch()
+}
+```
+
+In your app code:
+
+```swift
+struct YourApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(\.isUITesting, CommandLine.arguments.contains("UI-TESTING"))
+        }
+    }
+}
+
+// Custom environment key
+struct IsUITestingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var isUITesting: Bool {
+        get { self[IsUITestingKey.self] }
+        set { self[IsUITestingKey.self] = newValue }
+    }
+}
+```
+
+Use this to inject mock data or disable network calls:
+
+```swift
+struct ContentView: View {
+    @Environment(\.isUITesting) var isUITesting
+    @StateObject private var viewModel: ContentViewModel
+    
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("UI-TESTING") {
+            _viewModel = StateObject(wrappedValue: ContentViewModel(service: MockService()))
+        } else {
+            _viewModel = StateObject(wrappedValue: ContentViewModel(service: RealService()))
+        }
+    }
+    
+    var body: some View {
+        // Your view code
+    }
+}
+```
+
+### XCUITest Timing Issues
+
+UI tests are notoriously flaky due to timing. Always use `waitForExistence`:
+
+```swift
+// Bad: Assumes element exists immediately
+let button = app.buttons["myButton"]
+button.tap() // Crashes if button not rendered yet
+
+// Good: Waits up to 5 seconds
+let button = app.buttons["myButton"]
+XCTAssertTrue(button.waitForExistence(timeout: 5))
+button.tap()
+```
+
+### XCUITest Performance
+
+UI tests are 10-100x slower than unit tests. Run them sparingly:
+
+- Run ViewInspector tests on every commit
+- Run snapshot tests on pull requests
+- Run XCUITests nightly or before releases
+
+## Combining Testing Strategies
+
+Use all three approaches together:
+
+**ViewInspector:** Test business logic in views—correct data displayed, state transitions, conditional rendering.
+
+**Snapshot Testing:** Test visual appearance—layout, colors, fonts, dark mode, accessibility.
+
+**XCUITest:** Test critical user flows—login, checkout, onboarding.
+
+Example test suite structure:
+
+```swift
+// ViewInspectorTests: Fast, runs on every commit
+final class UserProfileViewTests: XCTestCase {
+    func testUsernameDisplayed() { /* ... */ }
+    func testFollowButtonToggle() { /* ... */ }
+    func testConditionalFollowingBadge() { /* ... */ }
+}
+
+// SnapshotTests: Medium speed, runs on PRs
+final class UserProfileSnapshotTests: XCTestCase {
+    func testDefaultAppearance() { /* ... */ }
+    func testDarkModeAppearance() { /* ... */ }
+    func testFollowingStateAppearance() { /* ... */ }
+}
+
+// UITests: Slow, runs nightly or before releases
+final class UserProfileUITests: XCTestCase {
+    func testFollowButtonInteraction() { /* ... */ }
+    func testNavigationFromProfileToSettings() { /* ... */ }
+}
+```
+
+## Common Mistakes
+
+**Testing view implementation details instead of behavior.** Don't test that a view uses `VStack` instead of `HStack` — test that the data appears correctly and interactions work.
+
+**Forgetting to update snapshot references after intentional UI changes.** When you redesign a component, set `record: true` to generate new references, then set it back to `false`.
+
+**Not using accessibility identifiers consistently.** Without them, XCUITest is fragile and breaks whenever text changes. Add identifiers to all interactive elements.
+
+**Running all test types on every commit.** This slows down development. Run unit tests (fast) on every commit, snapshot tests on PRs, and UI tests on nightly builds.
+
+## Summary Table
+
+| Strategy | Tool | Speed | Best For | Limitations |
+|----------|------|-------|----------|-------------|
+| **ViewInspector** | ViewInspector library | Fast (ms) | Logic testing, state verification, data display | Struggles with custom modifiers, AnyView |
+| **Snapshot Testing** | swift-snapshot-testing | Medium (seconds) | Visual regression, dark mode, accessibility | Sensitive to rendering differences across simulators |
+| **XCUITest** | XCTest (built-in) | Slow (seconds-minutes) | End-to-end flows, navigation, integration | Requires running app, flaky timing |
+| **Unit Testing VMs** | XCTest | Fast (ms) | Business logic in view models | Doesn't test view rendering |
+| **Preview Testing** | Xcode Previews | Manual | Quick visual verification | Not automated |
+
+## Official Resources
+
+- [Apple Documentation: XCUITest](https://developer.apple.com/documentation/xctest/user_interface_tests)
+- [Apple Documentation: Testing Your Apps in Xcode](https://developer.apple.com/documentation/xcode/testing-your-apps-in-xcode)
+- [ViewInspector GitHub](https://github.com/nalexn/ViewInspector)
+- [swift-snapshot-testing GitHub](https://github.com/pointfreeco/swift-snapshot-testing)
+- [WWDC21: Write Tests to Fail](https://developer.apple.com/videos/play/wwdc2021/10207/)

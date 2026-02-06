@@ -1,0 +1,498 @@
+---
+title: "ARC & Memory Management"
+description: "Automatic Reference Counting, strong/weak/unowned references, and retain cycles"
+sectionId: "1.10-memory-advanced"
+sectionTitle: "Memory & Advanced Topics"
+order: 25
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# ARC & Memory Management in Swift
+
+Memory management is crucial for building performant iOS apps that don't leak memory or crash unexpectedly. Swift uses Automatic Reference Counting (ARC) to manage your app's memory automatically, but you need to understand how it works to avoid common pitfalls like retain cycles.
+
+## What is ARC?
+
+Automatic Reference Counting (ARC) is Swift's memory management mechanism. It automatically tracks and manages your app's memory usage by counting references to class instances. When an instance is no longer needed (reference count reaches zero), ARC deallocates it and frees up memory.
+
+**Important**: ARC only applies to reference types (classes). Value types like structs and enums are copied when assigned or passed around, so they don't need reference counting.
+
+```swift
+class Person {
+    let name: String
+    
+    init(name: String) {
+        self.name = name
+        print("\(name) is being initialized")
+    }
+    
+    deinit {
+        print("\(name) is being deinitialized")
+    }
+}
+
+var person1: Person? = Person(name: "John")
+// Output: John is being initialized
+
+var person2 = person1  // Reference count: 2
+var person3 = person1  // Reference count: 3
+
+person1 = nil  // Reference count: 2
+person2 = nil  // Reference count: 1
+person3 = nil  // Reference count: 0
+// Output: John is being deinitialized
+```
+
+## Why ARC Matters
+
+Understanding ARC prevents:
+- **Memory leaks**: Objects that never get deallocated, consuming memory indefinitely
+- **Crashes**: Accessing deallocated memory (dangling pointers)
+- **Poor performance**: Excessive memory usage leading to system warnings or app termination
+
+## Strong References (Default)
+
+By default, all references in Swift are **strong**. A strong reference increases the reference count and prevents the instance from being deallocated.
+
+```swift
+class Apartment {
+    let unit: String
+    var tenant: Person?
+    
+    init(unit: String) {
+        self.unit = unit
+        print("Apartment \(unit) is being initialized")
+    }
+    
+    deinit {
+        print("Apartment \(unit) is being deinitialized")
+    }
+}
+
+var john: Person? = Person(name: "John")
+var unit4A: Apartment? = Apartment(unit: "4A")
+
+john?.apartment = unit4A
+unit4A?.tenant = john
+
+// Both objects have strong references to each other
+// Even if we set both to nil, they won't be deallocated!
+```
+
+## Retain Cycles (Strong Reference Cycles)
+
+A retain cycle occurs when two or more objects hold strong references to each other, preventing ARC from deallocating them even when they're no longer needed.
+
+```swift
+class Person {
+    let name: String
+    var apartment: Apartment?
+    
+    init(name: String) {
+        self.name = name
+    }
+    
+    deinit {
+        print("\(name) is being deinitialized")
+    }
+}
+
+class Apartment {
+    let unit: String
+    var tenant: Person?
+    
+    init(unit: String) {
+        self.unit = unit
+    }
+    
+    deinit {
+        print("Apartment \(unit) is being deinitialized")
+    }
+}
+
+var john: Person? = Person(name: "John")
+var unit4A: Apartment? = Apartment(unit: "4A")
+
+john?.apartment = unit4A  // Person -> Apartment (strong)
+unit4A?.tenant = john     // Apartment -> Person (strong)
+
+john = nil
+unit4A = nil
+
+// PROBLEM: Neither deinit is called! Memory leak!
+```
+
+## Weak References
+
+A **weak** reference doesn't increase the reference count. It automatically becomes `nil` when the referenced instance is deallocated.
+
+**Key characteristics:**
+- Must be declared as `var` (can change to `nil`)
+- Must be an optional type
+- Use when the reference can become `nil` during its lifetime
+- Perfect for breaking retain cycles when one object can exist without the other
+
+```swift
+class Apartment {
+    let unit: String
+    weak var tenant: Person?  // weak reference
+    
+    init(unit: String) {
+        self.unit = unit
+    }
+    
+    deinit {
+        print("Apartment \(unit) is being deinitialized")
+    }
+}
+
+var john: Person? = Person(name: "John")
+var unit4A: Apartment? = Apartment(unit: "4A")
+
+john?.apartment = unit4A  // strong
+unit4A?.tenant = john     // weak
+
+john = nil
+// Output: John is being deinitialized
+// tenant automatically becomes nil
+
+unit4A = nil
+// Output: Apartment 4A is being deinitialized
+```
+
+## Unowned References
+
+An **unowned** reference doesn't increase the reference count but assumes the referenced instance will always exist when accessed.
+
+**Key characteristics:**
+- Can be `let` or `var`
+- Not optional (doesn't automatically become `nil`)
+- Use when the reference should **never** be `nil` after initialization
+- Accessing a deallocated unowned reference causes a runtime crash
+
+```swift
+class Customer {
+    let name: String
+    var card: CreditCard?
+    
+    init(name: String) {
+        self.name = name
+    }
+    
+    deinit {
+        print("\(name) is being deinitialized")
+    }
+}
+
+class CreditCard {
+    let number: UInt64
+    unowned let customer: Customer  // unowned reference
+    
+    init(number: UInt64, customer: Customer) {
+        self.number = number
+        self.customer = customer
+    }
+    
+    deinit {
+        print("Card #\(number) is being deinitialized")
+    }
+}
+
+var john: Customer? = Customer(name: "John")
+john?.card = CreditCard(number: 1234_5678_9012_3456, customer: john!)
+
+john = nil
+// Output: John is being deinitialized
+// Output: Card #1234567890123456 is being deinitialized
+```
+
+**When to use unowned**: When a credit card cannot exist without a customer—the customer owns the lifecycle.
+
+## Unowned vs Weak: Choosing the Right One
+
+```swift
+// WEAK: Use when the reference can legitimately be nil
+class Parent {
+    var child: Child?
+}
+
+class Child {
+    weak var parent: Parent?  // Child can exist without a parent
+}
+
+// UNOWNED: Use when the reference should never be nil after initialization
+class Country {
+    let name: String
+    let capitalCity: City!  // Implicitly unwrapped optional
+    
+    init(name: String, capitalName: String) {
+        self.name = name
+        self.capitalCity = City(name: capitalName, country: self)
+    }
+}
+
+class City {
+    let name: String
+    unowned let country: Country  // A capital city always has a country
+    
+    init(name: String, country: Country) {
+        self.name = name
+        self.country = country
+    }
+}
+```
+
+## Closure Capture Lists
+
+Closures capture references to variables they use. If a closure captures `self` strongly, it can create a retain cycle.
+
+### The Problem: Retain Cycle with Closures
+
+```swift
+class ViewController {
+    var name = "Home"
+    var onUpdate: (() -> Void)?
+    
+    func setupUpdate() {
+        onUpdate = {
+            print("Updating \(self.name)")  // Strong capture of self
+        }
+    }
+    
+    deinit {
+        print("ViewController is being deinitialized")
+    }
+}
+
+var vc: ViewController? = ViewController()
+vc?.setupUpdate()
+vc = nil
+// deinit is NOT called - memory leak!
+```
+
+### The Solution: Capture Lists
+
+Use a **capture list** to specify how the closure should capture references.
+
+```swift
+class ViewController {
+    var name = "Home"
+    var onUpdate: (() -> Void)?
+    
+    func setupUpdate() {
+        // Weak capture
+        onUpdate = { [weak self] in
+            guard let self = self else { return }
+            print("Updating \(self.name)")
+        }
+    }
+    
+    deinit {
+        print("ViewController is being deinitialized")
+    }
+}
+
+var vc: ViewController? = ViewController()
+vc?.setupUpdate()
+vc = nil
+// Output: ViewController is being deinitialized ✅
+```
+
+### Weak vs Unowned in Closures
+
+```swift
+class DataManager {
+    var data = [String]()
+    
+    // WEAK: Use when self might be nil
+    func fetchDataAsync() {
+        NetworkService.fetch { [weak self] result in
+            guard let self = self else { return }
+            self.data = result
+        }
+    }
+    
+    // UNOWNED: Use when self is guaranteed to exist
+    func processData() {
+        lazy var processor = { [unowned self] in
+            return self.data.map { $0.uppercased() }
+        }
+        
+        print(processor())
+    }
+}
+```
+
+### Modern Swift: Implicit self in Weak Captures
+
+Since Swift 5.3, you can use `self` implicitly after unwrapping:
+
+```swift
+onUpdate = { [weak self] in
+    guard let self else { return }
+    // Can now use self implicitly
+    print("Updating \(name)")
+    processData()
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Using Strong References in Delegate Patterns
+
+```swift
+// ❌ WRONG: Strong delegate reference
+class Child {
+    var delegate: ParentDelegate?  // Should be weak!
+}
+
+// ✅ CORRECT
+protocol ParentDelegate: AnyObject {  // Must be AnyObject for weak
+    func childDidUpdate()
+}
+
+class Child {
+    weak var delegate: ParentDelegate?
+}
+```
+
+### Mistake 2: Capturing Strong Self in Long-Running Operations
+
+```swift
+class ImageLoader {
+    var image: UIImage?
+    
+    // ❌ WRONG: If view controller is dismissed, it stays in memory
+    func loadImage(url: URL) {
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            self.image = UIImage(data: data!)  // Strong capture
+        }.resume()
+    }
+    
+    // ✅ CORRECT
+    func loadImageCorrectly(url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self, let data = data else { return }
+            self.image = UIImage(data: data)
+        }.resume()
+    }
+}
+```
+
+### Mistake 3: Accessing Unowned References After Deallocation
+
+```swift
+class Service {
+    unowned let owner: Owner
+    
+    init(owner: Owner) {
+        self.owner = owner
+    }
+    
+    func doWork() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            // CRASH if owner was deallocated!
+            print(self.owner.name)
+        }
+    }
+}
+
+// Use weak instead when there's async work
+```
+
+### Edge Case: Optional Property Observers
+
+```swift
+class Node {
+    var value: Int
+    weak var parent: Node?
+    
+    init(value: Int) {
+        self.value = value
+    }
+}
+
+var parent: Node? = Node(value: 1)
+var child = Node(value: 2)
+
+child.parent = parent
+
+parent = nil
+// child.parent is automatically nil now
+print(child.parent == nil)  // true
+```
+
+## Debugging Memory Issues
+
+### Using Deinitializers
+
+Always add `deinit` during development to verify objects are being deallocated:
+
+```swift
+class MyClass {
+    deinit {
+        print("MyClass is being deallocated")
+    }
+}
+```
+
+### Xcode Memory Graph Debugger
+
+1. Run your app
+2. Click the Memory Debug Graph button in Xcode's debug bar
+3. Look for purple warnings indicating retain cycles
+
+### Instruments Leaks Tool
+
+Use Instruments > Leaks to detect memory leaks in your running app.
+
+## Best Practices
+
+1. **Always use `weak` for delegates**: Prevents retain cycles in the delegation pattern
+2. **Default to `[weak self]` in closures**: Especially for async operations, animations, and timers
+3. **Use `unowned` sparingly**: Only when you're absolutely certain the reference will exist
+4. **Protocol requirements for weak**: Use `protocol MyDelegate: AnyObject` to allow weak references
+5. **Test deinitialization**: Add `deinit` methods during development to verify proper cleanup
+6. **Avoid strong captures of self in lazy properties**: Can create hidden retain cycles
+7. **Be careful with timers**: `Timer` holds a strong reference to its target—use weak wrappers
+
+```swift
+// Timer best practice
+class TimerManager {
+    weak var target: AnyObject?
+    var timer: Timer?
+    
+    func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.handleTimer()
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Reference Type | Increases Count | Can Be Nil | Must Be Optional | Common Use Cases |
+|---------------|-----------------|------------|------------------|------------------|
+| **Strong** | Yes | No | No | Default behavior, ownership relationships |
+| **Weak** | No | Yes (automatic) | Yes | Delegates, parent-child where child references parent, closures with uncertain lifetime |
+| **Unowned** | No | No (crashes if accessed) | No | Parent-child where child can't exist without parent, guaranteed lifetimes |
+
+| Pattern | Recommended Reference Type | Reason |
+|---------|---------------------------|--------|
+| Delegates | `weak` | Delegate outlives delegator |
+| Parent → Child | `strong` | Parent owns child |
+| Child → Parent | `weak` | Avoid retain cycle |
+| Closures (async) | `[weak self]` | Object might be deallocated before closure executes |
+| Closures (sync) | `[unowned self]` | Closure executes immediately, lifetime guaranteed |
+| Completion handlers | `[weak self]` | Network calls, animations—uncertain timing |
+
+## Additional Resources
+
+- [Apple's ARC Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/)
+- [Swift Language Guide: Automatic Reference Counting](https://docs.swift.org/swift-book/LanguageGuide/AutomaticReferenceCounting.html)
+- WWDC Sessions on Memory Management and Performance
+
+Understanding ARC is fundamental to writing professional Swift code. While ARC handles most memory management automatically, knowing when to use `weak` and `unowned` references prevents memory leaks and crashes that can be difficult to debug in production. Practice identifying potential retain cycles in your code, and always test that your objects are being deallocated as expected.

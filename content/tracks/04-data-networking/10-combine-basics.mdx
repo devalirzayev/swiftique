@@ -1,0 +1,595 @@
+---
+title: "Combine Basics"
+description: "Publishers, subscribers, operators, and reactive data flow"
+sectionId: "4.4-combine-observation"
+sectionTitle: "Combine & Observation"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Combine Basics
+
+Combine is Apple's framework for processing values over time using declarative Swift code. Instead of writing callback handlers, delegates, or completion blocks, you describe how data flows through your app and how it transforms along the way. Combine handles the complexity of asynchronous events, making your code more predictable and easier to test.
+
+If you've worked with RxSwift, ReactiveX, or reactive streams in other languages, Combine will feel familiar. It's Apple's native solution for reactive programming, deeply integrated with SwiftUI and modern iOS development.
+
+## Why Combine Matters
+
+Traditional iOS development involves managing multiple asynchronous patterns: delegates, target-action, NotificationCenter, KVO, callbacks, and closures. Each has different syntax and behavior. Combine unifies these patterns under one consistent API, giving you:
+
+- **Composition**: Chain operations together in readable pipelines
+- **Cancellation**: Built-in memory management and operation cancellation
+- **Error handling**: Type-safe error propagation through the pipeline
+- **Thread safety**: Explicit control over which thread code runs on
+
+Combine became especially important with SwiftUI, where reactive data flow is the default paradigm.
+
+## Core Concepts
+
+Combine has three main components:
+
+1. **Publishers**: Emit values over time
+2. **Subscribers**: Receive values from publishers
+3. **Operators**: Transform, filter, and combine values between publishers and subscribers
+
+The basic flow looks like this:
+
+```
+Publisher → Operator(s) → Subscriber
+```
+
+## Publishers
+
+A publisher is anything that emits values over time. It defines two associated types: `Output` (the value type) and `Failure` (the error type, or `Never` if it can't fail).
+
+### Creating Publishers
+
+```swift
+import Combine
+
+// Just: Publishes a single value then completes
+let justPublisher = Just(42)
+// Output: Int, Failure: Never
+
+// Future: Wraps async code in a publisher
+let futurePublisher = Future<String, Error> { promise in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        promise(.success("Hello"))
+    }
+}
+
+// PassthroughSubject: Manually send values
+let subject = PassthroughSubject<Int, Never>()
+subject.send(1)
+subject.send(2)
+
+// CurrentValueSubject: Holds and publishes current value
+let currentValue = CurrentValueSubject<String, Never>("Initial")
+print(currentValue.value) // "Initial"
+currentValue.send("Updated")
+
+// Published property wrapper (commonly used in SwiftUI)
+class ViewModel {
+    @Published var username: String = ""
+}
+```
+
+### Common Built-in Publishers
+
+```swift
+// Timer
+let timer = Timer.publish(every: 1.0, on: .main, in: .common)
+
+// NotificationCenter
+let keyboardPublisher = NotificationCenter.default
+    .publisher(for: UIResponder.keyboardWillShowNotification)
+
+// URLSession
+let url = URL(string: "https://api.example.com/data")!
+let urlPublisher = URLSession.shared.dataTaskPublisher(for: url)
+```
+
+## Subscribers
+
+Subscribers receive values from publishers. Combine provides two built-in subscribers:
+
+### sink
+
+The most common subscriber. Handles values and completion:
+
+```swift
+let publisher = [1, 2, 3, 4, 5].publisher
+
+let cancellable = publisher.sink(
+    receiveCompletion: { completion in
+        switch completion {
+        case .finished:
+            print("Completed successfully")
+        case .failure(let error):
+            print("Failed with error: \(error)")
+        }
+    },
+    receiveValue: { value in
+        print("Received: \(value)")
+    }
+)
+// Output:
+// Received: 1
+// Received: 2
+// Received: 3
+// Received: 4
+// Received: 5
+// Completed successfully
+```
+
+For publishers that never fail:
+
+```swift
+let simplePublisher = Just(100)
+
+let cancellable = simplePublisher.sink { value in
+    print("Value: \(value)")
+}
+```
+
+### assign
+
+Assigns published values directly to a property:
+
+```swift
+class User {
+    var score: Int = 0
+}
+
+let user = User()
+let scorePublisher = [10, 20, 30].publisher
+
+let cancellable = scorePublisher.assign(to: \.score, on: user)
+// user.score is now 30 (the last value)
+```
+
+**Common mistake**: Using `assign` with `self` can create retain cycles. Use `sink` with `[weak self]` instead:
+
+```swift
+// ❌ Retain cycle
+let cancellable = publisher.assign(to: \.property, on: self)
+
+// ✅ Safe
+let cancellable = publisher.sink { [weak self] value in
+    self?.property = value
+}
+```
+
+## Operators
+
+Operators sit between publishers and subscribers, transforming the data stream. They return new publishers, letting you chain multiple operations.
+
+### Transforming Operators
+
+```swift
+// map: Transform each value
+let numbers = [1, 2, 3].publisher
+numbers
+    .map { $0 * 2 }
+    .sink { print($0) }
+// Output: 2, 4, 6
+
+// tryMap: Transform with error handling
+let strings = ["1", "2", "invalid", "4"].publisher
+strings
+    .tryMap { string -> Int in
+        guard let number = Int(string) else {
+            throw NSError(domain: "ParseError", code: 0)
+        }
+        return number
+    }
+    .sink(
+        receiveCompletion: { print($0) },
+        receiveValue: { print("Number: \($0)") }
+    )
+
+// flatMap: Transform to another publisher
+struct User {
+    let id: Int
+}
+
+func fetchUserDetails(id: Int) -> AnyPublisher<String, Never> {
+    Just("User \(id) details").eraseToAnyPublisher()
+}
+
+let users = [User(id: 1), User(id: 2)].publisher
+users
+    .flatMap { user in
+        fetchUserDetails(id: user.id)
+    }
+    .sink { print($0) }
+```
+
+### Filtering Operators
+
+```swift
+// filter: Include only values matching condition
+let numbers = [1, 2, 3, 4, 5, 6].publisher
+numbers
+    .filter { $0 % 2 == 0 }
+    .sink { print($0) }
+// Output: 2, 4, 6
+
+// removeDuplicates: Skip consecutive duplicate values
+let values = [1, 1, 2, 2, 2, 3, 3, 1].publisher
+values
+    .removeDuplicates()
+    .sink { print($0) }
+// Output: 1, 2, 3, 1
+
+// compactMap: Filter nil values while transforming
+let strings = ["1", "abc", "3", "def"].publisher
+strings
+    .compactMap { Int($0) }
+    .sink { print($0) }
+// Output: 1, 3
+```
+
+### Combining Operators
+
+```swift
+// combineLatest: Combine latest values from multiple publishers
+let publisher1 = PassthroughSubject<Int, Never>()
+let publisher2 = PassthroughSubject<String, Never>()
+
+let cancellable = publisher1
+    .combineLatest(publisher2)
+    .sink { number, text in
+        print("\(number) - \(text)")
+    }
+
+publisher1.send(1)
+publisher2.send("A")  // Output: 1 - A
+publisher1.send(2)    // Output: 2 - A
+publisher2.send("B")  // Output: 2 - B
+
+// merge: Combine publishers of the same type
+let evens = [2, 4, 6].publisher
+let odds = [1, 3, 5].publisher
+
+evens
+    .merge(with: odds)
+    .sink { print($0) }
+// Output order varies: 2, 1, 4, 3, 6, 5 (or similar)
+
+// zip: Pair values from multiple publishers
+let numbers = [1, 2, 3].publisher
+let letters = ["A", "B", "C"].publisher
+
+numbers
+    .zip(letters)
+    .sink { print("\($0) - \($1)") }
+// Output: 1 - A, 2 - B, 3 - C
+```
+
+### Timing Operators
+
+```swift
+// debounce: Wait for pause in events
+let searchText = PassthroughSubject<String, Never>()
+
+searchText
+    .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+    .sink { query in
+        print("Searching for: \(query)")
+    }
+
+// Only triggers search after user stops typing for 500ms
+
+// delay: Delay all events
+let publisher = [1, 2, 3].publisher
+publisher
+    .delay(for: .seconds(2), scheduler: DispatchQueue.main)
+    .sink { print($0) }
+// Values printed after 2-second delay
+
+// throttle: Limit event frequency
+let clicks = PassthroughSubject<Void, Never>()
+
+clicks
+    .throttle(for: .seconds(1), scheduler: DispatchQueue.main, latest: true)
+    .sink { print("Click registered") }
+// Maximum one output per second
+```
+
+### Error Handling Operators
+
+```swift
+// replaceError: Replace errors with default value
+let failingPublisher = Fail<Int, Error>(error: NSError(domain: "test", code: 0))
+
+failingPublisher
+    .replaceError(with: -1)
+    .sink { print($0) }
+// Output: -1
+
+// catch: Replace failed publisher with another publisher
+let primaryPublisher = Fail<String, Error>(error: NSError(domain: "primary", code: 0))
+let fallbackPublisher = Just("Fallback value")
+
+primaryPublisher
+    .catch { _ in fallbackPublisher }
+    .sink { print($0) }
+// Output: Fallback value
+
+// retry: Retry failed publisher
+var attemptCount = 0
+let retryPublisher = Future<String, Error> { promise in
+    attemptCount += 1
+    if attemptCount < 3 {
+        promise(.failure(NSError(domain: "fail", code: 0)))
+    } else {
+        promise(.success("Success on attempt \(attemptCount)"))
+    }
+}
+.retry(2)
+.sink(
+    receiveCompletion: { print($0) },
+    receiveValue: { print($0) }
+)
+```
+
+## Memory Management and Cancellation
+
+Every subscription returns an `AnyCancellable`. When this object is deallocated, the subscription is cancelled. This is crucial for preventing memory leaks.
+
+```swift
+class ViewModel {
+    private var cancellables = Set<AnyCancellable>()
+    
+    func setupBindings() {
+        somePublisher
+            .sink { value in
+                print(value)
+            }
+            .store(in: &cancellables)  // Stores cancellable
+    }
+}
+// When ViewModel is deallocated, all subscriptions are cancelled
+```
+
+**Common mistake**: Not storing cancellables:
+
+```swift
+// ❌ Subscription immediately cancelled
+Just(42).sink { print($0) }
+// Might not print anything
+
+// ✅ Subscription stays alive
+let cancellable = Just(42).sink { print($0) }
+// Prints: 42
+```
+
+## Schedulers
+
+Schedulers determine where and when work happens. They're similar to dispatch queues but more abstract.
+
+```swift
+let backgroundPublisher = URLSession.shared
+    .dataTaskPublisher(for: URL(string: "https://api.example.com")!)
+    .map(\.data)
+    .decode(type: User.self, decoder: JSONDecoder())
+    .receive(on: DispatchQueue.main)  // Switch to main thread for UI updates
+    .sink(
+        receiveCompletion: { print($0) },
+        receiveValue: { user in
+            // Update UI safely on main thread
+            print(user)
+        }
+    )
+```
+
+Common schedulers:
+- `DispatchQueue.main`: Main thread (UI updates)
+- `DispatchQueue.global()`: Background thread
+- `RunLoop.main`: Main run loop
+- `ImmediateScheduler`: Current thread immediately
+
+## Practical Example: Search Feature
+
+Here's a realistic example combining multiple concepts:
+
+```swift
+import Combine
+import Foundation
+
+class SearchViewModel: ObservableObject {
+    @Published var searchQuery: String = ""
+    @Published var results: [String] = []
+    @Published var isLoading: Bool = false
+    
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        $searchQuery
+            // Wait 500ms after user stops typing
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            // Ignore empty queries
+            .filter { !$0.isEmpty }
+            // Remove duplicate searches
+            .removeDuplicates()
+            // Cancel previous search when new query arrives
+            .flatMap { query -> AnyPublisher<[String], Never> in
+                self.isLoading = true
+                return self.search(query: query)
+                    .catch { _ in Just([]) }  // Handle errors gracefully
+                    .eraseToAnyPublisher()
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] results in
+                self?.isLoading = false
+                self?.results = results
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func search(query: String) -> AnyPublisher<[String], Error> {
+        // Simulated API call
+        Future { promise in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                let results = ["Result 1 for \(query)", "Result 2 for \(query)"]
+                promise(.success(results))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### 1. Reference Cycles with assign(to:on:)
+
+```swift
+// ❌ Creates retain cycle
+class MyClass {
+    @Published var value = 0
+    var cancellable: AnyCancellable?
+    
+    func setup() {
+        cancellable = somePublisher.assign(to: \.value, on: self)
+    }
+}
+
+// ✅ Use assign(to:) with @Published
+class MyClass {
+    @Published var value = 0
+    var cancellable: AnyCancellable?
+    
+    func setup() {
+        cancellable = somePublisher.assign(to: &$value)  // No retain cycle
+    }
+}
+```
+
+### 2. Forgetting to Handle Errors
+
+```swift
+// ❌ Unhandled errors terminate the pipeline
+urlPublisher
+    .map { data, response in data }
+    .sink { _ in }  // Pipeline dies on error
+
+// ✅ Handle errors appropriately
+urlPublisher
+    .map { data, response in data }
+    .replaceError(with: Data())  // Or use catch, retry, etc.
+    .sink { _ in }
+```
+
+### 3. Threading Issues
+
+```swift
+// ❌ Updating UI on background thread
+backgroundPublisher
+    .sink { [weak self] value in
+        self?.label.text = "\(value)"  // Crash potential
+    }
+
+// ✅ Switch to main thread
+backgroundPublisher
+    .receive(on: DispatchQueue.main)
+    .sink { [weak self] value in
+        self?.label.text = "\(value)"  // Safe
+    }
+```
+
+### 4. Not Cancelling Long-Running Operations
+
+```swift
+class ViewController {
+    var cancellable: AnyCancellable?
+    
+    func loadData() {
+        // ❌ Previous request not cancelled
+        cancellable = apiCall().sink { _ in }
+    }
+    
+    func loadDataCorrectly() {
+        // ✅ Cancel previous request
+        cancellable?.cancel()
+        cancellable = apiCall().sink { _ in }
+    }
+}
+```
+
+## Type Erasure
+
+Sometimes you need to hide implementation details or work with protocol types. Use `eraseToAnyPublisher()`:
+
+```swift
+func getDataPublisher() -> AnyPublisher<Data, Error> {
+    URLSession.shared
+        .dataTaskPublisher(for: someURL)
+        .map(\.data)
+        .mapError { $0 as Error }
+        .eraseToAnyPublisher()
+}
+```
+
+This is useful when returning publishers from functions or storing them in protocol-typed properties.
+
+## When to Use Combine vs Modern Alternatives
+
+With Swift's evolution, several modern alternatives now exist for common Combine use cases:
+
+| Use Case | Combine | Modern Alternative |
+|----------|---------|-------------------|
+| Simple state observation | `ObservableObject` + `@Published` | `@Observable` macro (iOS 17+) |
+| Async data fetching | `Future` publisher | `async`/`await` |
+| Streaming values | `PassthroughSubject` | `AsyncStream` |
+| Timer events | `Timer.publish()` | `AsyncTimerSequence` |
+| Notification listening | `NotificationCenter.publisher()` | `NotificationCenter.notifications()` async sequence |
+
+**When Combine is still the best choice:**
+- Complex data transformation pipelines with multiple operators
+- Debouncing/throttling user input (e.g., search fields)
+- Combining multiple publisher streams (`combineLatest`, `merge`, `zip`)
+- Working with existing Combine-based APIs
+
+**When modern alternatives may be simpler:**
+- Basic UI state management → use `@Observable` (iOS 17+)
+- Single async operations → use `async`/`await`
+- Simple event streams → use `AsyncSequence`
+
+## Summary Table
+
+| Concept | Type | Purpose |
+|---------|------|---------|
+| `Publisher` | Protocol | Emits values over time |
+| `Subscriber` | Protocol | Receives and processes values |
+| `Subject` | Publisher + Subscriber | Manually send values |
+| `PassthroughSubject` | Subject | Broadcasts values, no memory |
+| `CurrentValueSubject` | Subject | Broadcasts values, remembers last |
+| `@Published` | Property wrapper | Auto-creates publisher for property |
+| `sink` | Subscriber | Execute closure on each value |
+| `assign` | Subscriber | Bind value to a property |
+| `AnyCancellable` | Cancellation | Manages subscription lifetime |
+| `eraseToAnyPublisher()` | Type erasure | Hides publisher implementation details |
+
+### Common Operators
+
+| Operator | Purpose | Example |
+|----------|---------|---------|
+| `map` | Transform values | `.map { $0.name }` |
+| `filter` | Keep matching values | `.filter { $0 > 0 }` |
+| `compactMap` | Transform and remove nils | `.compactMap { Int($0) }` |
+| `debounce` | Wait for pause in values | `.debounce(for: 0.3, scheduler: RunLoop.main)` |
+| `throttle` | Limit emission rate | `.throttle(for: 1.0, scheduler: RunLoop.main, latest: true)` |
+| `combineLatest` | Combine latest from multiple | `pub1.combineLatest(pub2)` |
+| `merge` | Combine into single stream | `pub1.merge(with: pub2)` |
+| `removeDuplicates` | Skip consecutive duplicates | `.removeDuplicates()` |
+| `receive(on:)` | Switch scheduler/thread | `.receive(on: DispatchQueue.main)` |
+
+## Official Resources
+
+- [Apple Documentation: Combine](https://developer.apple.com/documentation/combine)
+- [WWDC 2019: Introducing Combine](https://developer.apple.com/videos/play/wwdc2019/722/)
+- [WWDC 2019: Combine in Practice](https://developer.apple.com/videos/play/wwdc2019/721/)

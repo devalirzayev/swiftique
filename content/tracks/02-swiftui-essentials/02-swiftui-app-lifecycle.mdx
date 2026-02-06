@@ -1,0 +1,651 @@
+---
+title: "App Lifecycle"
+description: "The @main entry point, App protocol, Scene, and WindowGroup"
+sectionId: "2.1-introduction"
+sectionTitle: "Introduction to SwiftUI"
+order: 2
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Lifecycle in SwiftUI
+
+The app lifecycle defines how your iOS application starts, runs, and responds to system events. In modern SwiftUI apps, this is managed through a declarative structure using the `@main` attribute, the `App` protocol, `Scene` types, and `WindowGroup`. Understanding the app lifecycle is crucial because it determines when your code executes, how your UI is constructed, and how your app responds to events like backgrounding or termination.
+
+## Why the App Lifecycle Matters
+
+When you launch an iOS app, the system needs to know:
+- Where your app starts executing code (`@main`)
+- What windows and scenes to display
+- How to handle multiple windows (on iPad)
+- What to do when the app moves between foreground and background states
+
+SwiftUI's lifecycle model is significantly different from UIKit's `AppDelegate` pattern, favoring a declarative approach that's more aligned with SwiftUI's philosophy.
+
+## The @main Entry Point
+
+Every Swift program needs an entry point—a place where execution begins. The `@main` attribute marks the type that serves as your app's entry point.
+
+```swift
+import SwiftUI
+
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+**What's happening here:**
+- `@main` tells the system "start here when launching the app"
+- Only one type in your entire app can have `@main`
+- The type must conform to the `App` protocol
+- When your app launches, SwiftUI creates an instance of this struct
+
+### Common Mistake: Multiple @main Attributes
+
+```swift
+// ❌ This will cause a compile error
+@main
+struct MyApp: App { /* ... */ }
+
+@main
+struct AnotherApp: App { /* ... */ } // Error: Multiple @main attributes
+```
+
+You can only have one entry point. If you're working with multiple targets (like an app and a widget extension), each target gets its own `@main`, but only one per target.
+
+## The App Protocol
+
+The `App` protocol is the foundation of SwiftUI's app lifecycle. It has one requirement: a `body` property that returns a `Scene`.
+
+```swift
+import SwiftUI
+
+@main
+struct PhotoGalleryApp: App {
+    // State that exists for the entire lifetime of the app
+    @StateObject private var dataModel = PhotoDataModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(dataModel)
+        }
+    }
+}
+```
+
+### App-Level State
+
+The `App` struct is instantiated once when your app launches and persists for the app's entire lifetime. This makes it ideal for:
+- Creating app-wide state with `@StateObject`
+- Initializing services and managers
+- Setting up environment values
+
+```swift
+@main
+struct TaskManagerApp: App {
+    @StateObject private var taskManager = TaskManager()
+    @StateObject private var networkMonitor = NetworkMonitor()
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    
+    var body: some Scene {
+        WindowGroup {
+            if hasSeenOnboarding {
+                MainView()
+            } else {
+                OnboardingView()
+            }
+        }
+        .environmentObject(taskManager)
+        .environmentObject(networkMonitor)
+    }
+}
+```
+
+### App Lifecycle Methods
+
+The `App` protocol provides an `init()` method where you can perform setup:
+
+```swift
+@main
+struct MyApp: App {
+    init() {
+        // Perform one-time setup
+        print("App is initializing")
+        
+        // Configure app-wide appearance
+        UINavigationBar.appearance().tintColor = .systemBlue
+        
+        // Initialize analytics or services
+        AnalyticsService.configure()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+**Important:** The `init()` runs before any views are created, making it the right place for configuration that doesn't depend on the UI being ready.
+
+## Scenes
+
+A `Scene` represents a distinct user interface instance of your app. The most common scene type is `WindowGroup`, but there are others.
+
+### WindowGroup
+
+`WindowGroup` is the standard scene for most iOS apps. It represents a window containing your root view.
+
+```swift
+@main
+struct NotesApp: App {
+    var body: some Scene {
+        WindowGroup {
+            NoteListView()
+        }
+    }
+}
+```
+
+On iOS and iPadOS, `WindowGroup` automatically handles:
+- Creating windows as needed
+- Supporting multiple windows on iPad (if the user opens multiple instances)
+- State restoration when windows are closed and reopened
+
+### Multiple Windows on iPad
+
+`WindowGroup` shines on iPad, where users can open multiple windows:
+
+```swift
+@main
+struct DocumentApp: App {
+    var body: some Scene {
+        WindowGroup {
+            DocumentListView()
+        }
+    }
+}
+```
+
+With this basic setup, users can:
+- Long-press your app icon in the dock and open multiple windows
+- Drag content to create new windows
+- Use Split View with multiple instances of your app
+
+Each window gets its own instance of `DocumentListView()` and its own state.
+
+### Window Group with Value
+
+You can create windows bound to specific data:
+
+```swift
+@main
+struct DocumentApp: App {
+    var body: some Scene {
+        WindowGroup(for: Document.ID.self) { $documentID in
+            if let documentID = documentID {
+                DocumentEditorView(documentID: documentID)
+            } else {
+                DocumentPickerView()
+            }
+        }
+    }
+}
+
+// Open a specific document window programmatically
+struct DocumentListView: View {
+    @Environment(\.openWindow) private var openWindow
+    
+    var body: some View {
+        List(documents) { document in
+            Button(document.name) {
+                openWindow(value: document.id)
+            }
+        }
+    }
+}
+```
+
+### Other Scene Types
+
+#### DocumentGroup
+
+For document-based apps that work with files:
+
+```swift
+@main
+struct TextEditorApp: App {
+    var body: some Scene {
+        DocumentGroup(newDocument: TextDocument()) { file in
+            TextEditorView(document: file.$document)
+        }
+    }
+}
+```
+
+This automatically provides:
+- File opening and saving
+- Recent documents
+- Document browser integration
+- iCloud Drive support
+
+#### Settings (macOS)
+
+On macOS, you can define a settings window:
+
+```swift
+@main
+struct MyMacApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        
+        Settings {
+            SettingsView()
+        }
+    }
+}
+```
+
+### Multiple Scenes
+
+You can define multiple scenes in one app:
+
+```swift
+@main
+struct AdvancedApp: App {
+    var body: some Scene {
+        WindowGroup("Main Window") {
+            MainContentView()
+        }
+        
+        WindowGroup("Auxiliary", id: "auxiliary") {
+            AuxiliaryView()
+        }
+        
+        #if os(macOS)
+        Settings {
+            SettingsView()
+        }
+        #endif
+    }
+}
+```
+
+## Scene Phase and App State
+
+SwiftUI provides `scenePhase` to track whether your app is active, inactive, or in the background:
+
+```swift
+@main
+struct LifecycleAwareApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var dataModel = DataModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(dataModel)
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            switch newPhase {
+            case .active:
+                print("App became active")
+                dataModel.refresh()
+            case .inactive:
+                print("App became inactive")
+            case .background:
+                print("App is in background")
+                dataModel.save()
+            @unknown default:
+                print("Unknown scene phase")
+            }
+        }
+    }
+}
+```
+
+**Scene Phases:**
+- `.active`: App is in the foreground and receiving events
+- `.inactive`: App is in the foreground but not receiving events (e.g., during a phone call or when Control Center is open)
+- `.background`: App is not visible to the user
+
+### Common Use Cases for Scene Phase
+
+```swift
+@main
+struct ProductiveApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var timerManager = TimerManager()
+    @StateObject private var locationManager = LocationManager()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            switch newPhase {
+            case .active:
+                // Resume timers, refresh data, start location updates
+                timerManager.resume()
+                locationManager.startUpdating()
+            case .background:
+                // Pause timers, save state, stop unnecessary services
+                timerManager.pause()
+                locationManager.stopUpdating()
+                saveAppState()
+            case .inactive:
+                // Prepare for possible backgrounding
+                prepareForBackground()
+            @unknown default:
+                break
+            }
+        }
+    }
+    
+    private func saveAppState() {
+        // Save critical data
+        print("Saving app state")
+    }
+    
+    private func prepareForBackground() {
+        // Pause animations, prepare UI
+        print("Preparing for background")
+    }
+}
+```
+
+## Integrating UIKit App Delegates
+
+Sometimes you need UIKit's `AppDelegate` for features like push notifications or handling URLs. SwiftUI supports this through `UIApplicationDelegateAdaptor`:
+
+```swift
+import SwiftUI
+import UIKit
+
+@main
+struct HybridApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+    ) -> Bool {
+        print("AppDelegate: didFinishLaunchingWithOptions")
+        
+        // Register for push notifications
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if granted {
+                DispatchQueue.main.async {
+                    application.registerForRemoteNotifications()
+                }
+            }
+        }
+        
+        return true
+    }
+    
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        print("Device Token: \(token)")
+    }
+    
+    func application(
+        _ application: UIApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+    ) -> Bool {
+        // Handle universal links or Handoff
+        return true
+    }
+}
+```
+
+## Edge Cases and Common Mistakes
+
+### 1. Initializing StateObject in WindowGroup
+
+```swift
+// ❌ Wrong: Creates a new instance every time the scene is recreated
+WindowGroup {
+    ContentView()
+        .environmentObject(DataModel()) // Don't do this!
+}
+
+// ✅ Correct: Create at app level
+@main
+struct MyApp: App {
+    @StateObject private var dataModel = DataModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(dataModel)
+        }
+    }
+}
+```
+
+### 2. Heavy Work in App Init
+
+```swift
+// ❌ Avoid: Blocks app launch
+@main
+struct MyApp: App {
+    init() {
+        // This blocks the app from launching
+        loadMassiveDataSet()
+        performExpensiveCalculation()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+// ✅ Better: Defer heavy work
+@main
+struct MyApp: App {
+    @StateObject private var dataLoader = DataLoader()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .task {
+                    await dataLoader.loadData()
+                }
+        }
+    }
+}
+```
+
+### 3. Scene Phase Scope
+
+```swift
+// ❌ Wrong: scenePhase at view level only tracks that view's scene
+struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    
+    var body: some View {
+        Text("Hello")
+            .onChange(of: scenePhase) { _, _ in
+                // This only works if ContentView is visible
+            }
+    }
+}
+
+// ✅ Correct: Monitor at app level for app-wide behavior
+@main
+struct MyApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // This works app-wide
+        }
+    }
+}
+```
+
+### 4. State Restoration
+
+On iPad with multiple windows, each window maintains independent state. If you need shared state:
+
+```swift
+@main
+struct MultiWindowApp: App {
+    // Shared across all windows
+    @StateObject private var sharedDataModel = SharedDataModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(sharedDataModel) // All windows share this
+        }
+    }
+}
+```
+
+## Complete Example: Real-World App Structure
+
+Here's a comprehensive example showing best practices:
+
+```swift
+import SwiftUI
+
+@main
+struct TaskFlowApp: App {
+    // App-wide state
+    @StateObject private var taskManager = TaskManager()
+    @StateObject private var authManager = AuthenticationManager()
+    @StateObject private var syncEngine = SyncEngine()
+    
+    // App configuration
+    @AppStorage("preferredTheme") private var preferredTheme = "system"
+    @Environment(\.scenePhase) private var scenePhase
+    
+    // UIKit integration for push notifications
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    init() {
+        // One-time configuration
+        configureAppearance()
+        AnalyticsService.initialize()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                if authManager.isAuthenticated {
+                    MainTabView()
+                } else {
+                    LoginView()
+                }
+            }
+            .environmentObject(taskManager)
+            .environmentObject(authManager)
+            .environmentObject(syncEngine)
+            .preferredColorScheme(colorScheme)
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            handleScenePhaseChange(from: oldPhase, to: newPhase)
+        }
+        .commands {
+            // Add custom menu commands (macOS/iPad with keyboard)
+            CommandGroup(replacing: .newItem) {
+                Button("New Task") {
+                    taskManager.createNewTask()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+            }
+        }
+    }
+    
+    private var colorScheme: ColorScheme? {
+        switch preferredTheme {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil // System default
+        }
+    }
+    
+    private func configureAppearance() {
+        // Global UI configuration
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    }
+    
+    private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
+        switch newPhase {
+        case .active:
+            // App became active
+            syncEngine.startSync()
+            taskManager.refreshData()
+        case .inactive:
+            // App is transitioning
+            break
+        case .background:
+            // App went to background - save critical state
+            taskManager.saveLocalChanges()
+            syncEngine.stopSync()
+            scheduleBackgroundTasks()
+        @unknown default:
+            break
+        }
+    }
+
+    private func scheduleBackgroundTasks() {
+        // Schedule background refresh, cleanup, etc.
+    }
+}
+```
+
+This pattern centralizes your lifecycle logic and makes it testable—you can call `handleScenePhaseChange` directly in unit tests.
+
+## Summary Table
+
+| Concept | Purpose | Key API |
+|---------|---------|---------|
+| **@main** | Entry point for the app | `@main struct MyApp: App` |
+| **App protocol** | Defines app structure and scenes | `var body: some Scene` |
+| **WindowGroup** | Creates a window with a root view | `WindowGroup { ContentView() }` |
+| **ScenePhase** | Tracks active/inactive/background state | `@Environment(\.scenePhase)` |
+| **AppDelegate** | Bridge to UIKit lifecycle events | `@UIApplicationDelegateAdaptor` |
+| **onAppear/onDisappear** | View-level lifecycle hooks | `.onAppear { }` / `.onDisappear { }` |
+| **task modifier** | Async work tied to view lifecycle | `.task { await fetch() }` |
+| **onChange** | React to value changes | `.onChange(of: value) { }` |
+| **Deep Links** | Handle URL-based navigation | `.onOpenURL { url in }` |
+
+## Official Resources
+
+- [Apple Documentation: App Structure and Behavior](https://developer.apple.com/documentation/swiftui/app-structure-and-behavior)
+- [Apple Documentation: ScenePhase](https://developer.apple.com/documentation/swiftui/scenephase)
+- [Apple Documentation: UIApplicationDelegateAdaptor](https://developer.apple.com/documentation/swiftui/uiapplicationdelegateadaptor)
+- [WWDC 2020: App Essentials in SwiftUI](https://developer.apple.com/videos/play/wwdc2020/10037/)

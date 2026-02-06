@@ -1,0 +1,654 @@
+---
+title: "Styling Views"
+description: "ViewModifiers, ButtonStyle, custom styles, and conditional styling"
+sectionId: "2.6-styling"
+sectionTitle: "Styling & Theming"
+order: 17
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Styling Views in SwiftUI
+
+Styling views is the process of applying visual modifications to UI elements in SwiftUI. Unlike UIKit's imperative approach where you configure properties directly, SwiftUI uses a declarative system built around **view modifiers**—methods that return modified copies of views. Understanding how to style views efficiently is essential for building polished iOS applications that maintain consistency and adapt to different states.
+
+## Why Styling Matters
+
+SwiftUI's modifier-based approach offers several advantages:
+
+- **Immutability**: Views are value types, so modifiers create new views rather than mutating existing ones
+- **Reusability**: Custom modifiers and styles can be shared across your app
+- **Composition**: Multiple modifiers can be chained together in a readable, hierarchical manner
+- **Type safety**: The compiler catches styling errors at build time
+
+## View Modifiers: The Foundation
+
+View modifiers are methods that wrap a view and return a modified version. SwiftUI provides dozens of built-in modifiers for common styling needs.
+
+### Basic Modifiers
+
+```swift
+import SwiftUI
+
+struct BasicModifiersView: View {
+    var body: some View {
+        Text("Hello, SwiftUI!")
+            .font(.title)
+            .foregroundColor(.blue)
+            .padding()
+            .background(Color.yellow)
+            .cornerRadius(10)
+    }
+}
+```
+
+**Important**: Modifier order matters. Modifiers are applied from top to bottom, and each modifier wraps the previous view.
+
+```swift
+struct ModifierOrderExample: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            // Background applied BEFORE padding
+            Text("Background First")
+                .background(Color.blue)
+                .padding()
+            
+            // Padding applied BEFORE background
+            Text("Padding First")
+                .padding()
+                .background(Color.blue)
+        }
+    }
+}
+```
+
+In the first example, only the text has a blue background. In the second, the background extends to include the padding area.
+
+### Custom View Modifiers
+
+For reusable styling, create custom modifiers by conforming to the `ViewModifier` protocol:
+
+```swift
+struct CardStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding()
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    }
+}
+
+// Extension for cleaner syntax
+extension View {
+    func cardStyle() -> some View {
+        modifier(CardStyle())
+    }
+}
+
+// Usage
+struct ContentView: View {
+    var body: some View {
+        Text("Card Content")
+            .cardStyle()
+    }
+}
+```
+
+### Common Mistake: Modifier Return Types
+
+```swift
+// ❌ This won't compile
+func conditionalModifier() -> some View {
+    if someCondition {
+        return Text("Hello").foregroundColor(.red)
+    } else {
+        return Text("Hello").font(.title)
+    }
+}
+
+// ✅ Different modifier combinations create different types
+// Use ViewBuilder or type erasure
+@ViewBuilder
+func conditionalModifier() -> some View {
+    if someCondition {
+        Text("Hello").foregroundColor(.red)
+    } else {
+        Text("Hello").font(.title)
+    }
+}
+```
+
+## Button Styles
+
+SwiftUI provides the `ButtonStyle` protocol for customizing button appearance and interactions. This is more powerful than applying modifiers directly because it gives you access to button states.
+
+### Built-in Button Styles
+
+```swift
+struct BuiltInButtonStyles: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Button("Default") { }
+            
+            Button("Bordered") { }
+                .buttonStyle(.bordered)
+            
+            Button("Bordered Prominent") { }
+                .buttonStyle(.borderedProminent)
+            
+            Button("Borderless") { }
+                .buttonStyle(.borderless)
+            
+            Button("Plain") { }
+                .buttonStyle(.plain)
+        }
+        .padding()
+    }
+}
+```
+
+### Custom Button Styles
+
+Create custom button styles by conforming to `ButtonStyle`:
+
+```swift
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(
+                configuration.isPressed ? Color.blue.opacity(0.7) : Color.blue
+            )
+            .cornerRadius(10)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+    }
+}
+
+// Usage
+struct ButtonStyleExample: View {
+    var body: some View {
+        Button("Tap Me") {
+            print("Button tapped")
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding()
+    }
+}
+```
+
+The `configuration` parameter provides access to:
+- `label`: The button's content
+- `isPressed`: Boolean indicating if the button is currently being pressed
+- `role`: The button's semantic role (if any)
+
+### Advanced Button Style with Animation
+
+```swift
+struct AnimatedButtonStyle: ButtonStyle {
+    var backgroundColor: Color = .blue
+    var pressedColor: Color = .purple
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(configuration.isPressed ? pressedColor : backgroundColor)
+            )
+            .foregroundColor(.white)
+            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+// Usage with parameters
+Button("Customized") { }
+    .buttonStyle(AnimatedButtonStyle(backgroundColor: .green, pressedColor: .orange))
+```
+
+## Custom Styles: Beyond Buttons
+
+While `ButtonStyle` is button-specific, you can create similar style protocols for other view types using custom modifiers.
+
+### Creating a Reusable Text Field Style
+
+```swift
+struct OutlinedTextFieldStyle: ViewModifier {
+    var borderColor: Color
+    
+    func body(content: Content) -> some View {
+        content
+            .padding()
+            .background(Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(borderColor, lineWidth: 2)
+            )
+    }
+}
+
+extension View {
+    func outlinedStyle(borderColor: Color = .gray) -> some View {
+        modifier(OutlinedTextFieldStyle(borderColor: borderColor))
+    }
+}
+
+// Usage
+struct TextFieldExample: View {
+    @State private var text = ""
+    
+    var body: some View {
+        TextField("Enter text", text: $text)
+            .outlinedStyle(borderColor: .blue)
+            .padding()
+    }
+}
+```
+
+### Toggle Style Example
+
+```swift
+struct CheckboxToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
+                .foregroundColor(configuration.isOn ? .blue : .gray)
+                .onTapGesture {
+                    configuration.isOn.toggle()
+                }
+            
+            configuration.label
+        }
+    }
+}
+
+// Usage
+struct ToggleExample: View {
+    @State private var isEnabled = false
+    
+    var body: some View {
+        Toggle("Enable feature", isOn: $isEnabled)
+            .toggleStyle(CheckboxToggleStyle())
+    }
+}
+```
+
+## Conditional Styling
+
+Conditional styling applies different visual treatments based on application state. SwiftUI offers several approaches for this.
+
+### Using Ternary Operators
+
+```swift
+struct ConditionalStylingBasic: View {
+    @State private var isActive = false
+    
+    var body: some View {
+        Text("Status")
+            .foregroundColor(isActive ? .green : .red)
+            .font(isActive ? .headline : .body)
+            .padding()
+            .background(isActive ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
+            .onTapGesture {
+                isActive.toggle()
+            }
+    }
+}
+```
+
+### Conditional Modifier Application
+
+For complex conditions, extract the logic into computed properties or methods:
+
+```swift
+struct ConditionalStylingAdvanced: View {
+    @State private var status: Status = .pending
+    
+    enum Status {
+        case pending, approved, rejected
+    }
+    
+    var body: some View {
+        Text(statusText)
+            .padding()
+            .background(statusColor)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+    }
+    
+    private var statusText: String {
+        switch status {
+        case .pending: return "Pending"
+        case .approved: return "Approved"
+        case .rejected: return "Rejected"
+        }
+    }
+    
+    private var statusColor: Color {
+        switch status {
+        case .pending: return .orange
+        case .approved: return .green
+        case .rejected: return .red
+        }
+    }
+}
+```
+
+### Environment-Based Styling
+
+SwiftUI's environment values allow styling based on system settings:
+
+```swift
+struct EnvironmentStyling: View {
+    @Environment(\.colorScheme) var colorScheme
+    @Environment(\.sizeCategory) var sizeCategory
+    
+    var body: some View {
+        Text("Adaptive Text")
+            .foregroundColor(colorScheme == .dark ? .white : .black)
+            .padding()
+            .background(colorScheme == .dark ? Color.black : Color.white)
+            .font(sizeCategory > .large ? .title : .body)
+    }
+}
+```
+
+### Custom Environment Keys for Theming
+
+```swift
+// Define a custom environment key
+struct ThemeKey: EnvironmentKey {
+    static let defaultValue: Theme = .light
+}
+
+extension EnvironmentValues {
+    var theme: Theme {
+        get { self[ThemeKey.self] }
+        set { self[ThemeKey.self] = newValue }
+    }
+}
+
+enum Theme {
+    case light, dark, custom
+    
+    var primaryColor: Color {
+        switch self {
+        case .light: return .blue
+        case .dark: return .purple
+        case .custom: return .orange
+        }
+    }
+}
+
+// Usage
+struct ThemedView: View {
+    @Environment(\.theme) var theme
+    
+    var body: some View {
+        Text("Themed Content")
+            .foregroundColor(theme.primaryColor)
+    }
+}
+
+// Setting the theme
+struct ParentView: View {
+    var body: some View {
+        ThemedView()
+            .environment(\.theme, .dark)
+    }
+}
+```
+
+## Edge Cases and Common Mistakes
+
+### 1. Excessive Modifier Chaining
+
+```swift
+// ❌ Hard to read and maintain
+Text("Hello")
+    .font(.title).foregroundColor(.blue).padding().background(Color.yellow).cornerRadius(10).shadow(radius: 5)
+
+// ✅ Better formatting
+Text("Hello")
+    .font(.title)
+    .foregroundColor(.blue)
+    .padding()
+    .background(Color.yellow)
+    .cornerRadius(10)
+    .shadow(radius: 5)
+```
+
+### 2. Frame Modifier Positioning
+
+```swift
+struct FrameModifierIssue: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            // ❌ Background doesn't fill the frame
+            Text("Wrong Order")
+                .background(Color.blue)
+                .frame(width: 200, height: 100)
+            
+            // ✅ Background fills the frame
+            Text("Correct Order")
+                .frame(width: 200, height: 100)
+                .background(Color.blue)
+        }
+    }
+}
+```
+
+### 3. Conditional Modifiers Without Type Consistency
+
+```swift
+// ❌ Different return types
+func problematicView(flag: Bool) -> some View {
+    if flag {
+        return Text("Hello").padding() // Type: ModifiedContent<Text, _PaddingLayout>
+    } else {
+        return Text("Hello") // Type: Text
+    }
+}
+
+// ✅ Use ViewBuilder or ensure consistent modifiers
+@ViewBuilder
+func correctView(flag: Bool) -> some View {
+    Text("Hello")
+        .padding(flag ? 20 : 0) // Same type regardless
+}
+```
+
+### 4. Animation Modifier Placement
+
+```swift
+struct AnimationPlacement: View {
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack {
+            // ✅ Animation applies to all changes
+            Rectangle()
+                .fill(isExpanded ? Color.blue : Color.red)
+                .frame(width: isExpanded ? 200 : 100, height: 100)
+                .animation(.easeInOut, value: isExpanded)
+            
+            Button("Toggle") {
+                isExpanded.toggle()
+            }
+        }
+    }
+}
+```
+
+### 5. Forgetting about Accessibility
+
+```swift
+// ❌ Custom styling without accessibility consideration
+Text("Important")
+    .foregroundColor(.yellow)
+
+// ✅ Consider contrast and provide alternatives
+Text("Important")
+    .foregroundColor(.yellow)
+    .accessibilityLabel("Important message")
+    .accessibilityAddTraits(.isHeader)
+```
+
+## Performance Considerations
+
+SwiftUI is efficient, but certain styling patterns can impact performance:
+
+```swift
+// ❌ Creating new gradients on every render
+struct InefficientStyling: View {
+    var body: some View {
+        Text("Hello")
+            .background(
+                LinearGradient(
+                    colors: [.blue, .purple],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+    }
+}
+
+// ✅ Extract static styles
+struct EfficientStyling: View {
+    private let gradient = LinearGradient(
+        colors: [.blue, .purple],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+    
+    var body: some View {
+        Text("Hello")
+            .background(gradient)
+    }
+}
+```
+
+## Real-World Example: Complete Styling System
+
+```swift
+// Theme definition
+struct AppTheme {
+    let primaryColor: Color
+    let secondaryColor: Color
+    let backgroundColor: Color
+    let textColor: Color
+    
+    static let light = AppTheme(
+        primaryColor: .blue,
+        secondaryColor: .gray,
+        backgroundColor: .white,
+        textColor: .black
+    )
+    
+    static let dark = AppTheme(
+        primaryColor: .purple,
+        secondaryColor: .gray,
+        backgroundColor: .black,
+        textColor: .white
+    )
+}
+
+// Custom modifiers
+struct PrimaryButtonModifier: ViewModifier {
+    let theme: AppTheme
+    
+    func body(content: Content) -> some View {
+        content
+            .font(.headline)
+            .foregroundColor(.white)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(theme.primaryColor)
+            .cornerRadius(10)
+    }
+}
+
+struct CardModifier: ViewModifier {
+    let theme: AppTheme
+    
+    func body(content: Content) -> some View {
+        content
+            .padding()
+            .background(theme.backgroundColor)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.1), radius: 5)
+    }
+}
+
+// Extensions
+extension View {
+    func primaryButton(theme: AppTheme) -> some View {
+        modifier(PrimaryButtonModifier(theme: theme))
+    }
+    
+    func card(theme: AppTheme) -> some View {
+        modifier(CardModifier(theme: theme))
+    }
+}
+
+// Usage
+struct ThemedApp: View {
+    @State private var isDarkMode = false
+    
+    var currentTheme: AppTheme {
+        isDarkMode ? .dark : .light
+    }
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Welcome")
+                .font(.largeTitle)
+                .foregroundColor(currentTheme.textColor)
+            
+            VStack {
+                Text("This is a card")
+                    .foregroundColor(currentTheme.textColor)
+            }
+            .card(theme: currentTheme)
+
+            Button("Sign In") { }
+                .primaryButton(theme: currentTheme)
+
+            Toggle("Dark Mode", isOn: $isDarkMode)
+                .padding()
+        }
+        .padding()
+        .background(currentTheme.backgroundColor.ignoresSafeArea())
+    }
+}
+```
+
+This example demonstrates a complete theming system with:
+- A `Theme` struct holding color definitions
+- Custom `ViewModifier` implementations for each style
+- View extensions for clean, chainable syntax
+- Dynamic theme switching based on state
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **View Modifier** | `.modifier(MyModifier())` | Apply reusable style transformations |
+| **Custom ViewModifier** | `struct M: ViewModifier` | Encapsulate repeated modifier chains |
+| **ButtonStyle** | `.buttonStyle(MyStyle())` | Customize button appearance and press states |
+| **ToggleStyle** | `.toggleStyle(MyStyle())` | Customize toggle appearance |
+| **Conditional styling** | Ternary in modifier | Change appearance based on state |
+| **Environment styling** | `@Environment(\.colorScheme)` | Adapt to system settings |
+| **Custom environment** | `EnvironmentKey` | App-wide theming values |
+| **View extension** | `extension View { func myStyle() }` | Clean API for custom modifiers |
+
+## Official Resources
+
+- [Apple Documentation: ViewModifier](https://developer.apple.com/documentation/swiftui/viewmodifier)
+- [Apple Documentation: ButtonStyle](https://developer.apple.com/documentation/swiftui/buttonstyle)
+- [Apple Documentation: ToggleStyle](https://developer.apple.com/documentation/swiftui/togglestyle)
+- [Human Interface Guidelines: Color](https://developer.apple.com/design/human-interface-guidelines/color)

@@ -1,0 +1,659 @@
+---
+title: "StoreKit 2"
+description: "In-app purchases, subscriptions, and transaction handling"
+sectionId: "6.3-monetization"
+sectionTitle: "Monetization"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# StoreKit 2: Modern In-App Purchases and Subscriptions
+
+StoreKit 2, introduced in iOS 15, is Apple's modernized framework for handling in-app purchases (IAPs), subscriptions, and transaction management. It replaces the callback-based StoreKit 1 API with a Swift-native, async/await interface that's significantly easier to work with.
+
+If you're building an iOS app that sells digital products—whether that's premium features, subscriptions, or consumable items—StoreKit 2 is how you'll implement that functionality. Understanding this framework is essential for monetizing your apps on the App Store.
+
+## Why StoreKit 2 Matters
+
+The original StoreKit (now called StoreKit 1) required complex delegate patterns, manual receipt validation, and callback-heavy code. StoreKit 2 simplifies this with:
+
+- **Modern Swift concurrency** using async/await
+- **Automatic transaction handling** with cryptographic verification
+- **Transaction listener** that catches purchases made outside your app
+- **Simplified subscription status checking**
+- **Built-in receipt validation** (no server required for basic validation)
+
+## Setting Up StoreKit 2
+
+First, you need to configure your in-app purchases in App Store Connect. Then, for local testing during development, create a StoreKit Configuration file.
+
+### Creating a StoreKit Configuration File
+
+1. In Xcode, go to File → New → File
+2. Select "StoreKit Configuration File"
+3. Add your products (consumables, non-consumables, subscriptions, etc.)
+
+```swift
+// This is configured in the .storekit file, not code
+// Example product IDs you might use:
+// - "com.yourapp.premium.monthly"
+// - "com.yourapp.coins.100"
+// - "com.yourapp.feature.unlock"
+```
+
+### Basic Product Structure
+
+Create a centralized place to manage your product identifiers:
+
+```swift
+enum ProductIdentifier {
+    static let monthlySubscription = "com.yourapp.premium.monthly"
+    static let yearlySubscription = "com.yourapp.premium.yearly"
+    static let coinPack100 = "com.yourapp.coins.100"
+    static let premiumFeature = "com.yourapp.feature.unlock"
+}
+```
+
+## Fetching Products
+
+Before users can buy anything, you need to fetch product information from the App Store. This gives you current pricing, descriptions, and localized details.
+
+```swift
+import StoreKit
+
+class StoreManager: ObservableObject {
+    @Published var products: [Product] = []
+    @Published var purchasedProductIDs: Set<String> = []
+    
+    private var updateListenerTask: Task<Void, Never>?
+    
+    init() {
+        // Start listening for transactions when the store manager initializes
+        updateListenerTask = listenForTransactions()
+    }
+    
+    deinit {
+        updateListenerTask?.cancel()
+    }
+    
+    // Fetch products from the App Store
+    func loadProducts() async {
+        do {
+            let productIdentifiers = [
+                ProductIdentifier.monthlySubscription,
+                ProductIdentifier.yearlySubscription,
+                ProductIdentifier.coinPack100,
+                ProductIdentifier.premiumFeature
+            ]
+            
+            // Product.products is the main entry point for fetching
+            let fetchedProducts = try await Product.products(for: productIdentifiers)
+            
+            // Sort products by price (ascending)
+            self.products = fetchedProducts.sorted { $0.price < $1.price }
+            
+        } catch {
+            print("Failed to fetch products: \(error)")
+        }
+    }
+}
+```
+
+### Displaying Product Information
+
+Once you have products, you can display them to users:
+
+```swift
+struct ProductView: View {
+    let product: Product
+    let onPurchase: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(product.displayName)
+                .font(.headline)
+            
+            Text(product.description)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Button(action: onPurchase) {
+                Text("Buy for \(product.displayPrice)")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+    }
+}
+```
+
+## Making Purchases
+
+The purchase flow in StoreKit 2 is straightforward with async/await:
+
+```swift
+extension StoreManager {
+    // Purchase a product
+    func purchase(_ product: Product) async throws -> Transaction? {
+        // Start the purchase
+        let result = try await product.purchase()
+        
+        // Handle the purchase result
+        switch result {
+        case .success(let verificationResult):
+            // Verify the transaction is legitimate
+            let transaction = try checkVerified(verificationResult)
+            
+            // Grant user access to the purchased content
+            await updatePurchasedProducts()
+            
+            // Always finish a transaction
+            await transaction.finish()
+            
+            return transaction
+            
+        case .userCancelled:
+            // User cancelled the purchase
+            return nil
+            
+        case .pending:
+            // Purchase is pending (e.g., requires parental approval)
+            return nil
+            
+        @unknown default:
+            return nil
+        }
+    }
+    
+    // Verify that a transaction is legitimate
+    func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .unverified:
+            // The transaction failed verification
+            throw StoreError.failedVerification
+        case .verified(let safe):
+            // The transaction is verified
+            return safe
+        }
+    }
+}
+
+enum StoreError: Error {
+    case failedVerification
+}
+```
+
+## Transaction Listening
+
+One of StoreKit 2's most powerful features is the transaction listener. This catches purchases made:
+
+- On other devices (via Family Sharing)
+- When the app was closed
+- Through promotional offers
+- After app reinstallation
+
+```swift
+extension StoreManager {
+    func listenForTransactions() -> Task<Void, Never> {
+        return Task.detached {
+            // Iterate through any transactions that don't come from a direct call to purchase()
+            for await result in Transaction.updates {
+                do {
+                    let transaction = try self.checkVerified(result)
+                    
+                    // Update the app with the purchased content
+                    await self.updatePurchasedProducts()
+                    
+                    // Always finish the transaction
+                    await transaction.finish()
+                } catch {
+                    print("Transaction failed verification: \(error)")
+                }
+            }
+        }
+    }
+}
+```
+
+## Checking Purchase Status
+
+To determine what a user has already purchased, check current entitlements:
+
+```swift
+extension StoreManager {
+    func updatePurchasedProducts() async {
+        var purchasedIDs: Set<String> = []
+        
+        // Iterate through all current entitlements
+        for await result in Transaction.currentEntitlements {
+            do {
+                let transaction = try checkVerified(result)
+                
+                // Check if the transaction is for a subscription or non-consumable
+                // (consumables don't appear in currentEntitlements)
+                if transaction.revocationDate == nil {
+                    purchasedIDs.insert(transaction.productID)
+                } else {
+                    // Transaction was revoked (refunded)
+                    purchasedIDs.remove(transaction.productID)
+                }
+                
+            } catch {
+                print("Failed to verify transaction: \(error)")
+            }
+        }
+        
+        await MainActor.run {
+            self.purchasedProductIDs = purchasedIDs
+        }
+    }
+    
+    // Convenience method to check if a specific product is purchased
+    func isPurchased(_ productID: String) -> Bool {
+        return purchasedProductIDs.contains(productID)
+    }
+}
+```
+
+## Handling Different Product Types
+
+### Non-Consumables (One-Time Purchases)
+
+Non-consumables are purchased once and remain available forever (e.g., removing ads, unlocking features):
+
+```swift
+// Check if user has purchased a non-consumable
+if storeManager.isPurchased(ProductIdentifier.premiumFeature) {
+    // Show premium feature
+} else {
+    // Show purchase button
+}
+```
+
+### Consumables
+
+Consumables can be purchased multiple times (e.g., game currency, extra lives). These don't appear in `currentEntitlements`, so you need to track them yourself:
+
+```swift
+class ConsumableManager {
+    @AppStorage("coinBalance") private var coinBalance = 0
+    
+    func processConsumablePurchase(_ transaction: Transaction) async {
+        // Add coins based on product ID
+        switch transaction.productID {
+        case ProductIdentifier.coinPack100:
+            coinBalance += 100
+        default:
+            break
+        }
+        
+        // Finish the transaction after delivering content
+        await transaction.finish()
+    }
+    
+    func spendCoins(_ amount: Int) -> Bool {
+        guard coinBalance >= amount else { return false }
+        coinBalance -= amount
+        return true
+    }
+}
+```
+
+### Auto-Renewable Subscriptions
+
+Subscriptions require more complex handling due to trial periods, grace periods, and renewal states:
+
+```swift
+extension StoreManager {
+    // Get the current subscription status
+    func checkSubscriptionStatus() async {
+        var activeSubscription: Product.SubscriptionInfo.Status?
+        
+        // Get subscription statuses for a subscription group
+        guard let product = products.first(where: { 
+            $0.id == ProductIdentifier.monthlySubscription 
+        }) else {
+            return
+        }
+        
+        guard let subscriptionInfo = product.subscription else {
+            return
+        }
+        
+        let statuses = try? await subscriptionInfo.status
+        
+        // Find the active or highest-value subscription
+        activeSubscription = statuses?.max(by: { lhs, rhs in
+            // Compare based on subscription level or value
+            return false // Implement your comparison logic
+        })
+        
+        guard let status = activeSubscription else {
+            // No active subscription
+            return
+        }
+        
+        switch status.state {
+        case .subscribed:
+            // User has active subscription
+            print("Subscribed until: \(status.transaction.expirationDate?.description ?? "unknown")")
+            
+        case .inGracePeriod:
+            // Subscription in grace period (billing issue, but still active)
+            print("In grace period - prompt user to update payment")
+            
+        case .inBillingRetryPeriod:
+            // Subscription in billing retry (not active)
+            print("Billing retry - limited access")
+            
+        case .revoked:
+            // Subscription was revoked (refunded)
+            print("Subscription revoked")
+            
+        case .expired:
+            // Subscription expired
+            print("Subscription expired")
+            
+        @unknown default:
+            break
+        }
+        
+        // Check renewal info
+        let renewalInfo = try? status.renewalInfo.payloadValue
+        
+        if renewalInfo?.willAutoRenew == true {
+            print("Subscription will auto-renew")
+        } else {
+            print("Subscription will not renew - encourage re-subscription")
+        }
+    }
+}
+```
+
+## Restoring Purchases
+
+Unlike StoreKit 1, StoreKit 2 doesn't require an explicit "Restore Purchases" button for most cases. The `Transaction.currentEntitlements` API automatically includes all valid purchases.
+
+However, you might want to provide a manual restore option:
+
+```swift
+extension StoreManager {
+    func restorePurchases() async {
+        // Request all transactions for the current user
+        try? await AppStore.sync()
+        
+        // Update purchased products
+        await updatePurchasedProducts()
+    }
+}
+```
+
+## Promotional Offers and Discount Codes
+
+StoreKit 2 supports promotional offers for subscriptions:
+
+```swift
+extension StoreManager {
+    func purchaseWithOffer(
+        product: Product,
+        offerID: String
+    ) async throws -> Transaction? {
+        // Get the subscription offer
+        guard let subscription = product.subscription,
+              let offer = subscription.promotionalOffers.first(where: { 
+                  $0.id == offerID 
+              }) else {
+            throw StoreError.offerNotFound
+        }
+        
+        // Purchase with the offer
+        let result = try await product.purchase(options: [.promotionalOffer(offer)])
+        
+        // Handle result (same as regular purchase)
+        switch result {
+        case .success(let verificationResult):
+            let transaction = try checkVerified(verificationResult)
+            await updatePurchasedProducts()
+            await transaction.finish()
+            return transaction
+            
+        case .userCancelled, .pending:
+            return nil
+            
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+extension StoreError {
+    static let offerNotFound = StoreError.failedVerification // Add proper error
+}
+```
+
+## Transaction History
+
+Access a user's complete purchase history:
+
+```swift
+extension StoreManager {
+    func fetchTransactionHistory() async -> [Transaction] {
+        var transactions: [Transaction] = []
+        
+        // Iterate through all transactions
+        for await result in Transaction.all {
+            if case .verified(let transaction) = result {
+                transactions.append(transaction)
+            }
+        }
+        
+        return transactions
+    }
+    
+    // Get the latest transaction for a specific product
+    func latestTransaction(for productID: String) async -> Transaction? {
+        for await result in Transaction.all {
+            if case .verified(let transaction) = result,
+               transaction.productID == productID {
+                return transaction
+            }
+        }
+        return nil
+    }
+}
+```
+
+## Testing StoreKit 2
+
+### Local Testing with StoreKit Configuration
+
+During development, test purchases without spending real money:
+
+1. In Xcode, select your StoreKit Configuration file
+2. Run your app
+3. Purchases will use test data from the configuration file
+
+### Sandbox Testing
+
+For more realistic testing:
+
+1. Create a sandbox tester account in App Store Connect
+2. Sign out of your real App Store account on your device
+3. Run your app and make a purchase
+4. Sign in with your sandbox account when prompted
+
+```swift
+// Enable extra logging for debugging
+#if DEBUG
+extension StoreManager {
+    func debugPrintAllTransactions() async {
+        print("=== All Transactions ===")
+        for await result in Transaction.all {
+            switch result {
+            case .verified(let transaction):
+                print("""
+                Product: \(transaction.productID)
+                Purchase Date: \(transaction.purchaseDate)
+                Expiration: \(transaction.expirationDate?.description ?? "N/A")
+                """)
+            case .unverified(let transaction, let error):
+                print("Unverified transaction for \(transaction.productID): \(error)")
+            }
+        }
+        print("======================")
+    }
+}
+#endif
+```
+
+## Common Mistakes and Edge Cases
+
+### 1. Not Finishing Transactions
+
+**Mistake:** Forgetting to call `transaction.finish()`.
+
+```swift
+// ❌ Wrong - transaction never finishes
+let transaction = try checkVerified(result)
+await updatePurchasedProducts()
+// Missing: await transaction.finish()
+
+// ✅ Correct
+let transaction = try checkVerified(result)
+await updatePurchasedProducts()
+await transaction.finish()
+```
+
+**Consequence:** The transaction will be delivered again on next app launch.
+
+### 2. Not Checking Verification
+
+**Mistake:** Using unverified transactions.
+
+```swift
+// ❌ Wrong - using unverified data
+case .success(let verificationResult):
+    if case .verified(let transaction) = verificationResult {
+        // Direct access without checking
+    }
+
+// ✅ Correct
+case .success(let verificationResult):
+    let transaction = try checkVerified(verificationResult)
+```
+
+### 3. Ignoring Transaction Listener
+
+**Mistake:** Only handling purchases from direct `purchase()` calls.
+
+```swift
+// ❌ Wrong - missing purchases from other sources
+func purchase() async {
+    // Only handles purchases initiated here
+}
+
+// ✅ Correct - transaction listener catches all purchases
+updateListenerTask = listenForTransactions()
+```
+
+### 4. Not Handling Subscription States
+
+**Mistake:** Treating all subscription states as "active."
+
+```swift
+// ❌ Wrong - grace period shouldn't give full access
+if status.state == .subscribed || status.state == .inGracePeriod {
+    // Both get full access
+}
+
+// ✅ Correct - handle grace period differently
+switch status.state {
+case .subscribed:
+    // Full access
+    grantFullAccess()
+case .inGracePeriod:
+    // Full access but prompt to fix payment
+    grantFullAccess()
+    showPaymentFixPrompt()
+case .inBillingRetryPeriod:
+    // Limited or no access
+    showBillingRetryMessage()
+case .expired:
+    // No access
+    revokeAccess()
+case .revoked:
+    // No access, subscription was refunded
+    revokeAccess()
+@unknown default:
+    break
+}
+```
+
+### 5. Not Handling Consumables Separately
+
+**Mistake:** Expecting consumables to appear in `currentEntitlements`.
+
+```swift
+// ❌ Wrong - consumables DON'T appear here
+for await result in Transaction.currentEntitlements {
+    // Won't find consumable purchases
+}
+
+// ✅ Correct - track consumables manually in your own storage
+// Use UserDefaults, Core Data, or server-side tracking
+func handleConsumablePurchase(_ transaction: Transaction) async {
+    switch transaction.productID {
+    case ProductIdentifier.coinPack100:
+        coinBalance += 100
+    default:
+        break
+    }
+    await transaction.finish()
+}
+```
+
+### Edge Case: Family Sharing
+
+StoreKit 2 handles Family Sharing automatically for non-consumable and subscription products. Check `transaction.ownershipType` to distinguish:
+
+```swift
+for await result in Transaction.currentEntitlements {
+    if case .verified(let transaction) = result {
+        if transaction.ownershipType == .familyShared {
+            // This purchase was shared via Family Sharing
+            // You might want to limit certain features
+            print("Family shared: \(transaction.productID)")
+        } else {
+            // Direct purchase
+            print("Purchased: \(transaction.productID)")
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **Fetch products** | `Product.products(for:)` | Load product info from App Store |
+| **Purchase** | `product.purchase()` | Initiate a purchase flow |
+| **Verification** | `VerificationResult` | Cryptographic transaction check |
+| **Finish transaction** | `transaction.finish()` | Mark transaction as delivered |
+| **Transaction listener** | `Transaction.updates` | Catch external/background purchases |
+| **Current entitlements** | `Transaction.currentEntitlements` | Check active purchases |
+| **Subscription status** | `product.subscription.status` | Check subscription state |
+| **Restore purchases** | `AppStore.sync()` | Force refresh from App Store |
+| **Promotional offers** | `product.purchase(options:)` | Apply discounts to subscriptions |
+| **Transaction history** | `Transaction.all` | Browse all past transactions |
+| **Family Sharing** | `transaction.ownershipType` | Detect shared purchases |
+
+## Official Resources
+
+- [Apple Documentation: StoreKit 2](https://developer.apple.com/documentation/storekit/in-app_purchase)
+- [Apple Documentation: Product](https://developer.apple.com/documentation/storekit/product)
+- [Apple Documentation: Transaction](https://developer.apple.com/documentation/storekit/transaction)
+- [Apple: Implementing a Store in Your App](https://developer.apple.com/documentation/storekit/in-app_purchase/implementing_a_store_in_your_app_using_the_storekit_api)
+- [WWDC 2022: What's New in StoreKit Testing](https://developer.apple.com/videos/play/wwdc2022/10039/)

@@ -1,0 +1,605 @@
+---
+title: "Basic Data Types"
+description: "Integers, floats, booleans, strings"
+sectionId: "1.2-the-basics"
+sectionTitle: "The Basics"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Basic Data Types in Swift
+
+Data types are the foundation of any programming language, defining what kind of information a variable can hold and what operations you can perform on it. Swift is a type-safe language, meaning it performs type checks during compilation and flags any type mismatches as errors. This catches bugs early and makes your code more predictable.
+
+In this guide, we'll cover Swift's four fundamental data types: integers, floating-point numbers, booleans, and strings. Understanding these basics is essential before moving on to more complex iOS development concepts.
+
+## Why Swift's Type System Matters
+
+Swift's strong typing provides several advantages:
+
+- **Safety**: Type checking prevents common bugs like adding a string to a number
+- **Performance**: The compiler can optimize code better when types are known
+- **Clarity**: Explicit types make code easier to read and maintain
+- **Autocompletion**: Xcode provides better suggestions when types are clear
+
+## Integers
+
+Integers represent whole numbers without decimal points. Swift provides both signed (positive and negative) and unsigned (only positive) integer types.
+
+### Basic Integer Usage
+
+```swift
+let age: Int = 25
+let year = 2024  // Type inference - Swift knows this is an Int
+var score = 0
+
+score = 100  // Valid
+// score = 100.5  // Error: Cannot assign Double to Int
+```
+
+### Integer Types and Sizes
+
+Swift provides multiple integer types with different bit sizes:
+
+```swift
+let int8: Int8 = 127        // -128 to 127
+let uint8: UInt8 = 255      // 0 to 255
+let int16: Int16 = 32_767   // -32,768 to 32,767
+let int32: Int32 = 2_147_483_647
+let int64: Int64 = 9_223_372_036_854_775_807
+
+// Platform-dependent (32-bit or 64-bit)
+let standardInt: Int = 1000
+let standardUInt: UInt = 1000
+```
+
+### Common Integer Operations
+
+```swift
+let sum = 10 + 5        // 15
+let difference = 10 - 5 // 5
+let product = 10 * 5    // 50
+let quotient = 10 / 3   // 3 (integer division)
+let remainder = 10 % 3  // 1 (modulo)
+
+// Compound assignment operators
+var count = 10
+count += 5  // 15
+count -= 3  // 12
+count *= 2  // 24
+count /= 4  // 6
+```
+
+### Integer Edge Cases and Common Mistakes
+
+**Overflow**: Attempting to store a value beyond the type's range causes a runtime error in debug mode:
+
+```swift
+var smallInt: Int8 = 127
+// smallInt += 1  // Runtime error: overflow
+
+// Use overflow operators if intentional (wraps around)
+let wrapped = Int8.max &+ 1  // -128
+```
+
+**Integer Division Truncation**: Division between integers always produces an integer:
+
+```swift
+let result = 10 / 3       // 3, not 3.333...
+let correct = 10.0 / 3.0  // 3.333...
+```
+
+**Mixing Signed and Unsigned**: You cannot mix Int and UInt without explicit conversion:
+
+```swift
+let signedValue: Int = -10
+let unsignedValue: UInt = 10
+
+// let mixed = signedValue + unsignedValue  // Error
+let mixed = signedValue + Int(unsignedValue)  // Valid
+```
+
+**Best Practice**: Use `Int` for most cases unless you have a specific reason to use sized types (like working with binary protocols or optimizing memory).
+
+## Floating-Point Numbers
+
+Floating-point types represent numbers with decimal points. Swift provides two precision levels: `Float` (32-bit) and `Double` (64-bit).
+
+### Basic Float and Double Usage
+
+```swift
+let pi: Double = 3.14159
+let approximatePi: Float = 3.14159
+
+// Type inference defaults to Double
+let gravity = 9.81  // Double
+
+var temperature = 98.6
+temperature = 100.4  // Valid
+```
+
+### Precision Differences
+
+```swift
+let preciseValue: Double = 3.141592653589793
+let lessPreci value: Float = 3.141592653589793
+
+print(preciseValue)      // 3.141592653589793
+print(lessPreciseValue)  // 3.1415927 (less precision)
+```
+
+### Floating-Point Operations
+
+```swift
+let sum = 10.5 + 3.2        // 13.7
+let difference = 10.5 - 3.2 // 7.3
+let product = 10.5 * 2.0    // 21.0
+let quotient = 10.5 / 3.0   // 3.5
+
+// Mixing integers and floats requires explicit conversion
+let mixed = 10.5 + Double(5)  // 15.5
+```
+
+### Floating-Point Edge Cases and Common Mistakes
+
+**Precision Errors**: Floating-point arithmetic isn't always exact:
+
+```swift
+let result = 0.1 + 0.2
+print(result)  // 0.30000000000000004
+
+// Never compare floats with ==
+let isEqual = result == 0.3  // false (unexpected!)
+
+// Use a tolerance for comparisons
+let tolerance = 0.0001
+let isClose = abs(result - 0.3) < tolerance  // true
+```
+
+**Special Values**: Floating-point types have special constants:
+
+```swift
+let infinity = Double.infinity
+let negativeInfinity = -Double.infinity
+let notANumber = Double.nan
+
+print(1.0 / 0.0)  // inf
+print(0.0 / 0.0)  // nan
+
+// NaN has unusual comparison behavior
+let nan = Double.nan
+print(nan == nan)  // false (NaN is never equal to anything)
+print(nan.isNaN)   // true (correct way to check)
+```
+
+**Type Mismatch**: Swift won't automatically convert between Float and Double:
+
+```swift
+let doubleValue: Double = 10.5
+let floatValue: Float = 5.2
+
+// let result = doubleValue + floatValue  // Error
+let result = doubleValue + Double(floatValue)  // Valid
+```
+
+**Best Practice**: Use `Double` by default. Only use `Float` when working with APIs that specifically require it or when optimizing memory for large arrays of floating-point values.
+
+## Booleans
+
+The `Bool` type represents logical values: `true` or `false`. Booleans are fundamental for control flow and decision-making in your code.
+
+### Basic Boolean Usage
+
+```swift
+let isLoggedIn: Bool = true
+let hasPermission = false  // Type inference
+
+var isComplete = false
+isComplete = true  // Valid
+
+// Booleans in conditions
+if isLoggedIn {
+    print("Welcome back!")
+}
+```
+
+### Boolean Operations
+
+```swift
+let isAdult = true
+let hasID = true
+let isMinor = false
+
+// Logical AND
+let canEnter = isAdult && hasID  // true
+
+// Logical OR
+let needsSupervision = isMinor || !hasID  // false
+
+// Logical NOT
+let isNotAdult = !isAdult  // false
+
+// Combining operations
+let complexCondition = (isAdult && hasID) || isMinor  // true
+```
+
+### Comparison Operators Return Booleans
+
+```swift
+let age = 25
+let minAge = 18
+
+let isOldEnough = age >= minAge  // true
+let isExactly25 = age == 25      // true
+let isNot30 = age != 30          // true
+
+let x = 10
+let y = 20
+let isInRange = x > 0 && x < y   // true
+```
+
+### Boolean Edge Cases and Common Mistakes
+
+**No Implicit Conversion**: Swift doesn't treat other types as booleans:
+
+```swift
+let count = 0
+
+// if count {  // Error: Type 'Int' cannot be used as a boolean
+if count != 0 {  // Correct
+    print("Count is non-zero")
+}
+
+let name: String? = "Alice"
+// if name {  // Error
+if name != nil {  // Correct
+    print("Name exists")
+}
+```
+
+**Assignment vs. Comparison**: A common mistake in conditionals:
+
+```swift
+var isEnabled = false
+
+// if isEnabled = true {  // Error: Cannot assign in condition
+if isEnabled == true {    // Correct (but redundant)
+    print("Enabled")
+}
+
+// Better: just use the boolean directly
+if isEnabled {
+    print("Enabled")
+}
+```
+
+**Best Practice**: When checking boolean values, use them directly rather than comparing to `true` or `false`:
+
+```swift
+// Less clear
+if isLoggedIn == true { }
+
+// Better
+if isLoggedIn { }
+
+// Less clear
+if isLoggedIn == false { }
+
+// Better
+if !isLoggedIn { }
+```
+
+## Strings
+
+Strings represent text and are one of the most commonly used types in Swift. Swift's `String` type is Unicode-compliant and provides powerful text manipulation capabilities.
+
+### Basic String Usage
+
+```swift
+let greeting: String = "Hello, World!"
+let name = "Alice"  // Type inference
+
+var message = "Welcome"
+message = "Goodbye"  // Valid
+
+// Empty strings
+let emptyString = ""
+let alsoEmpty = String()
+```
+
+### String Interpolation
+
+String interpolation allows you to embed values directly into strings:
+
+```swift
+let name = "Bob"
+let age = 30
+
+let introduction = "My name is \(name) and I'm \(age) years old."
+// "My name is Bob and I'm 30 years old."
+
+// Works with expressions
+let price = 29.99
+let quantity = 3
+let total = "Total: $\(price * Double(quantity))"  // "Total: $89.97"
+```
+
+### Multiline Strings
+
+```swift
+let poem = """
+    Roses are red,
+    Violets are blue,
+    Swift is awesome,
+    And so are you!
+    """
+
+// Without leading indentation
+let json = """
+{
+    "name": "Alice",
+    "age": 25
+}
+"""
+```
+
+### String Operations
+
+```swift
+let firstName = "John"
+let lastName = "Doe"
+
+// Concatenation
+let fullName = firstName + " " + lastName  // "John Doe"
+
+// Append
+var greeting = "Hello"
+greeting += ", World!"  // "Hello, World!"
+
+// Count (number of characters)
+let text = "Swift"
+let length = text.count  // 5
+
+// Check if empty
+let empty = ""
+print(empty.isEmpty)  // true
+
+// Case transformation
+let mixed = "Hello World"
+print(mixed.uppercased())  // "HELLO WORLD"
+print(mixed.lowercased())  // "hello world"
+
+// Contains
+let sentence = "Swift is powerful"
+print(sentence.contains("Swift"))  // true
+print(sentence.hasPrefix("Swift")) // true
+print(sentence.hasSuffix("ful"))   // true
+```
+
+### String Indexing and Subscripting
+
+String indexing in Swift is more complex than in other languages due to Unicode handling:
+
+```swift
+let text = "Hello"
+
+// Access first character
+let firstChar = text.first  // Optional("H")
+
+// Access last character
+let lastChar = text.last    // Optional("o")
+
+// Index-based access (more complex)
+let startIndex = text.startIndex
+let firstCharacter = text[startIndex]  // "H"
+
+let secondIndex = text.index(after: startIndex)
+let secondCharacter = text[secondIndex]  // "e"
+
+let lastIndex = text.index(before: text.endIndex)
+let lastCharacter = text[lastIndex]  // "o"
+
+// Substring
+let range = text.startIndex..<text.index(startIndex, offsetBy: 3)
+let substring = text[range]  // "Hel" (as Substring, not String)
+let stringFromSubstring = String(substring)  // Convert to String
+```
+
+### String Edge Cases and Common Mistakes
+
+**String Indexing Complexity**: You cannot use integer indices directly:
+
+```swift
+let text = "Hello"
+// let char = text[0]  // Error: cannot subscript with Int
+
+// Correct way
+let char = text[text.startIndex]
+```
+
+**Unicode Considerations**: Count returns the number of visible characters, which may surprise you:
+
+```swift
+let emoji = "👨‍👩‍👧‍👦"  // Family emoji
+print(emoji.count)  // 1 (it's a single grapheme cluster)
+
+let flag = "🇺🇸"
+print(flag.count)  // 1 (composed of two Unicode scalars)
+
+let cafe = "café"
+let cafeAlt = "cafe\u{0301}"  // e with combining accent
+print(cafe == cafeAlt)  // true (canonically equivalent)
+```
+
+**String Mutability**: Strings declared with `let` are immutable:
+
+```swift
+let immutable = "Hello"
+// immutable += " World"  // Error
+
+var mutable = "Hello"
+mutable += " World"  // Valid
+```
+
+**Type Conversion**: Converting between String and numeric types:
+
+```swift
+// String to Int
+let numberString = "42"
+let number = Int(numberString)  // Optional(42)
+
+let invalidString = "abc"
+let invalid = Int(invalidString)  // nil
+
+// Int to String
+let age = 25
+let ageString = String(age)  // "25"
+
+// Using interpolation (simpler)
+let message = "Age: \(age)"  // "Age: 25"
+```
+
+**Performance**: String concatenation in loops can be inefficient:
+
+```swift
+// Less efficient
+var result = ""
+for i in 1...1000 {
+    result += "\(i)"  // Creates new string each time
+}
+
+// More efficient
+var components: [String] = []
+for i in 1...1000 {
+    components.append("\(i)")
+}
+let result = components.joined()
+```
+
+**Best Practice**: Use string interpolation instead of concatenation for readability, and be aware that strings are value types (they're copied on assignment).
+
+## Type Conversion and Type Safety
+
+Swift requires explicit type conversion, which prevents accidental data loss:
+
+```swift
+let integer: Int = 42
+let double: Double = 3.14
+
+// let result = integer + double  // Error: cannot mix types
+
+// Explicit conversion required
+let result1 = Double(integer) + double  // 45.14
+let result2 = integer + Int(double)     // 45 (loses precision!)
+
+// String conversions
+let ageInt = 25
+let ageString = String(ageInt)  // "25"
+
+// Optional conversions (may fail)
+let numberString = "123"
+let number = Int(numberString)  // Optional(123)
+
+let invalidString = "abc"
+let failed = Int(invalidString)  // nil
+```
+
+### Type Inference
+
+Swift can often infer types, reducing verbosity:
+
+```swift
+// Explicit type
+let explicitInt: Int = 42
+
+// Type inference (preferred when clear)
+let inferredInt = 42  // Swift infers Int
+
+// Inference defaults
+let inferredDouble = 3.14        // Double (not Float)
+let inferredInteger = 42         // Int (not Int32 or Int64)
+let inferredString = "Hello"     // String
+let inferredBool = true          // Bool
+```
+
+## Common Patterns and Best Practices
+
+### Choosing Between Types
+
+```swift
+// Use Int for counts, indices, and general integers
+let count = 10
+let index = 5
+
+// Use Double for scientific calculations, currency (with caution)
+let distance = 42.5
+let temperature = 98.6
+
+// Use Bool for flags and logical states
+let isEnabled = true
+let hasError = false
+
+// Use String for text and identifiers
+let userId = "abc123"
+let displayName = "Alice"
+```
+
+### Constants vs. Variables
+
+```swift
+// Prefer let for values that don't change
+let maxAttempts = 3
+let apiKey = "your-api-key"
+
+// Use var only when the value needs to change
+var currentAttempt = 0
+var isLoading = false
+
+currentAttempt += 1
+isLoading = true
+```
+
+### Naming Conventions
+
+```swift
+// Use camelCase for variables and constants
+let firstName = "John"
+let maxRetryCount = 5
+
+// Use descriptive names
+let isUserLoggedIn = true  // Good
+let flag = true            // Less clear
+
+// Booleans should read as questions
+let isEmpty = true
+let hasData = false
+let canEdit = true
+```
+
+## Summary Table
+
+| Type | Size | Range | Default | Use Case |
+|------|------|-------|---------|----------|
+| `Int` | 64-bit (on modern platforms) | -9.2×10¹⁸ to 9.2×10¹⁸ | `0` | General-purpose integers |
+| `Double` | 64-bit | ±1.7×10³⁰⁸ (15+ digits precision) | `0.0` | Decimal numbers (default) |
+| `Float` | 32-bit | ±3.4×10³⁸ (6 digits precision) | `0.0` | Memory-constrained scenarios |
+| `Bool` | 1-bit | `true` or `false` | `false` | Flags, conditions |
+| `String` | Variable | Any text | `""` | Text, identifiers |
+
+### Type Conversion Quick Reference
+
+| From → To | Syntax | Notes |
+|-----------|--------|-------|
+| `Int` → `Double` | `Double(intValue)` | No precision loss |
+| `Double` → `Int` | `Int(doubleValue)` | Truncates decimal |
+| `Int` → `String` | `String(intValue)` | Always succeeds |
+| `String` → `Int` | `Int(stringValue)` | Returns optional |
+| `Double` → `String` | `String(doubleValue)` | Always succeeds |
+| `String` → `Double` | `Double(stringValue)` | Returns optional |
+
+## Official Resources
+
+- [Apple Documentation: The Basics](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/)
+- [Swift Standard Library: Numeric Types](https://developer.apple.com/documentation/swift/numeric-types)

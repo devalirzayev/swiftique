@@ -1,0 +1,604 @@
+---
+title: "Navigation Patterns"
+description: "Coordinator pattern, router pattern, and deep linking"
+sectionId: "5.1-design-patterns"
+sectionTitle: "Design Patterns"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Navigation Patterns in iOS Development
+
+Navigation is one of the most fundamental aspects of iOS app development. As your app grows beyond a few screens, managing navigation logic becomes increasingly complex. Without proper patterns, you'll often find navigation code scattered across view controllers, making your app difficult to maintain, test, and modify.
+
+This guide covers three essential navigation patterns: the Coordinator pattern, Router pattern, and Deep Linking. These patterns help you separate navigation concerns from your view controllers, making your code more maintainable and testable.
+
+## Why Navigation Patterns Matter
+
+In traditional iOS development, view controllers often handle their own navigation:
+
+```swift
+// Traditional approach - tightly coupled
+class ProductListViewController: UIViewController {
+    func didSelectProduct(_ product: Product) {
+        let detailVC = ProductDetailViewController(product: product)
+        navigationController?.pushViewController(detailVC, animated: true)
+    }
+}
+```
+
+This approach has several problems:
+
+- **Tight coupling**: `ProductListViewController` needs to know about `ProductDetailViewController`
+- **Hard to test**: Navigation logic is embedded in the view controller
+- **Difficult to refactor**: Changing navigation flows requires modifying multiple view controllers
+- **No central control**: Navigation logic is scattered throughout your app
+
+Navigation patterns solve these issues by extracting navigation logic into dedicated objects.
+
+## The Coordinator Pattern
+
+The Coordinator pattern, popularized by Soroush Khanlou, uses coordinator objects to manage navigation flows. Each coordinator is responsible for creating view controllers and handling navigation between them.
+
+### Basic Coordinator Protocol
+
+```swift
+protocol Coordinator: AnyObject {
+    var childCoordinators: [Coordinator] { get set }
+    var navigationController: UINavigationController { get set }
+    
+    func start()
+}
+```
+
+### Implementing a Simple Coordinator
+
+Let's create an app coordinator that manages the main navigation flow:
+
+```swift
+class AppCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+    var navigationController: UINavigationController
+    
+    init(navigationController: UINavigationController) {
+        self.navigationController = navigationController
+    }
+    
+    func start() {
+        let homeVC = HomeViewController()
+        homeVC.coordinator = self
+        navigationController.pushViewController(homeVC, animated: false)
+    }
+    
+    func showProductList() {
+        let productVC = ProductListViewController()
+        productVC.coordinator = self
+        navigationController.pushViewController(productVC, animated: true)
+    }
+    
+    func showProductDetail(_ product: Product) {
+        let detailVC = ProductDetailViewController(product: product)
+        detailVC.coordinator = self
+        navigationController.pushViewController(detailVC, animated: true)
+    }
+}
+```
+
+### View Controller Implementation
+
+View controllers communicate back to the coordinator instead of handling navigation themselves:
+
+```swift
+class ProductListViewController: UIViewController {
+    weak var coordinator: AppCoordinator?
+    
+    private var products: [Product] = []
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let product = products[indexPath.row]
+        coordinator?.showProductDetail(product)
+    }
+    
+    @objc private func addButtonTapped() {
+        // View controller doesn't know HOW to navigate,
+        // it just tells the coordinator WHAT happened
+        coordinator?.showAddProduct()
+    }
+}
+```
+
+### Child Coordinators for Complex Flows
+
+For larger apps, use child coordinators to manage sub-flows:
+
+```swift
+class ShoppingCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+    var navigationController: UINavigationController
+    weak var parentCoordinator: AppCoordinator?
+    
+    init(navigationController: UINavigationController) {
+        self.navigationController = navigationController
+    }
+    
+    func start() {
+        let cartVC = ShoppingCartViewController()
+        cartVC.coordinator = self
+        navigationController.pushViewController(cartVC, animated: true)
+    }
+    
+    func showCheckout() {
+        let checkoutCoordinator = CheckoutCoordinator(navigationController: navigationController)
+        checkoutCoordinator.parentCoordinator = self
+        childCoordinators.append(checkoutCoordinator)
+        checkoutCoordinator.start()
+    }
+    
+    func childDidFinish(_ child: Coordinator) {
+        childCoordinators.removeAll { $0 === child }
+    }
+}
+```
+
+### Starting the Coordinator in SceneDelegate
+
+```swift
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+    var coordinator: AppCoordinator?
+    
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, 
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = (scene as? UIWindowScene) else { return }
+        
+        let navController = UINavigationController()
+        coordinator = AppCoordinator(navigationController: navController)
+        coordinator?.start()
+        
+        window = UIWindow(windowScene: windowScene)
+        window?.rootViewController = navController
+        window?.makeKeyAndVisible()
+    }
+}
+```
+
+### Common Coordinator Mistakes
+
+**1. Forgetting weak references**: Always use `weak var coordinator` in view controllers to avoid retain cycles:
+
+```swift
+// ❌ Wrong - creates retain cycle
+class MyViewController: UIViewController {
+    var coordinator: AppCoordinator? // Strong reference
+}
+
+// ✅ Correct
+class MyViewController: UIViewController {
+    weak var coordinator: AppCoordinator? // Weak reference
+}
+```
+
+**2. Not cleaning up child coordinators**: Always remove child coordinators when they're done:
+
+```swift
+func checkoutDidComplete(_ coordinator: CheckoutCoordinator) {
+    childCoordinators.removeAll { $0 === coordinator }
+    navigationController.popToRootViewController(animated: true)
+}
+```
+
+**3. Coordinator doing too much**: Coordinators should only handle navigation, not business logic:
+
+```swift
+// ❌ Wrong - coordinator handling business logic
+class AppCoordinator: Coordinator {
+    func showProductDetail(_ product: Product) {
+        let viewModel = ProductDetailViewModel()
+        viewModel.loadProduct(product.id) // Business logic
+        let detailVC = ProductDetailViewController(viewModel: viewModel)
+        navigationController.pushViewController(detailVC, animated: true)
+    }
+}
+
+// ✅ Correct - let view model handle business logic
+class AppCoordinator: Coordinator {
+    func showProductDetail(_ product: Product) {
+        let viewModel = ProductDetailViewModel(product: product)
+        let detailVC = ProductDetailViewController(viewModel: viewModel)
+        navigationController.pushViewController(detailVC, animated: true)
+    }
+}
+```
+
+## The Router Pattern
+
+The Router pattern is similar to the Coordinator pattern but typically more lightweight. It focuses on navigation actions and route definitions rather than managing entire flows.
+
+### Defining Routes
+
+```swift
+enum Route {
+    case home
+    case productList
+    case productDetail(Product)
+    case userProfile(userId: String)
+    case settings
+}
+```
+
+### Creating a Router
+
+```swift
+protocol Router: AnyObject {
+    var navigationController: UINavigationController { get }
+    func navigate(to route: Route)
+    func dismiss()
+}
+
+class AppRouter: Router {
+    let navigationController: UINavigationController
+    
+    init(navigationController: UINavigationController) {
+        self.navigationController = navigationController
+    }
+    
+    func navigate(to route: Route) {
+        let viewController = makeViewController(for: route)
+        navigationController.pushViewController(viewController, animated: true)
+    }
+    
+    func dismiss() {
+        navigationController.popViewController(animated: true)
+    }
+    
+    private func makeViewController(for route: Route) -> UIViewController {
+        switch route {
+        case .home:
+            let homeVC = HomeViewController()
+            homeVC.router = self
+            return homeVC
+            
+        case .productList:
+            let productVC = ProductListViewController()
+            productVC.router = self
+            return productVC
+            
+        case .productDetail(let product):
+            let detailVC = ProductDetailViewController(product: product)
+            detailVC.router = self
+            return detailVC
+            
+        case .userProfile(let userId):
+            let profileVC = UserProfileViewController(userId: userId)
+            profileVC.router = self
+            return profileVC
+            
+        case .settings:
+            let settingsVC = SettingsViewController()
+            settingsVC.router = self
+            return settingsVC
+        }
+    }
+}
+```
+
+### Using the Router
+
+```swift
+class ProductListViewController: UIViewController {
+    weak var router: AppRouter?
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let product = products[indexPath.row]
+        router?.navigate(to: .productDetail(product))
+    }
+}
+```
+
+### Advanced Router with Presentation Styles
+
+```swift
+enum PresentationStyle {
+    case push
+    case present(modalStyle: UIModalPresentationStyle)
+    case replace
+}
+
+enum Route {
+    case home
+    case productDetail(Product, presentation: PresentationStyle = .push)
+    case settings(presentation: PresentationStyle = .present(modalStyle: .formSheet))
+}
+
+class AppRouter: Router {
+    func navigate(to route: Route) {
+        let (viewController, presentation) = makeViewController(for: route)
+        
+        switch presentation {
+        case .push:
+            navigationController.pushViewController(viewController, animated: true)
+            
+        case .present(let modalStyle):
+            viewController.modalPresentationStyle = modalStyle
+            navigationController.present(viewController, animated: true)
+            
+        case .replace:
+            navigationController.setViewControllers([viewController], animated: true)
+        }
+    }
+    
+    private func makeViewController(for route: Route) -> (UIViewController, PresentationStyle) {
+        switch route {
+        case .home:
+            let homeVC = HomeViewController()
+            homeVC.router = self
+            return (homeVC, .push)
+            
+        case .productDetail(let product, let presentation):
+            let detailVC = ProductDetailViewController(product: product)
+            detailVC.router = self
+            return (detailVC, presentation)
+            
+        case .settings(let presentation):
+            let settingsNav = UINavigationController(
+                rootViewController: SettingsViewController()
+            )
+            return (settingsNav, presentation)
+        }
+    }
+}
+```
+
+### Router vs Coordinator: When to Use Which?
+
+Use **Coordinator** when:
+- You have complex, multi-step flows (onboarding, checkout)
+- You need to manage state across multiple screens
+- You want hierarchical navigation management
+
+Use **Router** when:
+- You want a simpler, more lightweight solution
+- Navigation is mostly straightforward screen-to-screen
+- You prefer enum-based route definitions
+
+## Deep Linking
+
+Deep linking allows users to navigate directly to specific content in your app via URLs. This is essential for push notifications, web-to-app navigation, and universal links.
+
+### URL Structure
+
+```swift
+// Example deep link URLs
+// myapp://products/123
+// myapp://user/profile/456
+// myapp://settings/notifications
+```
+
+### Creating a Deep Link Handler
+
+```swift
+enum DeepLink {
+    case product(id: String)
+    case userProfile(id: String)
+    case settings(section: String?)
+    
+    init?(url: URL) {
+        guard url.scheme == "myapp" else { return nil }
+        
+        let components = url.pathComponents.filter { $0 != "/" }
+        
+        switch components.first {
+        case "products":
+            guard components.count >= 2 else { return nil }
+            self = .product(id: components[1])
+            
+        case "user":
+            guard components.count >= 3, components[1] == "profile" else { return nil }
+            self = .userProfile(id: components[2])
+            
+        case "settings":
+            let section = components.count >= 2 ? components[1] : nil
+            self = .settings(section: section)
+            
+        default:
+            return nil
+        }
+    }
+}
+```
+
+### Integrating Deep Links with Coordinator
+
+```swift
+class AppCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+    var navigationController: UINavigationController
+    
+    init(navigationController: UINavigationController) {
+        self.navigationController = navigationController
+    }
+    
+    func start() {
+        showHome()
+    }
+    
+    func handleDeepLink(_ deepLink: DeepLink) {
+        // Reset to root before navigating to deep link destination
+        navigationController.popToRootViewController(animated: false)
+        
+        switch deepLink {
+        case .product(let id):
+            showProductDetail(id: id)
+            
+        case .userProfile(let id):
+            showUserProfile(id: id)
+            
+        case .settings(let section):
+            showSettings(section: section)
+        }
+    }
+    
+    private func showProductDetail(id: String) {
+        // Fetch product and show detail
+        Task {
+            do {
+                let product = try await ProductService.shared.fetchProduct(id: id)
+                let detailVC = ProductDetailViewController(product: product)
+                detailVC.coordinator = self
+                navigationController.pushViewController(detailVC, animated: true)
+            } catch {
+                showError(error)
+            }
+        }
+    }
+    
+    private func showUserProfile(id: String) {
+        let profileVC = UserProfileViewController(userId: id)
+        profileVC.coordinator = self
+        navigationController.pushViewController(profileVC, animated: true)
+    }
+    
+    private func showSettings(section: String?) {
+        let settingsVC = SettingsViewController(selectedSection: section)
+        settingsVC.coordinator = self
+        navigationController.pushViewController(settingsVC, animated: true)
+    }
+    
+    private func showError(_ error: Error) {
+        let alert = UIAlertController(
+            title: "Error",
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        navigationController.present(alert, animated: true)
+    }
+}
+```
+
+### Handling Deep Links in SceneDelegate
+
+```swift
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+    var coordinator: AppCoordinator?
+    
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, 
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = (scene as? UIWindowScene) else { return }
+        
+        let navController = UINavigationController()
+        coordinator = AppCoordinator(navigationController: navController)
+        coordinator?.start()
+        
+        window = UIWindow(windowScene: windowScene)
+        window?.rootViewController = navController
+        window?.makeKeyAndVisible()
+        
+        // Handle deep link if app was opened with one
+        if let urlContext = connectionOptions.urlContexts.first {
+            handleDeepLink(url: urlContext.url)
+        }
+    }
+    
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        // Handle deep link when app is already running
+        guard let url = URLContexts.first?.url else { return }
+        handleDeepLink(url: url)
+    }
+    
+    private func handleDeepLink(url: URL) {
+        guard let deepLink = DeepLink(url: url) else {
+            print("Invalid deep link: \(url)")
+            return
+        }
+        
+        coordinator?.handleDeepLink(deepLink)
+    }
+}
+```
+
+### Configuring URL Schemes in Info.plist
+
+You need to register your URL scheme in your app's Info.plist:
+
+```swift
+// Add this to Info.plist or configure in Xcode project settings:
+// URL Types -> Add URL Type
+// Identifier: com.yourcompany.yourapp
+// URL Schemes: myapp
+```
+
+### Universal Links
+
+Universal Links allow your app to handle https:// URLs, providing a seamless transition from web to app. Configure them in your app's Associated Domains capability and on your web server.
+
+**Associated Domains (Xcode project settings):**
+```
+applinks:yourdomain.com
+```
+
+**Apple App Site Association file (on your web server at https://yourdomain.com/.well-known/apple-app-site-association):**
+
+```json
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.yourcompany.yourapp",
+        "paths": ["/products/*", "/user/profile/*", "/settings/*"]
+      }
+    ]
+  }
+}
+```
+
+### Handling Universal Links in SceneDelegate
+
+```swift
+func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+          let url = userActivity.webpageURL else {
+        return
+    }
+
+    // Convert universal link URL to deep link and handle
+    if let deepLink = DeepLink(url: url) {
+        coordinator?.handleDeepLink(deepLink)
+    }
+}
+```
+
+## Common Mistakes
+
+**Mixing navigation logic and business logic in coordinators.** Coordinators should only orchestrate navigation — data fetching and processing belong in view models or services.
+
+**Not using weak references for coordinator properties in view controllers.** This creates retain cycles since coordinators hold strong references to their navigation controllers and child coordinators.
+
+**Making deep link handling fragile.** Always validate URL components and handle unknown paths gracefully. Return `nil` from the deep link initializer rather than crashing.
+
+## Summary Table
+
+| Pattern | Purpose | Best For | Complexity |
+|---------|---------|----------|------------|
+| **Coordinator** | Manages navigation flows | Complex multi-step flows (onboarding, checkout) | Medium-High |
+| **Child Coordinator** | Manages sub-flows | Isolating independent navigation sections | High |
+| **Router** | Route-based navigation | Simple screen-to-screen navigation | Low-Medium |
+| **Route Enum** | Type-safe route definitions | Centralized navigation targets | Low |
+| **Presentation Style** | Controls how screens appear | Push, modal, replace transitions | Low |
+| **Deep Link** | URL-to-screen mapping | Push notifications, web links | Medium |
+| **Universal Links** | HTTPS URL handling | Web-to-app seamless transition | Medium-High |
+| **SceneDelegate** | Entry point for deep links | App launch and URL handling | Low |
+| **Weak Coordinator** | Prevent retain cycles | All coordinator references in VCs | Low |
+| **Protocol Coordinator** | Abstract coordinator interface | Reusable coordinator contracts | Low |
+
+## Official Resources
+
+- [Apple Documentation: UINavigationController](https://developer.apple.com/documentation/uikit/uinavigationcontroller)
+- [Apple Documentation: Universal Links](https://developer.apple.com/documentation/xcode/allowing-apps-and-websites-to-link-to-your-content)
+- [Apple Documentation: Defining a Custom URL Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app)
+- [WWDC19: What's New in Universal Links](https://developer.apple.com/videos/play/wwdc2019/717/)
+- [Coordinator Pattern by Soroush Khanlou](https://khanlou.com/2015/01/the-coordinator/)

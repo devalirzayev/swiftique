@@ -1,0 +1,723 @@
+---
+title: "Buttons & Controls"
+description: "Button, Toggle, Slider, Stepper, Picker, and DatePicker"
+sectionId: "2.3-common-views"
+sectionTitle: "Common Views & Controls"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Buttons & Controls in SwiftUI
+
+Controls are interactive UI elements that let users interact with your app. They're fundamental to any iOS application—without them, your app would be a static display. SwiftUI provides a rich set of built-in controls that handle everything from simple button taps to complex date selection, all with minimal code.
+
+In this guide, we'll cover the six essential controls every iOS developer needs to master: Button, Toggle, Slider, Stepper, Picker, and DatePicker.
+
+## Why Controls Matter
+
+Controls bridge the gap between your user interface and your app's logic. They capture user input, trigger actions, and provide feedback. Understanding how to implement and customize these controls is crucial because:
+
+- They're the primary way users interact with your app
+- SwiftUI's declarative syntax makes them easy to implement but has quirks you need to understand
+- Proper control usage directly impacts user experience and accessibility
+
+## Button
+
+The Button is the most fundamental control. It executes an action when tapped.
+
+### Basic Button
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        Button("Tap Me") {
+            print("Button tapped")
+        }
+    }
+}
+```
+
+### Button with Custom Styling
+
+```swift
+struct ContentView: View {
+    @State private var tapCount = 0
+    
+    var body: some View {
+        VStack {
+            Button("Tap Me") {
+                tapCount += 1
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .padding()
+            .background(Color.blue)
+            .cornerRadius(10)
+            
+            Text("Taps: \(tapCount)")
+        }
+    }
+}
+```
+
+### Button with Custom Label
+
+For more complex button designs, use the label parameter:
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        Button(action: {
+            print("Custom button tapped")
+        }) {
+            HStack {
+                Image(systemName: "star.fill")
+                Text("Favorite")
+            }
+            .padding()
+            .background(Color.yellow)
+            .cornerRadius(8)
+        }
+    }
+}
+```
+
+### Button Styles
+
+SwiftUI provides built-in button styles:
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Button("Default") { }
+            
+            Button("Bordered") { }
+                .buttonStyle(.bordered)
+            
+            Button("Bordered Prominent") { }
+                .buttonStyle(.borderedProminent)
+            
+            Button("Plain") { }
+                .buttonStyle(.plain)
+        }
+    }
+}
+```
+
+### Common Mistakes with Buttons
+
+**Mistake 1: Applying modifiers to the button instead of its label**
+
+```swift
+// ❌ Wrong - padding applies to tap area, not visual appearance
+Button("Tap") {
+    print("Tapped")
+}
+.padding()
+.background(Color.blue)
+
+// ✅ Correct - modifiers inside the label closure
+Button(action: {
+    print("Tapped")
+}) {
+    Text("Tap")
+        .padding()
+        .background(Color.blue)
+}
+```
+
+**Mistake 2: Using `@State` incorrectly**
+
+```swift
+// ❌ Wrong - creates new state each time view renders
+Button("Increment") {
+    var count = 0 // This won't persist
+    count += 1
+}
+
+// ✅ Correct - use @State
+@State private var count = 0
+Button("Increment") {
+    count += 1
+}
+```
+
+## Toggle
+
+A Toggle is a switch control that represents a Boolean value—on or off.
+
+### Basic Toggle
+
+```swift
+struct ContentView: View {
+    @State private var isEnabled = false
+    
+    var body: some View {
+        VStack {
+            Toggle("Enable Notifications", isOn: $isEnabled)
+                .padding()
+            
+            Text("Notifications: \(isEnabled ? "On" : "Off")")
+        }
+    }
+}
+```
+
+### Toggle with Custom Label
+
+```swift
+struct ContentView: View {
+    @State private var isDarkMode = false
+    
+    var body: some View {
+        Toggle(isOn: $isDarkMode) {
+            HStack {
+                Image(systemName: isDarkMode ? "moon.fill" : "sun.max.fill")
+                Text("Dark Mode")
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Toggle Styles
+
+```swift
+struct ContentView: View {
+    @State private var isOn = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Toggle("Switch Style", isOn: $isOn)
+                .toggleStyle(.switch)
+            
+            Toggle("Button Style", isOn: $isOn)
+                .toggleStyle(.button)
+        }
+        .padding()
+    }
+}
+```
+
+### Common Toggle Pitfalls
+
+The most common mistake is forgetting the `$` binding prefix:
+
+```swift
+// ❌ Wrong - won't compile
+Toggle("Enable", isOn: isEnabled)
+
+// ✅ Correct - use binding
+Toggle("Enable", isOn: $isEnabled)
+```
+
+## Slider
+
+A Slider lets users select a value from a continuous range by dragging a thumb along a track.
+
+### Basic Slider
+
+```swift
+struct ContentView: View {
+    @State private var value = 50.0
+    
+    var body: some View {
+        VStack {
+            Slider(value: $value, in: 0...100)
+                .padding()
+            
+            Text("Value: \(value, specifier: "%.1f")")
+        }
+    }
+}
+```
+
+### Slider with Step
+
+```swift
+struct ContentView: View {
+    @State private var rating = 3.0
+    
+    var body: some View {
+        VStack {
+            Slider(value: $rating, in: 1...5, step: 1)
+                .padding()
+            
+            Text("Rating: \(Int(rating)) stars")
+        }
+    }
+}
+```
+
+### Slider with Labels and Action
+
+```swift
+struct ContentView: View {
+    @State private var volume = 50.0
+    
+    var body: some View {
+        VStack {
+            Slider(
+                value: $volume,
+                in: 0...100,
+                step: 1,
+                onEditingChanged: { editing in
+                    print("User \(editing ? "started" : "finished") editing")
+                }
+            ) {
+                Text("Volume")
+            } minimumValueLabel: {
+                Image(systemName: "speaker.fill")
+            } maximumValueLabel: {
+                Image(systemName: "speaker.wave.3.fill")
+            }
+            .padding()
+            
+            Text("Volume: \(Int(volume))%")
+        }
+    }
+}
+```
+
+### Slider Edge Cases
+
+```swift
+struct ContentView: View {
+    @State private var value = 50.0
+    
+    var body: some View {
+        VStack {
+            // Handle negative ranges
+            Slider(value: $value, in: -100...100)
+            Text("Value: \(value, specifier: "%.1f")")
+            
+            // Very small steps require careful handling
+            Slider(value: $value, in: 0...1, step: 0.01)
+            Text("Precise: \(value, specifier: "%.2f")")
+        }
+        .padding()
+    }
+}
+```
+
+## Stepper
+
+A Stepper provides increment and decrement controls for a numeric value. It's ideal when you want discrete, controlled changes.
+
+### Basic Stepper
+
+```swift
+struct ContentView: View {
+    @State private var quantity = 1
+    
+    var body: some View {
+        VStack {
+            Stepper("Quantity: \(quantity)", value: $quantity)
+                .padding()
+        }
+    }
+}
+```
+
+### Stepper with Range
+
+```swift
+struct ContentView: View {
+    @State private var age = 25
+    
+    var body: some View {
+        VStack {
+            Stepper("Age: \(age)", value: $age, in: 0...120)
+                .padding()
+            
+            Text("Age must be between 0 and 120")
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
+    }
+}
+```
+
+### Stepper with Step Value
+
+```swift
+struct ContentView: View {
+    @State private var price = 10.0
+    
+    var body: some View {
+        VStack {
+            Stepper("Price: $\(price, specifier: "%.2f")", 
+                    value: $price, 
+                    in: 0...1000, 
+                    step: 5.0)
+                .padding()
+        }
+    }
+}
+```
+
+### Stepper with Custom Actions
+
+```swift
+struct ContentView: View {
+    @State private var count = 0
+    
+    var body: some View {
+        VStack {
+            Stepper("Count: \(count)", onIncrement: {
+                count += 1
+                print("Incremented to \(count)")
+            }, onDecrement: {
+                count -= 1
+                print("Decremented to \(count)")
+            })
+            .padding()
+        }
+    }
+}
+```
+
+### Common Stepper Issues
+
+**Issue: No visual feedback for range limits**
+
+```swift
+// The stepper disables buttons at range limits, but it's not obvious
+@State private var count = 10
+Stepper("Count: \(count)", value: $count, in: 0...10)
+// When count is 10, + button is disabled but user might not notice
+```
+
+**Solution: Provide visual feedback**
+
+```swift
+struct ContentView: View {
+    @State private var count = 10
+    let maxCount = 10
+    
+    var body: some View {
+        VStack {
+            Stepper("Count: \(count)", value: $count, in: 0...maxCount)
+            
+            if count == maxCount {
+                Text("Maximum reached")
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+        }
+        .padding()
+    }
+}
+```
+
+## Picker
+
+A Picker displays a list of options and lets users select one. SwiftUI provides multiple picker styles for different use cases.
+
+### Basic Picker
+
+```swift
+struct ContentView: View {
+    @State private var selectedFruit = "Apple"
+    let fruits = ["Apple", "Banana", "Orange", "Grape"]
+    
+    var body: some View {
+        VStack {
+            Picker("Select Fruit", selection: $selectedFruit) {
+                ForEach(fruits, id: \.self) { fruit in
+                    Text(fruit)
+                }
+            }
+            .pickerStyle(.menu)
+            
+            Text("Selected: \(selectedFruit)")
+        }
+        .padding()
+    }
+}
+```
+
+### Picker Styles
+
+```swift
+struct ContentView: View {
+    @State private var selection = 0
+    let options = ["Option 1", "Option 2", "Option 3"]
+    
+    var body: some View {
+        Form {
+            // Wheel picker
+            Picker("Wheel", selection: $selection) {
+                ForEach(0..<options.count, id: \.self) { index in
+                    Text(options[index])
+                }
+            }
+            .pickerStyle(.wheel)
+            
+            // Segmented picker
+            Picker("Segmented", selection: $selection) {
+                ForEach(0..<options.count, id: \.self) { index in
+                    Text(options[index])
+                }
+            }
+            .pickerStyle(.segmented)
+            
+            // Menu picker (dropdown)
+            Picker("Menu", selection: $selection) {
+                ForEach(0..<options.count, id: \.self) { index in
+                    Text(options[index])
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+}
+```
+
+### Picker with Enums
+
+Using enums is a best practice for type-safe picker selections:
+
+```swift
+struct ContentView: View {
+    enum TransportMode: String, CaseIterable, Identifiable {
+        case car = "Car"
+        case bike = "Bike"
+        case walk = "Walk"
+        case bus = "Bus"
+        
+        var id: String { self.rawValue }
+    }
+    
+    @State private var selectedMode = TransportMode.car
+    
+    var body: some View {
+        VStack {
+            Picker("Transportation", selection: $selectedMode) {
+                ForEach(TransportMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding()
+            
+            Text("You selected: \(selectedMode.rawValue)")
+        }
+    }
+}
+```
+
+### Picker with Custom Labels
+
+```swift
+struct ContentView: View {
+    enum Priority: String, CaseIterable, Identifiable {
+        case low = "Low"
+        case medium = "Medium"
+        case high = "High"
+        
+        var id: String { self.rawValue }
+        
+        var color: Color {
+            switch self {
+            case .low: return .green
+            case .medium: return .orange
+            case .high: return .red
+            }
+        }
+    }
+    
+    @State private var priority = Priority.medium
+    
+    var body: some View {
+        Picker("Priority", selection: $priority) {
+            ForEach(Priority.allCases) { priority in
+                HStack {
+                    Circle()
+                        .fill(priority.color)
+                        .frame(width: 10, height: 10)
+                    Text(priority.rawValue)
+                }
+                .tag(priority)
+            }
+        }
+        .pickerStyle(.menu)
+        .padding()
+    }
+}
+```
+
+### Common Picker Mistakes
+
+**Mistake 1: Forgetting `.tag()` with non-sequential values**
+
+```swift
+// ❌ Wrong - won't work correctly
+@State private var selected = "apple"
+Picker("Fruit", selection: $selected) {
+    ForEach(["apple", "banana", "orange"], id: \.self) { fruit in
+        Text(fruit)
+    }
+}
+
+// ✅ Correct with explicit tags
+Picker("Fruit", selection: $selected) {
+    ForEach(["apple", "banana", "orange"], id: \.self) { fruit in
+        Text(fruit).tag(fruit)
+    }
+}
+```
+
+**Mistake 2: Type mismatch between selection and tags**
+
+```swift
+// ❌ Wrong - selection is Int but tags are String
+@State private var selected: Int = 0
+Picker("Pick", selection: $selected) {
+    Text("One").tag("1")
+    Text("Two").tag("2")
+}
+
+// ✅ Correct - types match
+@State private var selected: String = "1"
+Picker("Pick", selection: $selected) {
+    Text("One").tag("1")
+    Text("Two").tag("2")
+}
+```
+
+## DatePicker
+
+A DatePicker allows users to select dates and times. It's highly configurable for different date/time selection scenarios.
+
+### Basic DatePicker
+
+```swift
+struct ContentView: View {
+    @State private var selectedDate = Date()
+    
+    var body: some View {
+        VStack {
+            DatePicker("Select Date", selection: $selectedDate)
+                .padding()
+            
+            Text("Selected: \(selectedDate.formatted())")
+        }
+    }
+}
+```
+
+### DatePicker with Display Components
+
+```swift
+struct ContentView: View {
+    @State private var date = Date()
+    @State private var timeOnly = Date()
+    @State private var dateOnly = Date()
+    
+    var body: some View {
+        Form {
+            // Date and time (default)
+            DatePicker("Date & Time", selection: $date)
+            
+            // Time only
+            DatePicker("Time Only", selection: $timeOnly, displayedComponents: .hourAndMinute)
+            
+            // Date only
+            DatePicker("Date Only", selection: $dateOnly, displayedComponents: .date)
+        }
+    }
+}
+```
+
+### DatePicker with Range
+
+```swift
+struct ContentView: View {
+    @State private var appointmentDate = Date()
+    
+    var body: some View {
+        VStack {
+            DatePicker(
+                "Appointment",
+                selection: $appointmentDate,
+                in: Date()...,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .padding()
+
+            Text("Selected: \(appointmentDate.formatted())")
+        }
+    }
+}
+```
+
+### DatePicker Styles
+
+```swift
+struct DatePickerStylesView: View {
+    @State private var date = Date()
+
+    var body: some View {
+        Form {
+            // Compact (default)
+            DatePicker("Compact", selection: $date)
+                .datePickerStyle(.compact)
+
+            // Graphical (calendar view)
+            DatePicker("Graphical", selection: $date)
+                .datePickerStyle(.graphical)
+
+            // Wheel
+            DatePicker("Wheel", selection: $date)
+                .datePickerStyle(.wheel)
+        }
+    }
+}
+```
+
+### Common DatePicker Mistakes
+
+**Mistake: Not restricting date ranges**
+
+```swift
+// Bad - user can select past dates for future events
+DatePicker("Event Date", selection: $eventDate)
+
+// Good - only allow future dates
+DatePicker("Event Date", selection: $eventDate, in: Date()...)
+```
+
+**Mistake: Forgetting time zones can affect display**
+
+```swift
+// Dates are always in UTC internally
+// The DatePicker displays in the user's local time zone
+// Be careful when sending dates to a server
+```
+
+## Summary Table
+
+| Control | Purpose | Key Parameters | Common Styles |
+|---------|---------|----------------|---------------|
+| **Button** | Trigger an action | `action`, `label` | `.bordered`, `.borderedProminent`, `.plain` |
+| **Toggle** | Boolean on/off switch | `isOn: Binding<Bool>` | `.switch`, `.button` |
+| **Slider** | Select from continuous range | `value`, `in`, `step` | Default only |
+| **Stepper** | Increment/decrement value | `value`, `in`, `step` | Default only |
+| **Picker** | Select from a list of options | `selection`, `content` | `.menu`, `.segmented`, `.wheel` |
+| **DatePicker** | Select date and/or time | `selection`, `displayedComponents` | `.compact`, `.graphical`, `.wheel` |
+
+## Official Resources
+
+- [Apple Documentation: Button](https://developer.apple.com/documentation/swiftui/button)
+- [Apple Documentation: Toggle](https://developer.apple.com/documentation/swiftui/toggle)
+- [Apple Documentation: Slider](https://developer.apple.com/documentation/swiftui/slider)
+- [Apple Documentation: Picker](https://developer.apple.com/documentation/swiftui/picker)
+- [Apple Documentation: DatePicker](https://developer.apple.com/documentation/swiftui/datepicker)
+- [Human Interface Guidelines: Controls](https://developer.apple.com/design/human-interface-guidelines/controls)

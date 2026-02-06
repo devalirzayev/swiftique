@@ -1,0 +1,617 @@
+---
+title: "Advanced Codable"
+description: "Nested containers, polymorphic decoding, and custom decoders"
+sectionId: "4.2-json-codable"
+sectionTitle: "JSON & Codable"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Advanced Codable: Nested Containers, Polymorphic Decoding, and Custom Decoders
+
+## Introduction
+
+`Codable` is Swift's protocol for encoding and decoding data structures. While basic `Codable` conformance handles straightforward JSON mapping automatically, real-world APIs often require more sophisticated approaches. This article covers three advanced techniques: nested containers for complex JSON structures, polymorphic decoding for type variations, and custom decoders for complete control over the decoding process.
+
+These patterns matter because production APIs rarely match your Swift model structures perfectly. You'll encounter inconsistent key naming, nested data, type ambiguity, and legacy formats that require manual intervention.
+
+## Prerequisites
+
+Before diving into advanced techniques, you should understand basic `Codable` conformance:
+
+```swift
+struct User: Codable {
+    let id: Int
+    let name: String
+    let email: String
+}
+
+let json = """
+{
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com"
+}
+""".data(using: .utf8)!
+
+let user = try JSONDecoder().decode(User.self, from: json)
+```
+
+## Nested Containers
+
+### The Problem
+
+APIs often nest related data in ways that don't match your desired Swift structure. Consider this JSON:
+
+```json
+{
+    "user_info": {
+        "personal": {
+            "first_name": "Jane",
+            "last_name": "Smith"
+        },
+        "contact": {
+            "email": "jane@example.com"
+        }
+    },
+    "account_id": 42
+}
+```
+
+You want a flat `User` model, not this nested hierarchy.
+
+### The Solution: Nested Containers
+
+Nested containers let you traverse JSON structure during decoding:
+
+```swift
+struct User: Decodable {
+    let accountId: Int
+    let firstName: String
+    let lastName: String
+    let email: String
+    
+    enum CodingKeys: String, CodingKey {
+        case accountId = "account_id"
+        case userInfo = "user_info"
+    }
+    
+    enum UserInfoKeys: String, CodingKey {
+        case personal
+        case contact
+    }
+    
+    enum PersonalKeys: String, CodingKey {
+        case firstName = "first_name"
+        case lastName = "last_name"
+    }
+    
+    enum ContactKeys: String, CodingKey {
+        case email
+    }
+    
+    init(from decoder: Decoder) throws {
+        // Top-level container
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Decode top-level properties
+        accountId = try container.decode(Int.self, forKey: .accountId)
+        
+        // Nested container: user_info
+        let userInfoContainer = try container.nestedContainer(
+            keyedBy: UserInfoKeys.self,
+            forKey: .userInfo
+        )
+        
+        // Nested container: personal
+        let personalContainer = try userInfoContainer.nestedContainer(
+            keyedBy: PersonalKeys.self,
+            forKey: .personal
+        )
+        firstName = try personalContainer.decode(String.self, forKey: .firstName)
+        lastName = try personalContainer.decode(String.self, forKey: .lastName)
+        
+        // Nested container: contact
+        let contactContainer = try userInfoContainer.nestedContainer(
+            keyedBy: ContactKeys.self,
+            forKey: .contact
+        )
+        email = try contactContainer.decode(String.self, forKey: .email)
+    }
+}
+```
+
+### Common Mistake: Wrong Container Depth
+
+A frequent error is calling `nestedContainer` at the wrong level:
+
+```swift
+// ❌ Wrong: trying to nest from the wrong parent
+let personalContainer = try container.nestedContainer(
+    keyedBy: PersonalKeys.self,
+    forKey: .personal  // This key doesn't exist at top level
+)
+
+// ✅ Correct: nest from userInfoContainer
+let personalContainer = try userInfoContainer.nestedContainer(
+    keyedBy: PersonalKeys.self,
+    forKey: .personal
+)
+```
+
+### Array Containers
+
+When JSON contains arrays at various depths, use `nestedUnkeyedContainer`:
+
+```swift
+let json = """
+{
+    "users": [
+        {"name": "Alice", "age": 30},
+        {"name": "Bob", "age": 25}
+    ]
+}
+""".data(using: .utf8)!
+
+struct Response: Decodable {
+    let users: [User]
+    
+    struct User: Decodable {
+        let name: String
+        let age: Int
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case users
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var usersContainer = try container.nestedUnkeyedContainer(forKey: .users)
+        
+        var users: [User] = []
+        while !usersContainer.isAtEnd {
+            let user = try usersContainer.decode(User.self)
+            users.append(user)
+        }
+        self.users = users
+    }
+}
+```
+
+## Polymorphic Decoding
+
+### The Problem
+
+APIs sometimes return different types in the same position. Consider a feed with multiple content types:
+
+```json
+{
+    "items": [
+        {
+            "type": "text",
+            "content": "Hello world"
+        },
+        {
+            "type": "image",
+            "url": "https://example.com/image.jpg",
+            "width": 800,
+            "height": 600
+        },
+        {
+            "type": "video",
+            "url": "https://example.com/video.mp4",
+            "duration": 120
+        }
+    ]
+}
+```
+
+### The Solution: Type Discrimination
+
+Use a discriminator field to determine which type to decode:
+
+```swift
+enum FeedItem: Decodable {
+    case text(TextItem)
+    case image(ImageItem)
+    case video(VideoItem)
+    
+    struct TextItem: Decodable {
+        let content: String
+    }
+    
+    struct ImageItem: Decodable {
+        let url: String
+        let width: Int
+        let height: Int
+    }
+    
+    struct VideoItem: Decodable {
+        let url: String
+        let duration: Int
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+    }
+    
+    enum ItemType: String, Decodable {
+        case text
+        case image
+        case video
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(ItemType.self, forKey: .type)
+        
+        switch type {
+        case .text:
+            let item = try TextItem(from: decoder)
+            self = .text(item)
+        case .image:
+            let item = try ImageItem(from: decoder)
+            self = .image(item)
+        case .video:
+            let item = try VideoItem(from: decoder)
+            self = .video(item)
+        }
+    }
+}
+
+struct Feed: Decodable {
+    let items: [FeedItem]
+}
+```
+
+### Usage
+
+```swift
+let json = """
+{
+    "items": [
+        {"type": "text", "content": "Hello"},
+        {"type": "image", "url": "https://example.com/img.jpg", "width": 800, "height": 600}
+    ]
+}
+""".data(using: .utf8)!
+
+let feed = try JSONDecoder().decode(Feed.self, from: json)
+
+for item in feed.items {
+    switch item {
+    case .text(let textItem):
+        print("Text: \(textItem.content)")
+    case .image(let imageItem):
+        print("Image: \(imageItem.url)")
+    case .video(let videoItem):
+        print("Video: \(videoItem.duration)s")
+    }
+}
+```
+
+### Edge Case: Unknown Types
+
+Production APIs may add new types. Handle unknowns gracefully:
+
+```swift
+enum FeedItem: Decodable {
+    case text(TextItem)
+    case image(ImageItem)
+    case video(VideoItem)
+    case unknown
+    
+    // ... previous nested types ...
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Use decodeIfPresent for optional type
+        guard let typeString = try container.decodeIfPresent(String.self, forKey: .type) else {
+            self = .unknown
+            return
+        }
+        
+        let type = ItemType(rawValue: typeString)
+        
+        switch type {
+        case .text:
+            let item = try TextItem(from: decoder)
+            self = .text(item)
+        case .image:
+            let item = try ImageItem(from: decoder)
+            self = .image(item)
+        case .video:
+            let item = try VideoItem(from: decoder)
+            self = .video(item)
+        case .none:
+            // Unknown type
+            self = .unknown
+        }
+    }
+}
+```
+
+### Protocol-Based Polymorphism
+
+For more complex scenarios, use a protocol approach:
+
+```swift
+protocol FeedItemProtocol: Decodable {
+    var type: String { get }
+}
+
+struct TextItem: FeedItemProtocol {
+    let type: String = "text"
+    let content: String
+}
+
+struct ImageItem: FeedItemProtocol {
+    let type: String = "image"
+    let url: String
+    let width: Int
+    let height: Int
+}
+
+struct AnyFeedItem: Decodable {
+    let item: FeedItemProtocol
+    
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        
+        switch type {
+        case "text":
+            self.item = try TextItem(from: decoder)
+        case "image":
+            self.item = try ImageItem(from: decoder)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown item type: \(type)"
+            )
+        }
+    }
+}
+```
+
+## Custom Decoders
+
+### When to Use Custom Decoders
+
+Custom decoders give you complete control when:
+- Transforming data during decoding (dates, measurements, formats)
+- Handling inconsistent API responses
+- Providing default values for missing fields
+- Validating data during decoding
+
+### Date Handling
+
+APIs send dates in various formats. Custom decoding handles this:
+
+```swift
+struct Event: Decodable {
+    let name: String
+    let startDate: Date
+    let endDate: Date
+    
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case startDate = "start_date"
+        case endDate = "end_date"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        name = try container.decode(String.self, forKey: .name)
+        
+        // Custom date decoding
+        let startDateString = try container.decode(String.self, forKey: .startDate)
+        let endDateString = try container.decode(String.self, forKey: .endDate)
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        
+        guard let start = formatter.date(from: startDateString) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .startDate,
+                in: container,
+                debugDescription: "Date string does not match expected format"
+            )
+        }
+        
+        guard let end = formatter.date(from: endDateString) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .endDate,
+                in: container,
+                debugDescription: "Date string does not match expected format"
+            )
+        }
+        
+        startDate = start
+        endDate = end
+    }
+}
+```
+
+### Alternative: JSONDecoder Date Strategy
+
+For consistent date formats across your API, configure `JSONDecoder`:
+
+```swift
+let decoder = JSONDecoder()
+decoder.dateDecodingStrategy = .formatted({
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    return formatter
+}())
+
+// Now dates decode automatically
+struct Event: Codable {
+    let name: String
+    let startDate: Date
+    let endDate: Date
+}
+```
+
+### Providing Default Values
+
+Handle missing or null fields with defaults:
+
+```swift
+struct Product: Decodable {
+    let id: Int
+    let name: String
+    let description: String
+    let price: Double
+    let inStock: Bool
+    
+    private enum CodingKeys: String, CodingKey {
+        case id, name, description, price, inStock = "in_stock"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        
+        // Provide default for optional field
+        description = try container.decodeIfPresent(String.self, forKey: .description) 
+            ?? "No description available"
+        
+        price = try container.decode(Double.self, forKey: .price)
+        
+        // Default to true if missing
+        inStock = try container.decodeIfPresent(Bool.self, forKey: .inStock) ?? true
+    }
+}
+```
+
+### Type Coercion
+
+APIs sometimes return inconsistent types (string vs number). Handle this with custom decoding:
+
+```swift
+struct FlexibleProduct: Decodable {
+    let id: Int
+    let price: Double
+    
+    private enum CodingKeys: String, CodingKey {
+        case id, price
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // ID might be string or int
+        if let idInt = try? container.decode(Int.self, forKey: .id) {
+            id = idInt
+        } else if let idString = try? container.decode(String.self, forKey: .id),
+                  let idInt = Int(idString) {
+            id = idInt
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "ID must be an integer or numeric string"
+            )
+        }
+        
+        // Price might be string or double
+        if let priceDouble = try? container.decode(Double.self, forKey: .price) {
+            price = priceDouble
+        } else if let priceString = try? container.decode(String.self, forKey: .price),
+                  let priceDouble = Double(priceString) {
+            price = priceDouble
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .price,
+                in: container,
+                debugDescription: "Price must be a number or numeric string"
+            )
+        }
+    }
+}
+```
+
+### Common Mistake: Silent Failures
+
+Using `try?` everywhere can hide real errors:
+
+```swift
+// ❌ Bad: silently fails, hard to debug
+init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    
+    id = try? container.decode(Int.self, forKey: .id) ?? 0
+    name = try? container.decode(String.self, forKey: .name) ?? ""
+    // If JSON is malformed, you'll get default values with no indication
+}
+
+// ✅ Good: use try with proper error handling
+init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+
+    id = try container.decode(Int.self, forKey: .id)
+    name = try container.decode(String.self, forKey: .name)
+    // Errors bubble up to the caller who can handle them
+}
+```
+
+### Common Mistake: Ignoring DecodingError Details
+
+`DecodingError` provides rich context about what went wrong. Use it for debugging:
+
+```swift
+func decodeWithDiagnostics<T: Decodable>(_ type: T.Type, from data: Data) -> T? {
+    do {
+        return try JSONDecoder().decode(type, from: data)
+    } catch let DecodingError.keyNotFound(key, context) {
+        print("Missing key '\(key.stringValue)' at path: \(context.codingPath.map(\.stringValue).joined(separator: "."))")
+    } catch let DecodingError.typeMismatch(type, context) {
+        print("Type mismatch: expected \(type) at path: \(context.codingPath.map(\.stringValue).joined(separator: "."))")
+    } catch let DecodingError.valueNotFound(type, context) {
+        print("Null value for \(type) at path: \(context.codingPath.map(\.stringValue).joined(separator: "."))")
+    } catch let DecodingError.dataCorrupted(context) {
+        print("Corrupted data at path: \(context.codingPath.map(\.stringValue).joined(separator: "."))")
+    } catch {
+        print("Decoding error: \(error)")
+    }
+    return nil
+}
+```
+
+## Summary Table
+
+| Technique | When to Use | Key API | Complexity |
+|-----------|------------|---------|------------|
+| **Nested containers** | Flat Swift model from nested JSON | `nestedContainer(keyedBy:forKey:)` | Medium |
+| **Unkeyed containers** | Manual array traversal | `nestedUnkeyedContainer(forKey:)` | Medium |
+| **Type discrimination** | Different types in same position | Enum with `init(from:)` switch | Medium |
+| **Unknown type handling** | API may add new types | `.unknown` case with `decodeIfPresent` | Low |
+| **Protocol polymorphism** | Complex type hierarchies | `AnyFeedItem` wrapper struct | High |
+| **Custom date decoding** | Non-standard date formats | `DateFormatter` in `init(from:)` | Low |
+| **Date strategy** | Consistent date format across API | `decoder.dateDecodingStrategy` | Low |
+| **Default values** | Missing or null fields | `decodeIfPresent(_:forKey:) ?? default` | Low |
+| **Type coercion** | Inconsistent types (string vs number) | Multiple `try?` decode attempts | Medium |
+| **Diagnostic decoding** | Debugging decode failures | `DecodingError` pattern matching | Low |
+
+## Official Resources
+
+- [Apple Documentation: Encoding and Decoding Custom Types](https://developer.apple.com/documentation/foundation/archives_and_serialization/encoding_and_decoding_custom_types)
+- [Apple Documentation: JSONDecoder](https://developer.apple.com/documentation/foundation/jsondecoder)
+- [Apple Documentation: KeyedDecodingContainer](https://developer.apple.com/documentation/swift/keyeddecodingcontainer)
+- [Swift Evolution: SE-0166 Swift Archival & Serialization](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md)
+- [WWDC17: What's New in Foundation](https://developer.apple.com/videos/play/wwdc2017/212/)

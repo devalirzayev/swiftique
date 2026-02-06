@@ -1,0 +1,602 @@
+---
+title: "Working with REST APIs"
+description: "Headers, authentication, pagination, and API client patterns"
+sectionId: "4.1-networking"
+sectionTitle: "Networking"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Working with REST APIs in Swift
+
+REST (Representational State Transfer) APIs are the backbone of modern iOS applications. Whether you're building a weather app, a social media client, or an e-commerce platform, you'll need to fetch and send data to remote servers. Understanding how to work with REST APIs effectively is essential for any iOS developer.
+
+In this guide, you'll learn how to make network requests, handle authentication, manage pagination, and structure your API code using modern Swift patterns.
+
+## What is a REST API?
+
+A REST API is an interface that allows your app to communicate with a server using HTTP requests. You'll typically work with these HTTP methods:
+
+- **GET**: Retrieve data
+- **POST**: Create new data
+- **PUT/PATCH**: Update existing data
+- **DELETE**: Remove data
+
+The server responds with data (usually JSON) and an HTTP status code indicating success or failure.
+
+## Making Your First API Request
+
+Let's start with a basic GET request using URLSession, Apple's built-in networking framework.
+
+```swift
+import Foundation
+
+func fetchUsers() async throws -> [User] {
+    let url = URL(string: "https://api.example.com/users")!
+    
+    let (data, response) = try await URLSession.shared.data(from: url)
+    
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        throw APIError.invalidResponse
+    }
+    
+    let users = try JSONDecoder().decode([User].self, from: data)
+    return users
+}
+
+struct User: Codable {
+    let id: Int
+    let name: String
+    let email: String
+}
+
+enum APIError: Error {
+    case invalidResponse
+    case invalidURL
+    case decodingError
+}
+```
+
+This example uses Swift's modern async/await syntax (available from iOS 15+). For older iOS versions, you'd use completion handlers instead.
+
+## Working with Headers
+
+HTTP headers provide metadata about your request. Common use cases include specifying content type, authentication tokens, and API versions.
+
+```swift
+func fetchUsersWithHeaders() async throws -> [User] {
+    let url = URL(string: "https://api.example.com/users")!
+    var request = URLRequest(url: url)
+    
+    // Set request headers
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("v1", forHTTPHeaderField: "API-Version")
+    
+    let (data, response) = try await URLSession.shared.data(for: request)
+    
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        throw APIError.invalidResponse
+    }
+    
+    return try JSONDecoder().decode([User].self, from: data)
+}
+```
+
+### Common Header Fields
+
+- **Content-Type**: Describes the format of the request body (e.g., `application/json`)
+- **Accept**: Tells the server what response format you expect
+- **User-Agent**: Identifies your application
+- **Authorization**: Contains authentication credentials
+
+## Authentication Patterns
+
+Most APIs require authentication to identify users and protect resources. Here are the most common patterns:
+
+### 1. API Key Authentication
+
+The simplest form—include an API key in the request headers.
+
+```swift
+struct APIClient {
+    private let apiKey: String
+    
+    init(apiKey: String) {
+        self.apiKey = apiKey
+    }
+    
+    func fetchData() async throws -> Data {
+        let url = URL(string: "https://api.example.com/data")!
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.invalidResponse
+        }
+        
+        return data
+    }
+}
+```
+
+**Common Mistake**: Never hardcode API keys in your source code. Use configuration files, environment variables, or a secrets management system.
+
+### 2. Bearer Token (OAuth 2.0)
+
+More secure than API keys—tokens can expire and be refreshed.
+
+```swift
+class AuthenticatedAPIClient {
+    private var accessToken: String?
+    
+    func setAccessToken(_ token: String) {
+        self.accessToken = token
+    }
+    
+    func fetchProtectedResource() async throws -> Data {
+        guard let token = accessToken else {
+            throw APIError.notAuthenticated
+        }
+        
+        let url = URL(string: "https://api.example.com/protected")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        
+        // Handle 401 Unauthorized - token might be expired
+        if httpResponse.statusCode == 401 {
+            throw APIError.tokenExpired
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.invalidResponse
+        }
+        
+        return data
+    }
+}
+
+extension APIError {
+    static let notAuthenticated = APIError.invalidResponse
+    static let tokenExpired = APIError.invalidResponse
+}
+```
+
+### 3. Token Refresh Pattern
+
+Implement automatic token refreshing to keep users logged in.
+
+```swift
+actor TokenManager {
+    private var accessToken: String?
+    private var refreshToken: String?
+    private var isRefreshing = false
+    
+    func getValidToken() async throws -> String {
+        // If we have a valid token, return it
+        if let token = accessToken {
+            return token
+        }
+        
+        // If already refreshing, wait for it
+        if isRefreshing {
+            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            return try await getValidToken()
+        }
+        
+        // Start refresh process
+        isRefreshing = true
+        defer { isRefreshing = false }
+        
+        guard let refresh = refreshToken else {
+            throw APIError.notAuthenticated
+        }
+        
+        let newToken = try await refreshAccessToken(refresh)
+        accessToken = newToken
+        return newToken
+    }
+    
+    func setTokens(access: String, refresh: String) {
+        self.accessToken = access
+        self.refreshToken = refresh
+    }
+    
+    private func refreshAccessToken(_ refreshToken: String) async throws -> String {
+        let url = URL(string: "https://api.example.com/auth/refresh")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = ["refresh_token": refreshToken]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(TokenResponse.self, from: data)
+        
+        return response.accessToken
+    }
+}
+
+struct TokenResponse: Codable {
+    let accessToken: String
+    let refreshToken: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+    }
+}
+```
+
+## Handling Pagination
+
+Most APIs limit the number of results per request. Pagination allows you to fetch data in chunks.
+
+### Offset-Based Pagination
+
+```swift
+struct PaginatedResponse<T: Codable>: Codable {
+    let data: [T]
+    let total: Int
+    let offset: Int
+    let limit: Int
+}
+
+class PaginatedAPIClient {
+    func fetchUsers(offset: Int = 0, limit: Int = 20) async throws -> PaginatedResponse<User> {
+        var components = URLComponents(string: "https://api.example.com/users")!
+        components.queryItems = [
+            URLQueryItem(name: "offset", value: "\(offset)"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        guard let url = components.url else {
+            throw APIError.invalidURL
+        }
+        
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(PaginatedResponse<User>.self, from: data)
+    }
+    
+    func fetchAllUsers() async throws -> [User] {
+        var allUsers: [User] = []
+        var offset = 0
+        let limit = 20
+        
+        while true {
+            let response = try await fetchUsers(offset: offset, limit: limit)
+            allUsers.append(contentsOf: response.data)
+            
+            // Check if we've fetched all data
+            if allUsers.count >= response.total {
+                break
+            }
+            
+            offset += limit
+        }
+        
+        return allUsers
+    }
+}
+```
+
+### Cursor-Based Pagination
+
+More efficient for large datasets—uses a cursor to mark position instead of offset.
+
+```swift
+struct CursorPaginatedResponse<T: Codable>: Codable {
+    let data: [T]
+    let nextCursor: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case data
+        case nextCursor = "next_cursor"
+    }
+}
+
+class CursorPaginatedAPIClient {
+    func fetchUsers(cursor: String? = nil) async throws -> CursorPaginatedResponse<User> {
+        var components = URLComponents(string: "https://api.example.com/users")!
+        
+        if let cursor = cursor {
+            components.queryItems = [URLQueryItem(name: "cursor", value: cursor)]
+        }
+        
+        guard let url = components.url else {
+            throw APIError.invalidURL
+        }
+        
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(CursorPaginatedResponse<User>.self, from: data)
+    }
+    
+    func fetchAllUsers() async throws -> [User] {
+        var allUsers: [User] = []
+        var cursor: String? = nil
+        
+        while true {
+            let response = try await fetchUsers(cursor: cursor)
+            allUsers.append(contentsOf: response.data)
+            
+            // No more pages
+            guard let nextCursor = response.nextCursor else {
+                break
+            }
+            
+            cursor = nextCursor
+        }
+        
+        return allUsers
+    }
+}
+```
+
+**Common Mistake**: Forgetting to handle the case when there are no more pages. Always check for `nil` cursors or when offset exceeds total count.
+
+## Building a Robust API Client
+
+Let's combine everything into a production-ready API client pattern.
+
+```swift
+protocol APIRequest {
+    associatedtype Response: Codable
+    
+    var path: String { get }
+    var method: HTTPMethod { get }
+    var headers: [String: String] { get }
+    var queryItems: [URLQueryItem]? { get }
+    var body: Data? { get }
+}
+
+enum HTTPMethod: String {
+    case get = "GET"
+    case post = "POST"
+    case put = "PUT"
+    case patch = "PATCH"
+    case delete = "DELETE"
+}
+
+// Default implementations
+extension APIRequest {
+    var method: HTTPMethod { .get }
+    var headers: [String: String] { [:] }
+    var queryItems: [URLQueryItem]? { nil }
+    var body: Data? { nil }
+}
+
+class APIClient {
+    private let baseURL: URL
+    private let session: URLSession
+    private let tokenManager: TokenManager
+    
+    init(baseURL: URL, session: URLSession = .shared, tokenManager: TokenManager) {
+        self.baseURL = baseURL
+        self.session = session
+        self.tokenManager = tokenManager
+    }
+    
+    func send<T: APIRequest>(_ request: T) async throws -> T.Response {
+        let urlRequest = try await buildURLRequest(from: request)
+        
+        let (data, response) = try await session.data(for: urlRequest)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        
+        // Handle different status codes
+        switch httpResponse.statusCode {
+        case 200...299:
+            return try JSONDecoder().decode(T.Response.self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        case 403:
+            throw APIError.forbidden
+        case 404:
+            throw APIError.notFound
+        case 429:
+            // Rate limited - could implement retry logic
+            throw APIError.rateLimited
+        case 500...599:
+            throw APIError.serverError
+        default:
+            throw APIError.unknown(statusCode: httpResponse.statusCode)
+        }
+    }
+    
+    private func buildURLRequest<T: APIRequest>(from request: T) async throws -> URLRequest {
+        var components = URLComponents(url: baseURL.appendingPathComponent(request.path), resolvingAgainstBaseURL: false)
+        components?.queryItems = request.queryItems
+        
+        guard let url = components?.url else {
+            throw APIError.invalidURL
+        }
+        
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = request.method.rawValue
+        urlRequest.httpBody = request.body
+        
+        // Add default headers
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        // Add authorization header
+        let token = try await tokenManager.getValidToken()
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        // Add custom headers
+        for (key, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        return urlRequest
+    }
+}
+
+enum APIError: LocalizedError {
+    case invalidURL
+    case invalidResponse
+    case unauthorized
+    case forbidden
+    case notFound
+    case rateLimited
+    case serverError
+    case unknown(statusCode: Int)
+    case decodingError(Error)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid URL"
+        case .invalidResponse:
+            return "Invalid response from server"
+        case .unauthorized:
+            return "Authentication required"
+        case .forbidden:
+            return "Access forbidden"
+        case .notFound:
+            return "Resource not found"
+        case .rateLimited:
+            return "Too many requests. Please try again later."
+        case .serverError:
+            return "Server error occurred"
+        case .unknown(let statusCode):
+            return "Unknown error (status code: \(statusCode))"
+        case .decodingError(let error):
+            return "Failed to decode response: \(error.localizedDescription)"
+        }
+    }
+}
+```
+
+### Using the API Client
+
+```swift
+// Define specific requests
+struct GetUsersRequest: APIRequest {
+    typealias Response = [User]
+    
+    let path = "/users"
+    let method = HTTPMethod.get
+}
+
+struct CreateUserRequest: APIRequest {
+    typealias Response = User
+    
+    let path = "/users"
+    let method = HTTPMethod.post
+    let user: User
+    
+    var body: Data? {
+        try? JSONEncoder().encode(user)
+    }
+}
+
+struct GetUserRequest: APIRequest {
+    typealias Response = User
+    
+    let userId: Int
+    
+    var path: String {
+        "/users/\(userId)"
+    }
+}
+
+// Usage in your app
+class UserService {
+    private let apiClient: APIClient
+    
+    init(apiClient: APIClient) {
+        self.apiClient = apiClient
+    }
+    
+    func getUsers() async throws -> [User] {
+        try await apiClient.send(GetUsersRequest())
+    }
+    
+    func getUser(id: Int) async throws -> User {
+        try await apiClient.send(GetUserRequest(userId: id))
+    }
+    
+    func createUser(_ user: User) async throws -> User {
+        try await apiClient.send(CreateUserRequest(user: user))
+    }
+}
+```
+
+## Error Handling Best Practices
+
+Map API errors to user-friendly messages:
+
+```swift
+extension APIError {
+    var userMessage: String {
+        switch self {
+        case .invalidURL, .invalidResponse:
+            return "Something went wrong. Please try again."
+        case .unauthorized:
+            return "Please log in again."
+        case .forbidden:
+            return "You don't have permission to access this."
+        case .notFound:
+            return "The requested content was not found."
+        case .rateLimited:
+            return "Too many requests. Please wait a moment."
+        case .serverError:
+            return "Server is temporarily unavailable."
+        case .unknown:
+            return "An unexpected error occurred."
+        case .decodingError:
+            return "We received unexpected data. Please try again."
+        }
+    }
+}
+```
+
+## Common Mistakes
+
+**Forgetting to check the status code.** A successful `URLSession.data(from:)` call doesn't mean the request succeeded — a 404 response still returns data. Always validate the HTTP status code.
+
+**Not using `URLComponents` for query parameters.** Manually appending `?key=value` to URL strings is error-prone and doesn't handle URL encoding. Always use `URLComponents` with `queryItems`.
+
+**Blocking the main thread with synchronous requests.** Always use `async/await` or completion handlers. Never call synchronous networking APIs on the main thread.
+
+**Hardcoding base URLs.** Use configuration to manage different environments (development, staging, production).
+
+## Summary Table
+
+| Concept | API/Pattern | Purpose | Example |
+|---------|------------|---------|---------|
+| **GET Request** | `URLSession.shared.data(from:)` | Fetch data from server | `let (data, response) = try await URLSession.shared.data(from: url)` |
+| **POST Request** | `URLSession.shared.data(for:)` | Send data to server | Set `request.httpMethod = "POST"` with `httpBody` |
+| **Headers** | `URLRequest.setValue(_:forHTTPHeaderField:)` | Set metadata on request | `request.setValue("application/json", forHTTPHeaderField: "Content-Type")` |
+| **API Key Auth** | Custom header | Simple authentication | `request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")` |
+| **Bearer Token** | Authorization header | OAuth 2.0 authentication | `request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")` |
+| **Token Refresh** | `actor TokenManager` | Auto-refresh expired tokens | Intercept 401, refresh, retry |
+| **Offset Pagination** | `offset` + `limit` query params | Page through results | `?offset=20&limit=20` |
+| **Cursor Pagination** | `cursor` query param | Efficient large dataset paging | `?cursor=abc123` |
+| **API Client** | Protocol-based `APIRequest` | Type-safe request pattern | Define request structs conforming to `APIRequest` |
+| **Status Codes** | `HTTPURLResponse.statusCode` | Determine request outcome | 200-299 success, 401 unauthorized, 404 not found |
+
+## Official Resources
+
+- [Apple Documentation: URLSession](https://developer.apple.com/documentation/foundation/urlsession)
+- [Apple Documentation: URLRequest](https://developer.apple.com/documentation/foundation/urlrequest)
+- [Apple Documentation: URLComponents](https://developer.apple.com/documentation/foundation/urlcomponents)
+- [WWDC21: Use async/await with URLSession](https://developer.apple.com/videos/play/wwdc2021/10095/)
+- [Swift Blog: Concurrency](https://www.swift.org/blog/concurrency/)

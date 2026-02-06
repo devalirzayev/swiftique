@@ -1,0 +1,624 @@
+---
+title: "TextField & Forms"
+description: "Text input, SecureField, Form, Section, and validation patterns"
+sectionId: "2.3-common-views"
+sectionTitle: "Common Views & Controls"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# TextField & Forms
+
+Text input is fundamental to most iOS apps. Whether you're building a login screen, a settings page, or a data entry form, understanding how to work with text fields and forms in SwiftUI is essential. This guide covers `TextField`, `SecureField`, form organization with `Form` and `Section`, and practical validation patterns you'll use in real applications.
+
+## Why TextField & Forms Matter
+
+Forms are the primary way users input data into your app. A well-designed form with proper validation improves user experience, prevents errors, and ensures data integrity. SwiftUI provides powerful, declarative components that make building forms straightforward, but there are important patterns and edge cases you need to understand to build production-ready forms.
+
+## TextField Basics
+
+`TextField` is SwiftUI's component for single-line text input. It requires a binding to a `String` property that holds the current text value.
+
+```swift
+import SwiftUI
+
+struct BasicTextFieldView: View {
+    @State private var username = ""
+    
+    var body: some View {
+        TextField("Enter username", text: $username)
+            .textFieldStyle(.roundedBorder)
+            .padding()
+        
+        Text("Current value: \(username)")
+            .padding()
+    }
+}
+```
+
+The first parameter is the placeholder text, and the `text` parameter takes a binding (`$username`) that automatically updates as the user types.
+
+### TextField Modifiers
+
+TextField behavior can be customized with several modifiers:
+
+```swift
+struct TextFieldModifiersView: View {
+    @State private var email = ""
+    @State private var amount = ""
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            TextField("Email", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled()
+            
+            TextField("Amount", text: $amount)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.decimalPad)
+            
+            TextField("Name", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.name) // Enables AutoFill
+        }
+        .padding()
+    }
+}
+```
+
+**Key modifiers:**
+- `.textInputAutocapitalization()` - Controls automatic capitalization
+- `.keyboardType()` - Changes keyboard layout (`.emailAddress`, `.numberPad`, `.decimalPad`, etc.)
+- `.autocorrectionDisabled()` - Disables autocorrection
+- `.textContentType()` - Hints to the system for AutoFill support
+
+### Handling TextField Events
+
+You can respond to editing events and control when changes are committed:
+
+```swift
+struct TextFieldEventsView: View {
+    @State private var searchText = ""
+    @State private var submittedText = ""
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            TextField("Search", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: searchText) { oldValue, newValue in
+                    print("Text changed from '\(oldValue)' to '\(newValue)'")
+                }
+                .onSubmit {
+                    submittedText = searchText
+                    print("User pressed return")
+                }
+            
+            Text("Submitted: \(submittedText)")
+        }
+        .padding()
+    }
+}
+```
+
+**Common mistake:** Using `.onChange()` for expensive operations on every keystroke. For operations like network requests, debounce the input or wait for `.onSubmit()`.
+
+## SecureField for Password Input
+
+`SecureField` displays masked characters for sensitive input like passwords. It has the same API as `TextField`:
+
+```swift
+struct LoginView: View {
+    @State private var username = ""
+    @State private var password = ""
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            TextField("Username", text: $username)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            
+            SecureField("Password", text: $password)
+                .textFieldStyle(.roundedBorder)
+            
+            Button("Login") {
+                performLogin()
+            }
+            .disabled(username.isEmpty || password.isEmpty)
+        }
+        .padding()
+    }
+    
+    private func performLogin() {
+        print("Logging in with username: \(username)")
+    }
+}
+```
+
+**Important:** `SecureField` automatically disables autocorrection and autocapitalization. Never use a regular `TextField` for passwords.
+
+### Password Visibility Toggle
+
+A common UX pattern is allowing users to toggle password visibility:
+
+```swift
+struct SecureFieldWithToggleView: View {
+    @State private var password = ""
+    @State private var isPasswordVisible = false
+    
+    var body: some View {
+        HStack {
+            if isPasswordVisible {
+                TextField("Password", text: $password)
+            } else {
+                SecureField("Password", text: $password)
+            }
+            
+            Button(action: { isPasswordVisible.toggle() }) {
+                Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                    .foregroundColor(.gray)
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .padding()
+    }
+}
+```
+
+## Form and Section
+
+`Form` is a container that provides platform-appropriate styling for grouped input controls. It automatically handles scrolling when content exceeds screen space.
+
+```swift
+struct SettingsFormView: View {
+    @State private var username = ""
+    @State private var email = ""
+    @State private var notificationsEnabled = true
+    @State private var selectedTheme = "Light"
+    
+    let themes = ["Light", "Dark", "Auto"]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account") {
+                    TextField("Username", text: $username)
+                    TextField("Email", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                }
+                
+                Section("Preferences") {
+                    Toggle("Enable Notifications", isOn: $notificationsEnabled)
+                    
+                    Picker("Theme", selection: $selectedTheme) {
+                        ForEach(themes, id: \.self) { theme in
+                            Text(theme)
+                        }
+                    }
+                }
+                
+                Section {
+                    Button("Save Changes") {
+                        saveSettings()
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+        }
+    }
+    
+    private func saveSettings() {
+        print("Saving settings...")
+    }
+}
+```
+
+### Section Headers and Footers
+
+Sections can have both headers and footers for additional context:
+
+```swift
+struct SectionHeadersFootersView: View {
+    @State private var email = ""
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+            } header: {
+                Text("Contact Information")
+            } footer: {
+                Text("We'll use this email to send you important updates. We never share your email with third parties.")
+                    .font(.caption)
+            }
+        }
+    }
+}
+```
+
+## Text Field Validation Patterns
+
+Validation is crucial for good UX. Here are several practical patterns:
+
+### Real-time Validation
+
+Show validation errors as the user types:
+
+```swift
+struct RealtimeValidationView: View {
+    @State private var email = ""
+    
+    var isValidEmail: Bool {
+        email.contains("@") && email.contains(".")
+    }
+    
+    var emailColor: Color {
+        if email.isEmpty {
+            return .primary
+        }
+        return isValidEmail ? .green : .red
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Email", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .foregroundColor(emailColor)
+            
+            if !email.isEmpty && !isValidEmail {
+                Text("Please enter a valid email address")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+        }
+        .padding()
+    }
+}
+```
+
+**Common mistake:** Showing validation errors immediately when the field is focused. This is jarring. Only show errors after the user has started typing.
+
+### Submit-time Validation
+
+Validate when the user attempts to submit the form:
+
+```swift
+struct SubmitValidationView: View {
+    @State private var username = ""
+    @State private var password = ""
+    @State private var errorMessage = ""
+    @State private var showError = false
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never)
+                
+                SecureField("Password", text: $password)
+            }
+            
+            if showError {
+                Section {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+            }
+            
+            Section {
+                Button("Create Account") {
+                    validateAndSubmit()
+                }
+            }
+        }
+    }
+    
+    private func validateAndSubmit() {
+        showError = false
+        
+        if username.count < 3 {
+            errorMessage = "Username must be at least 3 characters"
+            showError = true
+            return
+        }
+        
+        if password.count < 8 {
+            errorMessage = "Password must be at least 8 characters"
+            showError = true
+            return
+        }
+        
+        // Validation passed
+        print("Form submitted successfully")
+    }
+}
+```
+
+### Comprehensive Validation with Regex
+
+For more complex validation like email format, use regular expressions:
+
+```swift
+struct RegexValidationView: View {
+    @State private var email = ""
+    @State private var phoneNumber = ""
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                
+                if !email.isEmpty {
+                    ValidationRow(
+                        isValid: isValidEmail(email),
+                        message: "Valid email format"
+                    )
+                }
+                
+                TextField("Phone", text: $phoneNumber)
+                    .keyboardType(.phonePad)
+                
+                if !phoneNumber.isEmpty {
+                    ValidationRow(
+                        isValid: isValidPhoneNumber(phoneNumber),
+                        message: "Valid US phone number (10 digits)"
+                    )
+                }
+            }
+        }
+    }
+    
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPredicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
+        return emailPredicate.evaluate(with: email)
+    }
+    
+    private func isValidPhoneNumber(_ phone: String) -> Bool {
+        let phoneRegex = "^\\d{10}$"
+        let phonePredicate = NSPredicate(format: "SELF MATCHES %@", phoneRegex)
+        return phonePredicate.evaluate(with: phone)
+    }
+}
+
+struct ValidationRow: View {
+    let isValid: Bool
+    let message: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: isValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(isValid ? .green : .red)
+            Text(message)
+                .font(.caption)
+        }
+    }
+}
+```
+
+## Focus Management
+
+Control which field has focus using the `@FocusState` property wrapper:
+
+```swift
+struct FocusManagementView: View {
+    @State private var username = ""
+    @State private var email = ""
+    @State private var password = ""
+    
+    @FocusState private var focusedField: Field?
+    
+    enum Field {
+        case username, email, password
+    }
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Username", text: $username)
+                    .focused($focusedField, equals: .username)
+                    .onSubmit { focusedField = .email }
+                
+                TextField("Email", text: $email)
+                    .focused($focusedField, equals: .email)
+                    .keyboardType(.emailAddress)
+                    .onSubmit { focusedField = .password }
+                
+                SecureField("Password", text: $password)
+                    .focused($focusedField, equals: .password)
+                    .onSubmit { submitForm() }
+            }
+            
+            Section {
+                Button("Submit") {
+                    submitForm()
+                }
+            }
+        }
+        .onAppear {
+            // Automatically focus the first field when view appears
+            focusedField = .username
+        }
+    }
+    
+    private func submitForm() {
+        // Clear focus when submitting
+        focusedField = nil
+        print("Form submitted")
+    }
+}
+```
+
+**Best practice:** Use `.onSubmit` to move focus to the next field, creating a smooth tab-like experience on the keyboard's return button.
+
+## Formatting Text Input
+
+Sometimes you need to format input as the user types (e.g., phone numbers, credit cards):
+
+```swift
+struct FormattedInputView: View {
+    @State private var phoneNumber = ""
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Phone Number", text: $phoneNumber)
+                    .keyboardType(.numberPad)
+                    .onChange(of: phoneNumber) { oldValue, newValue in
+                        phoneNumber = formatPhoneNumber(newValue)
+                    }
+            } footer: {
+                Text("Format: (555) 123-4567")
+                    .font(.caption)
+            }
+        }
+    }
+    
+    private func formatPhoneNumber(_ number: String) -> String {
+        // Remove all non-numeric characters
+        let cleaned = number.filter { $0.isNumber }
+        
+        // Limit to 10 digits
+        let limited = String(cleaned.prefix(10))
+        
+        // Format as (555) 123-4567
+        var formatted = ""
+        for (index, character) in limited.enumerated() {
+            if index == 0 {
+                formatted.append("(")
+            } else if index == 3 {
+                formatted.append(") ")
+            } else if index == 6 {
+                formatted.append("-")
+            }
+            formatted.append(character)
+        }
+        
+        return formatted
+    }
+}
+```
+
+**Edge case warning:** Be careful with formatting logic in `.onChange()`. If your formatting adds characters, you can create an infinite loop. Always filter and limit input appropriately.
+
+## Number Input with TextField
+
+`TextField` can bind to numeric types using format specifiers:
+
+```swift
+struct NumberInputView: View {
+    @State private var age: Int = 0
+    @State private var price: Double = 0.0
+    
+    var body: some View {
+        Form {
+            Section("Using format specifier") {
+                TextField("Age", value: $age, format: .number)
+                    .keyboardType(.numberPad)
+                
+                TextField("Price", value: $price, format: .currency(code: "USD"))
+                    .keyboardType(.decimalPad)
+            }
+            
+            Section {
+                Text("Age: \(age)")
+                Text("Price: \(price, format: .currency(code: "USD"))")
+            }
+        }
+    }
+}
+```
+
+**Important:** When binding to numeric types, the text field will show "0" by default. If invalid input is entered, the value reverts to the last valid state.
+
+## Advanced: Custom Text Field Styles
+
+Create reusable, custom-styled text fields:
+
+```swift
+struct CustomTextFieldStyle: ViewModifier {
+    let icon: String
+    
+    func body(content: Content) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(.gray)
+                .frame(width: 20)
+            
+            content
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+}
+
+extension View {
+    func customTextField(icon: String) -> some View {
+        modifier(CustomTextFieldStyle(icon: icon))
+    }
+}
+
+// Usage
+struct StyledFormView: View {
+    @State private var email = ""
+    @State private var password = ""
+
+    var body: some View {
+        VStack(spacing: 16) {
+            TextField("Email", text: $email)
+                .customTextField(icon: "envelope")
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+
+            SecureField("Password", text: $password)
+                .customTextField(icon: "lock")
+        }
+        .padding()
+    }
+}
+```
+
+## Common Mistakes Summary
+
+| Mistake | Problem | Solution |
+|---------|---------|----------|
+| Missing `$` binding | Won't compile | Use `$variable` for bindings |
+| No keyboard type | Poor UX for email/number input | Set `.keyboardType()` appropriately |
+| Validating on every keystroke | Performance issues, jarring UX | Debounce or validate on submit |
+| No `.onSubmit` chaining | User must tap each field manually | Chain focus with `.onSubmit` |
+| Using `TextField` for passwords | Security risk | Always use `SecureField` |
+| No empty state handling | Form submits invalid data | Disable submit button when invalid |
+| Formatting loops in `.onChange` | Infinite re-renders | Filter input and limit length |
+
+## Summary Table
+
+| Component | Purpose | Key Modifiers |
+|-----------|---------|---------------|
+| **TextField** | Single-line text input | `.textFieldStyle()`, `.keyboardType()`, `.textInputAutocapitalization()` |
+| **SecureField** | Masked password input | Same as TextField (autocorrection disabled automatically) |
+| **Form** | Platform-styled input container | `.formStyle()` |
+| **Section** | Group related form items | `header:`, `footer:` |
+| **@FocusState** | Control keyboard focus | `.focused()`, `.onSubmit` |
+| **.onSubmit** | Handle return key | Chain focus between fields |
+| **.onChange** | React to text changes | Debounce for expensive operations |
+
+## Official Resources
+
+- [Apple Documentation: TextField](https://developer.apple.com/documentation/swiftui/textfield)
+- [Apple Documentation: SecureField](https://developer.apple.com/documentation/swiftui/securefield)
+- [Apple Documentation: Form](https://developer.apple.com/documentation/swiftui/form)
+- [Apple Documentation: FocusState](https://developer.apple.com/documentation/swiftui/focusstate)
+- [Human Interface Guidelines: Text Fields](https://developer.apple.com/design/human-interface-guidelines/text-fields)

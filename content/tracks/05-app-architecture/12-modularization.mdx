@@ -1,0 +1,714 @@
+---
+title: "App Modularization"
+description: "Splitting apps into modules, feature modules, and shared libraries"
+sectionId: "5.4-project-organization"
+sectionTitle: "Project Organization"
+order: 12
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Modularization in Swift and iOS Development
+
+App modularization is the practice of breaking your iOS application into smaller, independent pieces called modules. Instead of building your entire app as a single monolithic target, you divide it into separate frameworks or Swift packages that handle specific features or functionality.
+
+Think of it like building with LEGO blocks rather than carving from a single block of wood. Each module has its own responsibility, can be developed and tested independently, and can be reused across different parts of your app or even different apps entirely.
+
+## Why Modularization Matters
+
+**Build Performance**: Xcode only recompiles modules that have changed. In a 100,000+ line codebase, this can reduce build times from minutes to seconds.
+
+**Code Organization**: Clear boundaries between features make it easier to navigate and understand the codebase.
+
+**Team Collaboration**: Different teams can work on separate modules with minimal conflicts.
+
+**Reusability**: Common functionality can be shared across multiple apps.
+
+**Testing**: Isolated modules are easier to test without dealing with the entire app.
+
+## Types of Modules
+
+In iOS development, you'll typically work with three types of modules:
+
+### 1. Feature Modules
+
+These contain specific user-facing features. Examples: `LoginFeature`, `ProfileFeature`, `CheckoutFeature`.
+
+### 2. Shared/Core Modules
+
+These provide common functionality used across features. Examples: `Networking`, `Analytics`, `DesignSystem`.
+
+### 3. Domain/Model Modules
+
+These contain business logic and data models. Examples: `UserDomain`, `PaymentDomain`.
+
+## Creating Your First Module with Swift Package Manager
+
+Swift Package Manager (SPM) is Apple's official dependency manager and the recommended way to create modules. Let's build a simple networking module.
+
+### Step 1: Create a Local Swift Package
+
+In Xcode, go to File → New → Package, name it `Networking`, and save it inside your project directory.
+
+Your package structure will look like this:
+
+```
+Networking/
+├── Package.swift
+├── Sources/
+│   └── Networking/
+│       └── Networking.swift
+└── Tests/
+    └── NetworkingTests/
+        └── NetworkingTests.swift
+```
+
+### Step 2: Define the Package
+
+Open `Package.swift`:
+
+```swift
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "Networking",
+    platforms: [
+        .iOS(.v15),
+        .macOS(.v12)
+    ],
+    products: [
+        .library(
+            name: "Networking",
+            targets: ["Networking"]
+        ),
+    ],
+    dependencies: [
+        // Add external dependencies here
+    ],
+    targets: [
+        .target(
+            name: "Networking",
+            dependencies: []
+        ),
+        .testTarget(
+            name: "NetworkingTests",
+            dependencies: ["Networking"]
+        ),
+    ]
+)
+```
+
+### Step 3: Implement the Module
+
+```swift
+// Sources/Networking/Networking.swift
+import Foundation
+
+public enum NetworkError: Error {
+    case invalidURL
+    case invalidResponse
+    case httpError(statusCode: Int)
+    case decodingError(Error)
+}
+
+public protocol NetworkServiceProtocol {
+    func fetch<T: Decodable>(from endpoint: String) async throws -> T
+}
+
+public final class NetworkService: NetworkServiceProtocol {
+    private let baseURL: String
+    private let session: URLSession
+    
+    public init(baseURL: String, session: URLSession = .shared) {
+        self.baseURL = baseURL
+        self.session = session
+    }
+    
+    public func fetch<T: Decodable>(from endpoint: String) async throws -> T {
+        guard let url = URL(string: baseURL + endpoint) else {
+            throw NetworkError.invalidURL
+        }
+        
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw NetworkError.httpError(statusCode: httpResponse.statusCode)
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw NetworkError.decodingError(error)
+        }
+    }
+}
+```
+
+### Step 4: Use the Module in Your App
+
+Add the package to your app target, then import and use it:
+
+```swift
+import Networking
+
+struct User: Codable {
+    let id: Int
+    let name: String
+    let email: String
+}
+
+final class UserService {
+    private let networkService: NetworkServiceProtocol
+    
+    init(networkService: NetworkServiceProtocol) {
+        self.networkService = networkService
+    }
+    
+    func fetchUser(id: Int) async throws -> User {
+        try await networkService.fetch(from: "/users/\(id)")
+    }
+}
+
+// Usage
+let networkService = NetworkService(baseURL: "https://api.example.com")
+let userService = UserService(networkService: networkService)
+
+Task {
+    do {
+        let user = try await userService.fetchUser(id: 1)
+        print("Fetched user: \(user.name)")
+    } catch {
+        print("Error: \(error)")
+    }
+}
+```
+
+## Creating a Feature Module
+
+Let's create a complete feature module for user authentication:
+
+```swift
+// Package.swift for AuthFeature
+let package = Package(
+    name: "AuthFeature",
+    platforms: [.iOS(.v15)],
+    products: [
+        .library(name: "AuthFeature", targets: ["AuthFeature"]),
+    ],
+    dependencies: [
+        .package(path: "../Networking"),
+        .package(path: "../DesignSystem")
+    ],
+    targets: [
+        .target(
+            name: "AuthFeature",
+            dependencies: ["Networking", "DesignSystem"]
+        ),
+        .testTarget(
+            name: "AuthFeatureTests",
+            dependencies: ["AuthFeature"]
+        ),
+    ]
+)
+```
+
+```swift
+// Sources/AuthFeature/AuthService.swift
+import Foundation
+import Networking
+
+public struct LoginRequest: Encodable {
+    let email: String
+    let password: String
+}
+
+public struct AuthToken: Codable {
+    public let accessToken: String
+    public let refreshToken: String
+    public let expiresIn: Int
+}
+
+public protocol AuthServiceProtocol {
+    func login(email: String, password: String) async throws -> AuthToken
+    func logout() async throws
+}
+
+public final class AuthService: AuthServiceProtocol {
+    private let networkService: NetworkServiceProtocol
+    
+    public init(networkService: NetworkServiceProtocol) {
+        self.networkService = networkService
+    }
+    
+    public func login(email: String, password: String) async throws -> AuthToken {
+        // Implementation here
+        fatalError("Not implemented")
+    }
+    
+    public func logout() async throws {
+        // Implementation here
+    }
+}
+```
+
+```swift
+// Sources/AuthFeature/LoginView.swift
+import SwiftUI
+import DesignSystem
+
+public struct LoginView: View {
+    @StateObject private var viewModel: LoginViewModel
+    
+    public init(viewModel: LoginViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+    
+    public var body: some View {
+        VStack(spacing: 20) {
+            Text("Welcome Back")
+                .font(.largeTitle)
+                .bold()
+            
+            TextField("Email", text: $viewModel.email)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.emailAddress)
+                .autocapitalization(.none)
+            
+            SecureField("Password", text: $viewModel.password)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.password)
+            
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+            
+            Button("Login") {
+                Task {
+                    await viewModel.login()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(viewModel.isLoading)
+            
+            if viewModel.isLoading {
+                ProgressView()
+            }
+        }
+        .padding()
+    }
+}
+
+public final class LoginViewModel: ObservableObject {
+    @Published public var email = ""
+    @Published public var password = ""
+    @Published public var isLoading = false
+    @Published public var errorMessage: String?
+    
+    private let authService: AuthServiceProtocol
+    private let onLoginSuccess: (AuthToken) -> Void
+    
+    public init(
+        authService: AuthServiceProtocol,
+        onLoginSuccess: @escaping (AuthToken) -> Void
+    ) {
+        self.authService = authService
+        self.onLoginSuccess = onLoginSuccess
+    }
+    
+    @MainActor
+    public func login() async {
+        guard !email.isEmpty, !password.isEmpty else {
+            errorMessage = "Please fill in all fields"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let token = try await authService.login(email: email, password: password)
+            onLoginSuccess(token)
+        } catch {
+            errorMessage = "Login failed: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+}
+```
+
+## Module Dependency Management
+
+One of the most critical aspects of modularization is managing dependencies correctly. Here are the key principles:
+
+### Dependency Direction
+
+Dependencies should flow in one direction, typically from features → shared modules → core modules.
+
+```
+┌──────────────┐     ┌──────────────┐
+│ AuthFeature  │────▶│  Networking  │
+└──────────────┘     └──────────────┘
+       │                     │
+       │                     ▼
+       │              ┌──────────────┐
+       └─────────────▶│  Foundation  │
+                      └──────────────┘
+```
+
+**Never create circular dependencies:**
+
+```swift
+// ❌ BAD: Circular dependency
+// AuthFeature depends on ProfileFeature
+// ProfileFeature depends on AuthFeature
+```
+
+### Dependency Injection
+
+Always inject dependencies rather than creating them inside modules:
+
+```swift
+// ✅ GOOD: Dependencies injected
+public final class UserRepository {
+    private let networkService: NetworkServiceProtocol
+    private let storage: StorageProtocol
+    
+    public init(networkService: NetworkServiceProtocol, storage: StorageProtocol) {
+        self.networkService = networkService
+        self.storage = storage
+    }
+}
+
+// ❌ BAD: Dependencies created internally
+public final class UserRepository {
+    private let networkService = NetworkService() // Tight coupling!
+    private let storage = UserDefaults.standard // Hard to test!
+}
+```
+
+## Access Control and Module Boundaries
+
+Proper access control is crucial for maintaining module boundaries:
+
+```swift
+// ✅ GOOD: Explicit public API
+public protocol UserServiceProtocol {
+    func fetchUser(id: Int) async throws -> User
+}
+
+public final class UserService: UserServiceProtocol {
+    // Public for dependency injection
+    public init(networkService: NetworkServiceProtocol) {
+        self.networkService = networkService
+    }
+    
+    // Public API
+    public func fetchUser(id: Int) async throws -> User {
+        try await fetchAndCache(id: id)
+    }
+    
+    // Private implementation detail
+    private let networkService: NetworkServiceProtocol
+    
+    // Internal helper - not exposed outside module
+    private func fetchAndCache(id: Int) async throws -> User {
+        // Implementation
+        fatalError("Not implemented")
+    }
+}
+
+// ❌ BAD: Everything public
+public final class UserService {
+    public let networkService: NetworkServiceProtocol // Exposed internal detail
+    public var cache: [Int: User] = [:] // Exposed mutable state
+}
+```
+
+## Common Modularization Patterns
+
+### The Coordinator Pattern with Modules
+
+Each feature module can expose a coordinator to handle navigation:
+
+```swift
+// Sources/AuthFeature/AuthCoordinator.swift
+import UIKit
+
+public protocol AuthCoordinatorDelegate: AnyObject {
+    func authCoordinatorDidLogin(_ coordinator: AuthCoordinator, token: AuthToken)
+}
+
+public final class AuthCoordinator {
+    private let navigationController: UINavigationController
+    private let authService: AuthServiceProtocol
+    public weak var delegate: AuthCoordinatorDelegate?
+    
+    public init(
+        navigationController: UINavigationController,
+        authService: AuthServiceProtocol
+    ) {
+        self.navigationController = navigationController
+        self.authService = authService
+    }
+    
+    public func start() {
+        let viewModel = LoginViewModel(authService: authService) { [weak self] token in
+            guard let self = self else { return }
+            self.delegate?.authCoordinatorDidLogin(self, token: token)
+        }
+        
+        let loginView = LoginView(viewModel: viewModel)
+        let hostingController = UIHostingController(rootView: loginView)
+        navigationController.pushViewController(hostingController, animated: true)
+    }
+}
+```
+
+### Repository Pattern for Data Layer
+
+```swift
+// Sources/UserDomain/UserRepository.swift
+import Foundation
+import Networking
+
+public protocol UserRepositoryProtocol {
+    func getUser(id: Int) async throws -> User
+    func updateUser(_ user: User) async throws
+}
+
+public final class UserRepository: UserRepositoryProtocol {
+    private let networkService: NetworkServiceProtocol
+    private let localStorage: LocalStorageProtocol
+    
+    public init(
+        networkService: NetworkServiceProtocol,
+        localStorage: LocalStorageProtocol
+    ) {
+        self.networkService = networkService
+        self.localStorage = localStorage
+    }
+    
+    public func getUser(id: Int) async throws -> User {
+        // Try local cache first
+        if let cachedUser = try? await localStorage.getUser(id: id) {
+            return cachedUser
+        }
+        
+        // Fetch from network
+        let user: User = try await networkService.fetch(from: "/users/\(id)")
+        
+        // Cache for next time
+        try? await localStorage.saveUser(user)
+        
+        return user
+    }
+    
+    public func updateUser(_ user: User) async throws {
+        try await networkService.fetch(from: "/users/\(user.id)")
+        try? await localStorage.saveUser(user)
+    }
+}
+```
+
+## Testing Modular Code
+
+Modularization significantly improves testability:
+
+```swift
+// Tests/NetworkingTests/NetworkServiceTests.swift
+import XCTest
+@testable import Networking
+
+// Mock URLSession
+final class MockURLProtocol: URLProtocol {
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    
+    override class func canInit(with request: URLRequest) -> Bool {
+        return true
+    }
+    
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        return request
+    }
+    
+    override func startLoading() {
+        guard let handler = MockURLProtocol.requestHandler else {
+            fatalError("Handler is unavailable.")
+        }
+        
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+    
+    override func stopLoading() {}
+}
+
+final class NetworkServiceTests: XCTestCase {
+    var sut: NetworkService!
+    var mockSession: URLSession!
+    
+    override func setUp() {
+        super.setUp()
+        
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        mockSession = URLSession(configuration: configuration)
+        
+        sut = NetworkService(baseURL: "https://api.test.com", session: mockSession)
+    }
+    
+    override func tearDown() {
+        sut = nil
+        mockSession = nil
+        MockURLProtocol.requestHandler = nil
+        super.tearDown()
+    }
+    
+    func testFetchSuccess() async throws {
+        // Given
+        struct TestUser: Codable, Equatable {
+            let id: Int
+            let name: String
+        }
+
+        let expectedUser = TestUser(id: 1, name: "Alice")
+        let encodedData = try JSONEncoder().encode(expectedUser)
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, encodedData)
+        }
+
+        // When
+        let user: TestUser = try await sut.fetch(from: "/users/1")
+
+        // Then
+        XCTAssertEqual(user, expectedUser)
+    }
+
+    func testFetchFailure() async throws {
+        // Given
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        // When / Then
+        do {
+            let _: TestUser = try await sut.fetch(from: "/users/999")
+            XCTFail("Expected error to be thrown")
+        } catch {
+            guard case NetworkError.httpError(let statusCode) = error else {
+                XCTFail("Expected httpError")
+                return
+            }
+            XCTAssertEqual(statusCode, 404)
+        }
+    }
+}
+
+private struct TestUser: Codable, Equatable {
+    let id: Int
+    let name: String
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Over-Modularizing Too Early
+
+```swift
+// ❌ Bad — creating modules before you need them
+// MyApp/
+//   Packages/
+//     ButtonModule/
+//     LabelModule/
+//     ColorModule/
+//     SpacerModule/ (really?)
+
+// ✅ Good — modularize when you have clear boundaries
+// MyApp/
+//   Packages/
+//     Networking/        — shared by many features
+//     DesignSystem/      — reusable UI components
+//     AuthFeature/       — complete login/signup flow
+//     ProfileFeature/    — user profile management
+```
+
+Start monolithic and extract modules when you see clear seams. Premature modularization adds complexity without benefits.
+
+### Mistake 2: Leaking Internal Types
+
+```swift
+// ❌ Bad — internal model leaks through public API
+public func getUser() -> UserDTO { // UserDTO is an implementation detail
+    // ...
+}
+
+// ✅ Good — expose only domain models
+public func getUser() -> User { // User is a public domain model
+    let dto = fetchUserDTO()
+    return User(from: dto) // Map internally
+}
+```
+
+### Mistake 3: Circular Dependencies
+
+```swift
+// ❌ Bad — AuthFeature imports ProfileFeature, ProfileFeature imports AuthFeature
+// This won't compile with SPM
+
+// ✅ Good — use a shared protocol module
+// SharedProtocols module defines interfaces
+// Both AuthFeature and ProfileFeature depend on SharedProtocols
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Swift Package** | `Package.swift` manifest | Define module structure and dependencies |
+| **Feature modules** | `LoginFeature`, `ProfileFeature` | Isolated user-facing features |
+| **Shared modules** | `Networking`, `DesignSystem` | Reusable common functionality |
+| **Domain modules** | `UserDomain`, `PaymentDomain` | Business logic and models |
+| **Local packages** | `.package(path: "../Networking")` | Reference packages in same repo |
+| **Access control** | `public`, `internal`, `private` | Define module boundaries |
+| **Dependency injection** | Protocol-based init parameters | Decouple modules |
+| **Coordinator pattern** | `AuthCoordinator` with delegate | Cross-module navigation |
+| **Repository pattern** | `UserRepositoryProtocol` | Abstract data access layer |
+| **Testing** | `MockURLProtocol`, protocol mocks | Isolated module testing |
+| **Dependency direction** | Features → Shared → Core | Prevent circular dependencies |
+
+## Official Resources
+
+- [Apple Documentation: Swift Packages](https://developer.apple.com/documentation/xcode/swift-packages)
+- [Apple Documentation: Creating a Standalone Swift Package](https://developer.apple.com/documentation/xcode/creating-a-standalone-swift-package-with-xcode)
+- [Apple Documentation: Organizing Your Code with Local Packages](https://developer.apple.com/documentation/xcode/organizing-your-code-with-local-packages)
+- [Swift.org: Package Manager](https://www.swift.org/package-manager/)
+- [WWDC 2022: Create Swift Package Plugins](https://developer.apple.com/videos/play/wwdc2022/110359/)

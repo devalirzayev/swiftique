@@ -1,0 +1,644 @@
+---
+title: "Focus & Keyboard Management"
+description: "@FocusState, focus management, and keyboard handling"
+sectionId: "3.4-advanced-patterns"
+sectionTitle: "Advanced Patterns"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Focus & Keyboard Management in Swift/iOS
+
+Focus and keyboard management are essential skills for creating polished iOS apps. When users tap into text fields, you need to control which field is active, how the keyboard appears, and how users navigate between inputs. Poor keyboard handling creates frustrating user experiences—think of forms where you can't dismiss the keyboard or apps where the keyboard covers your input fields.
+
+In this article, you'll learn how to use SwiftUI's `@FocusState` property wrapper, manage focus programmatically, handle keyboard events, and implement smooth keyboard interactions.
+
+## Why Focus Management Matters
+
+Without proper focus management, your app will suffer from:
+
+- **Poor form navigation**: Users can't move between text fields efficiently
+- **Keyboard obscuring content**: Input fields hidden behind the keyboard
+- **No way to dismiss the keyboard**: Users stuck with an on-screen keyboard
+- **Accessibility issues**: Screen readers and assistive technologies rely on proper focus management
+
+## Understanding @FocusState
+
+`@FocusState` is a property wrapper introduced in iOS 15 that tracks and controls which view has input focus. It's specifically designed for managing keyboard focus in SwiftUI.
+
+### Basic @FocusState Usage
+
+Here's the simplest implementation:
+
+```swift
+import SwiftUI
+
+struct BasicFocusExample: View {
+    @State private var username: String = ""
+    @FocusState private var isUsernameFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            TextField("Username", text: $username)
+                .textFieldStyle(.roundedBorder)
+                .focused($isUsernameFocused)
+            
+            Button("Focus Username Field") {
+                isUsernameFocused = true
+            }
+            
+            Button("Remove Focus") {
+                isUsernameFocused = false
+            }
+            
+            Text("Field is \(isUsernameFocused ? "focused" : "not focused")")
+        }
+        .padding()
+    }
+}
+```
+
+The `@FocusState` variable acts as a two-way binding: you can read whether a field is focused, and you can set it to programmatically change focus.
+
+## Managing Multiple Fields with Enums
+
+For forms with multiple input fields, use an enum-based approach with `@FocusState`:
+
+```swift
+import SwiftUI
+
+struct LoginForm: View {
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var confirmPassword: String = ""
+    
+    // Define an enum for all focusable fields
+    enum Field: Hashable {
+        case email
+        case password
+        case confirmPassword
+    }
+    
+    @FocusState private var focusedField: Field?
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            TextField("Email", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.emailAddress)
+                .keyboardType(.emailAddress)
+                .focused($focusedField, equals: .email)
+                .submitLabel(.next)
+                .onSubmit {
+                    focusedField = .password
+                }
+            
+            SecureField("Password", text: $password)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.newPassword)
+                .focused($focusedField, equals: .password)
+                .submitLabel(.next)
+                .onSubmit {
+                    focusedField = .confirmPassword
+                }
+            
+            SecureField("Confirm Password", text: $confirmPassword)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.newPassword)
+                .focused($focusedField, equals: .confirmPassword)
+                .submitLabel(.done)
+                .onSubmit {
+                    submitForm()
+                }
+            
+            Button("Submit") {
+                submitForm()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .onAppear {
+            // Auto-focus first field when view appears
+            focusedField = .email
+        }
+    }
+    
+    private func submitForm() {
+        // Dismiss keyboard
+        focusedField = nil
+        
+        // Handle form submission
+        print("Submitting form...")
+    }
+}
+```
+
+### Key Points in This Example
+
+- **Enum-based focus**: Each field gets a unique enum case
+- **Sequential navigation**: `.onSubmit` moves focus to the next field
+- **Submit labels**: `.submitLabel()` changes the keyboard return key text
+- **Auto-focus**: `.onAppear` automatically focuses the first field
+- **Dismissing keyboard**: Setting `focusedField` to `nil` removes focus and dismisses the keyboard
+
+## Keyboard Types and Input Customization
+
+iOS provides different keyboard types for different input scenarios:
+
+```swift
+struct KeyboardTypesExample: View {
+    @State private var email: String = ""
+    @State private var phone: String = ""
+    @State private var number: String = ""
+    @State private var url: String = ""
+    
+    var body: some View {
+        Form {
+            Section("Email") {
+                TextField("Email Address", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+            }
+            
+            Section("Phone") {
+                TextField("Phone Number", text: $phone)
+                    .keyboardType(.phonePad)
+                    .textContentType(.telephoneNumber)
+            }
+            
+            Section("Number") {
+                TextField("Quantity", text: $number)
+                    .keyboardType(.numberPad)
+            }
+            
+            Section("URL") {
+                TextField("Website", text: $url)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .autocapitalization(.none)
+            }
+        }
+    }
+}
+```
+
+**Common keyboard types:**
+
+- `.default`: Standard keyboard
+- `.emailAddress`: Includes @ and . keys
+- `.phonePad`: Numbers and phone symbols
+- `.numberPad`: Numbers only (0-9)
+- `.decimalPad`: Numbers with decimal point
+- `.URL`: Includes / and .com keys
+- `.twitter`: Includes @ and # keys
+
+## Handling Keyboard Dismissal
+
+There are several ways to dismiss the keyboard:
+
+### Method 1: Setting Focus to Nil
+
+```swift
+struct DismissWithFocusState: View {
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack {
+            TextField("Type something", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+            
+            Button("Dismiss Keyboard") {
+                isFocused = false
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Method 2: Tap Gesture on Background
+
+```swift
+struct DismissOnTapExample: View {
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack {
+            TextField("Type something", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+            
+            Spacer()
+        }
+        .padding()
+        .contentShape(Rectangle()) // Makes entire background tappable
+        .onTapGesture {
+            isFocused = false
+        }
+    }
+}
+```
+
+### Method 3: Using UIKit (for backward compatibility or special cases)
+
+```swift
+extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+
+struct DismissWithUIKitExample: View {
+    @State private var text: String = ""
+    
+    var body: some View {
+        VStack {
+            TextField("Type something", text: $text)
+                .textFieldStyle(.roundedBorder)
+            
+            Button("Dismiss") {
+                hideKeyboard()
+            }
+        }
+        .padding()
+    }
+}
+```
+
+## Handling Keyboard Obstructing Content
+
+One of the most common issues is when the keyboard covers your input fields. Here are solutions:
+
+### Using ScrollViewReader and ScrollView
+
+```swift
+struct KeyboardAvoidanceExample: View {
+    @State private var fields: [String] = Array(repeating: "", count: 10)
+    @FocusState private var focusedIndex: Int?
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(0..<fields.count, id: \.self) { index in
+                        TextField("Field \(index + 1)", text: $fields[index])
+                            .textFieldStyle(.roundedBorder)
+                            .focused($focusedIndex, equals: index)
+                            .id(index)
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: focusedIndex) { newValue in
+                if let index = newValue {
+                    // Scroll to focused field
+                    withAnimation {
+                        proxy.scrollTo(index, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+### Using KeyboardAdaptive Modifier (iOS 14+)
+
+For forms, SwiftUI automatically handles keyboard avoidance in many cases:
+
+```swift
+struct FormWithKeyboardHandling: View {
+    @State private var name: String = ""
+    @State private var email: String = ""
+    @State private var notes: String = ""
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Personal Info") {
+                    TextField("Name", text: $name)
+                    TextField("Email", text: $email)
+                }
+                
+                Section("Additional Notes") {
+                    TextEditor(text: $notes)
+                        .frame(height: 150)
+                }
+            }
+            .navigationTitle("Profile")
+        }
+        // Form automatically adjusts for keyboard
+    }
+}
+```
+
+## Advanced: Custom Keyboard Toolbar
+
+Add a toolbar above the keyboard for additional actions:
+
+```swift
+struct KeyboardToolbarExample: View {
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack {
+            TextField("Type something", text: $text, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Button("Clear") {
+                            text = ""
+                        }
+                        
+                        Spacer()
+                        
+                        Button("Done") {
+                            isFocused = false
+                        }
+                        .fontWeight(.bold)
+                    }
+                }
+            
+            Spacer()
+        }
+        .padding()
+    }
+}
+```
+
+## Focus Management with Lists
+
+When dealing with dynamic lists of input fields:
+
+```swift
+struct DynamicFieldList: View {
+    @State private var items: [Item] = [
+        Item(name: "Item 1"),
+        Item(name: "Item 2"),
+        Item(name: "Item 3")
+    ]
+    
+    @FocusState private var focusedItemId: UUID?
+    
+    struct Item: Identifiable {
+        let id = UUID()
+        var name: String
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach($items) { $item in
+                    TextField("Item name", text: $item.name)
+                        .focused($focusedItemId, equals: item.id)
+                }
+                .onDelete(perform: deleteItems)
+                
+                Button("Add Item") {
+                    let newItem = Item(name: "")
+                    items.append(newItem)
+                    // Auto-focus the new item
+                    focusedItemId = newItem.id
+                }
+            }
+            .navigationTitle("Items")
+            .toolbar {
+                EditButton()
+            }
+        }
+    }
+    
+    private func deleteItems(at offsets: IndexSet) {
+        items.remove(atOffsets: offsets)
+    }
+}
+```
+
+## Focus Management in UIKit (for UIViewRepresentable)
+
+If you're wrapping UIKit components, you'll need to handle focus differently:
+
+```swift
+import SwiftUI
+import UIKit
+
+struct UIKitTextFieldWrapper: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var onCommit: () -> Void
+    
+    class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: UIKitTextFieldWrapper
+        
+        init(_ parent: UIKitTextFieldWrapper) {
+            self.parent = parent
+        }
+        
+        func textFieldDidChangeSelection(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+        
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            parent.onCommit()
+            return true
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    func makeUIView(context: Context) -> UITextField {
+        let textField = UITextField()
+        textField.placeholder = placeholder
+        textField.delegate = context.coordinator
+        textField.borderStyle = .roundedRect
+        return textField
+    }
+    
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        uiView.text = text
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Handling Optional Focus State
+
+```swift
+// ❌ Bad: Force unwrapping can crash
+@FocusState private var focusedField: Field!
+
+// ✅ Good: Use optional
+@FocusState private var focusedField: Field?
+```
+
+### Mistake 2: Focus State in Wrong Scope
+
+```swift
+// ❌ Bad: Focus state not accessible where needed
+struct ParentView: View {
+    var body: some View {
+        ChildView()
+    }
+}
+
+struct ChildView: View {
+    @FocusState private var isFocused: Bool
+    // Can't control this from ParentView
+}
+
+// ✅ Good: Pass focus binding down
+struct ParentView: View {
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack {
+            ChildView(isFocused: $isFocused)
+            Button("Focus Child") {
+                isFocused = true
+            }
+        }
+    }
+}
+
+struct ChildView: View {
+    @FocusState var isFocused: Bool
+    
+    var body: some View {
+        TextField("Input", text: .constant(""))
+            .focused($isFocused)
+    }
+}
+```
+
+### Mistake 3: Forgetting Keyboard Type and Content Type
+
+```swift
+// ❌ Bad: Generic field that's hard to use
+TextField("Email", text: $email)
+
+// ✅ Good: Optimized for email input
+TextField("Email", text: $email)
+    .keyboardType(.emailAddress)
+    .textContentType(.emailAddress)
+    .autocapitalization(.none)
+    .disableAutocorrection(true)
+```
+
+### Edge Case: Delayed Focus
+
+Sometimes you need to delay focus to allow the view to fully render:
+
+```swift
+struct DelayedFocusExample: View {
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        TextField("Text", text: $text)
+            .focused($isFocused)
+            .onAppear {
+                // Immediate focus might not work
+                // isFocused = true
+                
+                // Delay focus to next run loop
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isFocused = true
+                }
+            }
+    }
+}
+```
+
+### Edge Case: Focus in Modal Sheets
+
+Focus behavior in sheets requires attention:
+
+```swift
+struct SheetWithFocusExample: View {
+    @State private var showSheet = false
+    
+    var body: some View {
+        Button("Show Sheet") {
+            showSheet = true
+        }
+        .sheet(isPresented: $showSheet) {
+            SheetContentView()
+        }
+    }
+}
+
+struct SheetContentView: View {
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack {
+            TextField("Enter text", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+
+            Button("Focus Field") {
+                isFocused = true
+            }
+        }
+        .padding()
+        .onAppear {
+            // Delay focus in sheets for reliability
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isFocused = true
+            }
+        }
+    }
+}
+```
+
+**Note:** Focus changes in sheets may not work reliably if triggered immediately in `.onAppear`. Adding a small delay resolves timing issues with the sheet presentation animation.
+
+## Summary Table
+
+| Topic | API | Purpose |
+|-------|-----|---------|
+| Single field focus | `@FocusState private var isFocused: Bool` | Track/control focus for one field |
+| Multi-field focus | `@FocusState private var field: Field?` | Navigate between multiple fields |
+| Focus binding | `.focused($focusedField, equals: .email)` | Bind focus state to a specific field |
+| Keyboard type | `.keyboardType(.emailAddress)` | Set appropriate keyboard layout |
+| Content type | `.textContentType(.emailAddress)` | Enable autofill suggestions |
+| Submit label | `.submitLabel(.next)` | Customize return key text |
+| Submit action | `.onSubmit { }` | Handle return key press |
+| Keyboard toolbar | `ToolbarItemGroup(placement: .keyboard)` | Add buttons above keyboard |
+| Dismiss keyboard | `focusedField = nil` | Remove focus to dismiss keyboard |
+| Scroll to field | `ScrollViewReader` + `.scrollTo()` | Scroll focused field into view |
+
+### Keyboard Types Quick Reference
+
+| Type | Use Case | Shows |
+|------|----------|-------|
+| `.default` | General text | Full keyboard |
+| `.emailAddress` | Email fields | @ and . prominent |
+| `.phonePad` | Phone numbers | Number pad with symbols |
+| `.numberPad` | Integers only | 0-9 only |
+| `.decimalPad` | Decimal numbers | 0-9 with decimal point |
+| `.URL` | Web addresses | / and .com prominent |
+
+## Official Resources
+
+- [Apple Documentation: FocusState](https://developer.apple.com/documentation/swiftui/focusstate)
+- [Apple Documentation: Keyboard Types](https://developer.apple.com/documentation/uikit/uikeyboardtype)
+- [WWDC 2021: Direct and reflect focus in SwiftUI](https://developer.apple.com/videos/play/wwdc2021/10023/)

@@ -1,0 +1,432 @@
+---
+title: "Guard & Early Exit"
+description: "Using guard for cleaner control flow"
+sectionId: "1.5-control-flow"
+sectionTitle: "Control Flow"
+order: 13
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Guard & Early Exit in Swift
+
+The `guard` statement is Swift's built-in mechanism for validating conditions and exiting early when those conditions aren't met. It inverts the traditional approach of nesting `if` statements, leading to cleaner, more readable code that keeps the "happy path" at the main indentation level.
+
+## Why Guard Matters
+
+In many languages, you validate inputs and state using nested `if` statements. This creates a "pyramid of doom" where successful execution gets pushed further and further to the right:
+
+```swift
+// Without guard - nested if statements
+func processUser(user: User?) {
+    if let user = user {
+        if user.isActive {
+            if user.age >= 18 {
+                // Finally do the actual work, deeply nested
+                print("Processing \(user.name)")
+            }
+        }
+    }
+}
+```
+
+Guard flips this pattern, allowing you to handle invalid cases early and keep your main logic at the baseline indentation level.
+
+## Basic Guard Syntax
+
+The `guard` statement requires an `else` clause that must exit the current scope using `return`, `throw`, `break`, `continue`, or a function that never returns (like `fatalError()`).
+
+```swift
+func processUser(user: User?) {
+    guard let user = user else {
+        print("No user provided")
+        return
+    }
+    
+    guard user.isActive else {
+        print("User is not active")
+        return
+    }
+    
+    guard user.age >= 18 else {
+        print("User must be 18 or older")
+        return
+    }
+    
+    // Main logic at base indentation level
+    print("Processing \(user.name)")
+}
+```
+
+## Guard vs If: When to Use Each
+
+The key difference is scope and intent:
+
+```swift
+// guard unwrapping - value available after guard
+func greetUser(name: String?) {
+    guard let name = name else {
+        return
+    }
+    
+    print("Hello, \(name)")  // name is available here
+    print("Welcome back, \(name)")  // and here
+}
+
+// if let unwrapping - value only available inside if block
+func greetUserWithIf(name: String?) {
+    if let name = name {
+        print("Hello, \(name)")
+    }
+    
+    // name is NOT available here
+}
+```
+
+**Use `guard` when:**
+- You need to validate a requirement to continue
+- The unwrapped value is needed throughout the rest of the scope
+- You want to emphasize that certain conditions are prerequisites
+
+**Use `if let` when:**
+- You're handling optional behavior (not validation)
+- You only need the value within a limited scope
+- Both success and failure paths are equally important
+
+## Guard with Optional Binding
+
+Guard shines when unwrapping optionals because the unwrapped values remain available after the guard statement:
+
+```swift
+func saveUserProfile(id: Int?, name: String?, email: String?) {
+    guard let id = id,
+          let name = name,
+          let email = email else {
+        print("Missing required user information")
+        return
+    }
+    
+    // id, name, and email are all safely unwrapped and available
+    let profile = UserProfile(id: id, name: name, email: email)
+    database.save(profile)
+}
+```
+
+You can also add boolean conditions alongside unwrapping:
+
+```swift
+func updateUserAge(user: User?, newAge: Int) {
+    guard let user = user,
+          newAge >= 0,
+          newAge <= 150 else {
+        print("Invalid user or age")
+        return
+    }
+    
+    user.age = newAge
+}
+```
+
+## Multiple Guard Statements vs Combined Conditions
+
+You can choose between multiple guards or one combined guard depending on how specific you want your error handling:
+
+```swift
+// Separate guards - more specific error messages
+func processPayment(amount: Double?, cardNumber: String?) {
+    guard let amount = amount else {
+        throw PaymentError.missingAmount
+    }
+    
+    guard amount > 0 else {
+        throw PaymentError.invalidAmount
+    }
+    
+    guard let cardNumber = cardNumber else {
+        throw PaymentError.missingCard
+    }
+    
+    // Process payment
+}
+
+// Combined guard - simpler but less specific
+func processPaymentSimple(amount: Double?, cardNumber: String?) {
+    guard let amount = amount,
+          amount > 0,
+          let cardNumber = cardNumber else {
+        throw PaymentError.invalidPaymentInfo
+    }
+    
+    // Process payment
+}
+```
+
+## Guard in Loops
+
+Inside loops, `guard` can use `continue` to skip iterations or `break` to exit:
+
+```swift
+func processOrders(_ orders: [Order]) {
+    for order in orders {
+        guard order.isValid else {
+            print("Skipping invalid order \(order.id)")
+            continue  // Skip to next iteration
+        }
+        
+        guard order.amount > 0 else {
+            print("Order \(order.id) has invalid amount")
+            continue
+        }
+        
+        // Process valid order
+        fulfill(order)
+    }
+}
+```
+
+```swift
+func findFirstAdult(users: [User]) -> User? {
+    for user in users {
+        guard user.age >= 18 else {
+            continue  // Keep looking
+        }
+        
+        return user  // Found one!
+    }
+    
+    return nil  // None found
+}
+```
+
+## Guard with Throwing Functions
+
+Guard works seamlessly with Swift's error handling:
+
+```swift
+enum ValidationError: Error {
+    case invalidEmail
+    case userTooYoung
+    case missingData
+}
+
+func registerUser(email: String?, age: Int?) throws {
+    guard let email = email,
+          email.contains("@") else {
+        throw ValidationError.invalidEmail
+    }
+    
+    guard let age = age else {
+        throw ValidationError.missingData
+    }
+    
+    guard age >= 13 else {
+        throw ValidationError.userTooYoung
+    }
+    
+    // Proceed with registration
+    createAccount(email: email, age: age)
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting the Early Exit
+
+```swift
+// ❌ Compiler error: 'guard' body must not fall through
+func processUser(user: User?) {
+    guard let user = user else {
+        print("No user")
+        // Missing return, throw, break, etc.
+    }
+}
+
+// ✅ Correct
+func processUser(user: User?) {
+    guard let user = user else {
+        print("No user")
+        return
+    }
+}
+```
+
+### Mistake 2: Using Guard When If Is More Appropriate
+
+```swift
+// ❌ Awkward use of guard
+func displayUserStatus(user: User) {
+    guard user.isPremium else {
+        displayBasicStatus(user)
+        return
+    }
+    
+    displayPremiumStatus(user)
+}
+
+// ✅ Better with if-else (both paths are equally valid)
+func displayUserStatus(user: User) {
+    if user.isPremium {
+        displayPremiumStatus(user)
+    } else {
+        displayBasicStatus(user)
+    }
+}
+```
+
+### Mistake 3: Overly Complex Guard Conditions
+
+```swift
+// ❌ Hard to read
+func processRequest(data: Data?) {
+    guard let data = data,
+          let json = try? JSONDecoder().decode(Request.self, from: data),
+          json.timestamp > Date().addingTimeInterval(-3600),
+          json.userId != nil,
+          json.action != .delete || json.confirmationCode != nil else {
+        return
+    }
+}
+
+// ✅ Separate complex logic
+func processRequest(data: Data?) {
+    guard let data = data else { return }
+    
+    guard let json = try? JSONDecoder().decode(Request.self, from: data) else {
+        return
+    }
+    
+    guard isRecent(json) else { return }
+    guard isValid(json) else { return }
+    
+    // Process request
+}
+```
+
+### Edge Case: Guard in Defer Blocks
+
+You cannot use `return` in a `defer` block, making `guard` impractical there:
+
+```swift
+func processFile() {
+    defer {
+        // ❌ Cannot use guard with return here
+        // guard cleanupSuccessful else { return }
+        
+        // ✅ Use if instead
+        if cleanupSuccessful {
+            closeFile()
+        }
+    }
+    
+    // Main logic
+}
+```
+
+## Guard with Pattern Matching
+
+Guard supports Swift's pattern matching capabilities:
+
+```swift
+enum Result {
+    case success(data: Data)
+    case failure(error: Error)
+}
+
+func handleResult(_ result: Result) {
+    guard case .success(let data) = result else {
+        print("Operation failed")
+        return
+    }
+    
+    // data is available here
+    process(data)
+}
+```
+
+```swift
+func processValue(_ value: Any) {
+    guard let number = value as? Int else {
+        print("Not an integer")
+        return
+    }
+    
+    print("Got number: \(number)")
+}
+```
+
+## Real-World Example: API Request Handler
+
+Here's a practical example combining multiple guard techniques:
+
+```swift
+struct APIClient {
+    func fetchUserProfile(userId: Int?) async throws -> UserProfile {
+        // Validate input
+        guard let userId = userId else {
+            throw APIError.missingUserId
+        }
+        
+        guard userId > 0 else {
+            throw APIError.invalidUserId
+        }
+        
+        // Construct URL
+        guard let url = URL(string: "https://api.example.com/users/\(userId)") else {
+            throw APIError.invalidURL
+        }
+        
+        // Make request
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        // Validate response
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(httpResponse.statusCode)
+        }
+        
+        // Decode data
+        guard let profile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
+            throw APIError.decodingFailed
+        }
+        
+        return profile
+    }
+}
+```
+
+## Performance Considerations
+
+Guard statements have no runtime performance overhead compared to if statements. The choice between them is purely about code clarity and style. The Swift compiler optimizes both constructs identically.
+
+## Apple Documentation Reference
+
+According to [Apple's Swift Language Guide](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/#Guard-Statement), a guard statement always has an else clause that executes if the condition is false. The code inside the else clause must transfer control to exit the code block in which the guard statement appears.
+
+## Summary Table
+
+| Aspect | Guard Statement | If Statement |
+|--------|----------------|--------------|
+| **Purpose** | Validate requirements, exit early on failure | Handle branching logic |
+| **Scope of unwrapped values** | Available after the guard block | Only within the if block |
+| **Requires else** | Yes, must exit scope | No |
+| **Exit mechanisms** | `return`, `throw`, `break`, `continue`, `fatalError()` | Any code |
+| **Best for** | Preconditions, input validation | Optional behavior, branching |
+| **Code style** | Keeps happy path at base indentation | Creates nesting for success case |
+| **Readability** | Emphasizes requirements up front | Equal weight to both branches |
+| **Typical placement** | Top of function/block | Anywhere in logic flow |
+
+## Key Takeaways
+
+- Use `guard` to validate preconditions and fail fast
+- Guard keeps your success path at the main indentation level, improving readability
+- Unwrapped values from `guard let` remain available throughout the rest of the scope
+- Always provide an early exit in the `else` clause using `return`, `throw`, `break`, or `continue`
+- Prefer multiple specific guards over one complex guard when you need distinct error handling
+- Choose `if` when both branches are equally valid outcomes, not when one is a precondition
+- Guard is a compile-time construct with no runtime performance penalty
+
+By mastering guard statements, you'll write more idiomatic Swift code that's easier to read, maintain, and debug.

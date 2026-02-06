@@ -1,0 +1,617 @@
+---
+title: "App Intents & Shortcuts"
+description: "Siri integration, App Intents framework, and Shortcuts"
+sectionId: "6.2-extensions-widgets"
+sectionTitle: "Extensions & Widgets"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Intents & Shortcuts
+
+App Intents and Shortcuts allow users to interact with your app's functionality through Siri, the Shortcuts app, and system features like Spotlight and widgets. Instead of requiring users to open your app and navigate through screens, you can expose key actions that can be triggered via voice commands, automation, or quick taps.
+
+This matters because modern iOS users expect to integrate their favorite apps into their personal workflows. By implementing App Intents, you make your app more accessible, increase engagement, and provide a better user experience across the entire iOS ecosystem.
+
+## Understanding the App Intents Framework
+
+The App Intents framework (introduced in iOS 16) is Apple's modern approach to Siri integration and Shortcuts. It replaces the older SiriKit and Intents framework with a Swift-first, declarative API that's significantly easier to implement.
+
+### Core Concepts
+
+- **App Intent**: A discrete action your app can perform
+- **App Entity**: Data objects that intents can work with
+- **App Shortcut**: A predefined phrase that triggers an intent
+- **Parameter**: Input values that customize how an intent executes
+
+## Creating Your First App Intent
+
+Let's build a simple coffee ordering app to demonstrate these concepts. We'll start with a basic intent that allows users to order coffee through Siri.
+
+```swift
+import AppIntents
+
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    static var description = IntentDescription("Order your favorite coffee drink")
+    
+    // Define parameters that users can customize
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType
+    
+    @Parameter(title: "Size")
+    var size: CoffeeSize
+    
+    // This method executes when the intent is triggered
+    func perform() async throws -> some IntentResult {
+        // Your business logic here
+        let order = CoffeeOrder(type: coffeeType, size: size)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        
+        return .result(dialog: "Your \(size.rawValue) \(coffeeType.rawValue) is ordered!")
+    }
+}
+```
+
+### Defining App Entities
+
+Entities represent the data your intents work with. They need to conform to `AppEntity`:
+
+```swift
+import AppIntents
+
+enum CoffeeType: String, AppEnum {
+    case espresso = "Espresso"
+    case latte = "Latte"
+    case cappuccino = "Cappuccino"
+    case americano = "Americano"
+    
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Coffee Type"
+    
+    static var caseDisplayRepresentations: [CoffeeType: DisplayRepresentation] = [
+        .espresso: "Espresso",
+        .latte: "Latte",
+        .cappuccino: "Cappuccino",
+        .americano: "Americano"
+    ]
+}
+
+enum CoffeeSize: String, AppEnum {
+    case small = "Small"
+    case medium = "Medium"
+    case large = "Large"
+    
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Size"
+    static var caseDisplayRepresentations: [CoffeeSize: DisplayRepresentation] = [
+        .small: "Small",
+        .medium: "Medium",
+        .large: "Large"
+    ]
+}
+```
+
+For more complex entities with persistent data:
+
+```swift
+struct CoffeeShop: AppEntity {
+    var id: UUID
+    var name: String
+    var address: String
+    
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Coffee Shop"
+    
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)", subtitle: "\(address)")
+    }
+    
+    static var defaultQuery = CoffeeShopQuery()
+}
+
+struct CoffeeShopQuery: EntityQuery {
+    func entities(for identifiers: [UUID]) async throws -> [CoffeeShop] {
+        // Fetch entities by ID from your data store
+        return await CoffeeShopDatabase.shared.fetch(ids: identifiers)
+    }
+    
+    func suggestedEntities() async throws -> [CoffeeShop] {
+        // Return commonly used or favorite shops
+        return await CoffeeShopDatabase.shared.fetchFavorites()
+    }
+}
+```
+
+## Creating App Shortcuts
+
+App Shortcuts provide predefined phrases that users can say to Siri without any setup. These appear in your app's Siri Shortcuts settings.
+
+```swift
+import AppIntents
+
+struct CoffeeShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: OrderCoffeeIntent(),
+            phrases: [
+                "Order my usual from \(.applicationName)",
+                "Get coffee with \(.applicationName)",
+                "Order coffee in \(.applicationName)"
+            ],
+            shortTitle: "Order Coffee",
+            systemImageName: "cup.and.saucer.fill"
+        )
+    }
+}
+```
+
+## Parameter Configuration
+
+Parameters can be required or optional, and you can provide dynamic options:
+
+```swift
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    
+    @Parameter(title: "Coffee Type", requestValueDialog: "What type of coffee would you like?")
+    var coffeeType: CoffeeType
+    
+    @Parameter(title: "Size", default: .medium)
+    var size: CoffeeSize
+    
+    @Parameter(title: "Coffee Shop", optionsProvider: CoffeeShopOptionsProvider())
+    var shop: CoffeeShop?
+    
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let shop = shop else {
+            throw Error.noShopSelected
+        }
+        
+        let order = CoffeeOrder(type: coffeeType, size: size, shop: shop)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        
+        return .result(
+            dialog: "Your \(size.rawValue) \(coffeeType.rawValue) from \(shop.name) will be ready soon!"
+        )
+    }
+    
+    enum Error: Swift.Error, CustomLocalizedStringResourceConvertible {
+        case noShopSelected
+        
+        var localizedStringResource: LocalizedStringResource {
+            switch self {
+            case .noShopSelected:
+                return "Please select a coffee shop"
+            }
+        }
+    }
+}
+
+struct CoffeeShopOptionsProvider: DynamicOptionsProvider {
+    func results() async throws -> [CoffeeShop] {
+        return await CoffeeShopDatabase.shared.fetchAll()
+    }
+}
+```
+
+## Returning Results
+
+Intents can return different types of results:
+
+### Simple Dialog Result
+
+```swift
+func perform() async throws -> some IntentResult {
+    return .result(dialog: "Order placed successfully!")
+}
+```
+
+### Result with Value
+
+Use this when you need to return data that can be used by Shortcuts:
+
+```swift
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType
+    
+    func perform() async throws -> some IntentResult & ReturnsValue<OrderConfirmation> {
+        let order = await CoffeeOrderManager.shared.placeOrder(coffeeType: coffeeType)
+        let confirmation = OrderConfirmation(orderNumber: order.id, estimatedTime: order.readyTime)
+        
+        return .result(
+            value: confirmation,
+            dialog: "Order #\(order.id) placed. Ready in \(order.readyTime) minutes."
+        )
+    }
+}
+
+struct OrderConfirmation: Transferable {
+    var orderNumber: String
+    var estimatedTime: Int
+    
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .orderConfirmation)
+    }
+}
+
+extension UTType {
+    static var orderConfirmation: UTType {
+        UTType(exportedAs: "com.yourapp.orderconfirmation")
+    }
+}
+```
+
+### Opening Your App
+
+Sometimes you need to open your app to complete an action:
+
+```swift
+func perform() async throws -> some IntentResult & OpensIntent {
+    return .result(dialog: "Opening your order...") {
+        // Return a URL to deep link into your app
+        OpenURLIntent(URL(string: "coffeeapp://order/new")!)
+    }
+}
+```
+
+## Confirming Actions
+
+For destructive or important actions, ask for confirmation:
+
+```swift
+struct CancelOrderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cancel Order"
+    
+    @Parameter(title: "Order Number")
+    var orderNumber: String
+    
+    static var parameterSummary: some ParameterSummary {
+        Summary("Cancel order \(\.$orderNumber)")
+    }
+    
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await CoffeeOrderManager.shared.cancelOrder(orderNumber)
+        return .result(dialog: "Order \(orderNumber) has been cancelled")
+    }
+}
+
+// Add confirmation in your AppShortcut
+AppShortcut(
+    intent: CancelOrderIntent(),
+    phrases: ["Cancel my order in \(.applicationName)"],
+    shortTitle: "Cancel Order",
+    systemImageName: "xmark.circle"
+)
+```
+
+To programmatically request confirmation:
+
+```swift
+struct CancelOrderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cancel Order"
+    static var isDiscoverable = true
+    
+    @Parameter(title: "Order Number")
+    var orderNumber: String
+    
+    func perform() async throws -> some IntentResult {
+        // Request confirmation before proceeding
+        try await requestConfirmation(
+            result: .result(dialog: "Are you sure you want to cancel order \(orderNumber)?")
+        )
+        
+        try await CoffeeOrderManager.shared.cancelOrder(orderNumber)
+        return .result(dialog: "Order cancelled")
+    }
+}
+```
+
+## Requesting Values from Users
+
+When a parameter is missing or needs clarification:
+
+```swift
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType?
+    
+    @Parameter(title: "Include extra shot?")
+    var extraShot: Bool?
+    
+    func perform() async throws -> some IntentResult {
+        // Request coffee type if not provided
+        guard let coffeeType = coffeeType else {
+            return .requestValue(
+                for: \.$coffeeType,
+                dialog: "What type of coffee would you like?"
+            )
+        }
+        
+        // Request extra shot preference
+        let shouldAddExtraShot = extraShot ?? false
+        if extraShot == nil {
+            return .requestValue(
+                for: \.$extraShot,
+                dialog: "Would you like an extra shot?"
+            )
+        }
+        
+        let order = CoffeeOrder(type: coffeeType, extraShot: shouldAddExtraShot)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        
+        return .result(dialog: "Order placed!")
+    }
+}
+```
+
+## Intent Configuration and Discovery
+
+Control how your intents appear in the Shortcuts app:
+
+```swift
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    static var description = IntentDescription("Quickly order your favorite coffee")
+    
+    // Make this intent discoverable in Shortcuts app
+    static var isDiscoverable = true
+    
+    // Show in iOS 16+ only
+    @available(iOS 16.0, *)
+    static var openAppWhenRun: Bool = false
+    
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType
+    
+    // Customize how the parameter summary appears
+    static var parameterSummary: some ParameterSummary {
+        Summary("Order a \(\.$coffeeType)")
+    }
+    
+    func perform() async throws -> some IntentResult {
+        let order = CoffeeOrder(type: coffeeType)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        return .result(dialog: "Your \(coffeeType.rawValue) is on the way!")
+    }
+}
+```
+
+## Working with Authentication
+
+Handle authentication gracefully in your intents:
+
+```swift
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+    static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+    
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType
+    
+    func perform() async throws -> some IntentResult {
+        // Check if user is authenticated
+        guard AuthenticationManager.shared.isAuthenticated else {
+            throw Error.notAuthenticated
+        }
+        
+        // Proceed with order
+        let order = CoffeeOrder(type: coffeeType)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        
+        return .result(dialog: "Order placed!")
+    }
+    
+    enum Error: Swift.Error, CustomLocalizedStringResourceConvertible {
+        case notAuthenticated
+        
+        var localizedStringResource: LocalizedStringResource {
+            switch self {
+            case .notAuthenticated:
+                return "Please log in to the app first"
+            }
+        }
+    }
+}
+```
+
+## Background Execution
+
+App Intents can run in the background without opening your app. However, you need to be mindful of execution limits:
+
+```swift
+struct CheckOrderStatusIntent: AppIntent {
+    static var title: LocalizedStringResource = "Check Order Status"
+    static var openAppWhenRun = false // Runs in background
+    
+    @Parameter(title: "Order Number")
+    var orderNumber: String
+    
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        // This runs without opening your app
+        let status = await CoffeeOrderManager.shared.checkStatus(orderNumber)
+        
+        switch status {
+        case .preparing:
+            return .result(dialog: "Your order is being prepared")
+        case .ready:
+            return .result(dialog: "Your order is ready for pickup!")
+        case .notFound:
+            throw Error.orderNotFound
+        }
+    }
+    
+    enum Error: Swift.Error, CustomLocalizedStringResourceConvertible {
+        case orderNotFound
+        
+        var localizedStringResource: LocalizedStringResource {
+            switch self {
+            case .orderNotFound:
+                return "Order not found"
+            }
+        }
+    }
+}
+```
+
+## Testing App Intents
+
+### Testing in Xcode
+
+1. **Using Siri in Simulator**: Enable Siri in simulator settings (Hardware > Siri or use the keyboard shortcut)
+2. **Shortcuts App**: Open the Shortcuts app and search for your app's intents
+3. **Run Intent Directly**: Use the scheme editor to run specific intents
+
+### Programmatic Testing
+
+```swift
+import XCTest
+@testable import YourApp
+
+class OrderCoffeeIntentTests: XCTestCase {
+    func testOrderCoffeeIntent() async throws {
+        let intent = OrderCoffeeIntent()
+        intent.coffeeType = .latte
+        intent.size = .medium
+        
+        let result = try await intent.perform()
+        
+        // Verify the result
+        XCTAssertNotNil(result)
+    }
+    
+    func testMissingParameter() async throws {
+        let intent = OrderCoffeeIntent()
+        // Don't set coffeeType
+        
+        do {
+            _ = try await intent.perform()
+            XCTFail("Should have thrown an error")
+        } catch {
+            // Expected to fail
+            XCTAssertTrue(true)
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Handling Optional Parameters
+
+```swift
+// ❌ Wrong - Will crash if parameter is nil
+struct OrderCoffeeIntent: AppIntent {
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType?
+    
+    func perform() async throws -> some IntentResult {
+        let order = CoffeeOrder(type: coffeeType!) // Crash if nil
+        await CoffeeOrderManager.shared.placeOrder(order)
+        return .result(dialog: "Order placed!")
+    }
+}
+
+// ✅ Correct - Handle nil gracefully
+struct OrderCoffeeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Order Coffee"
+
+    @Parameter(title: "Coffee Type")
+    var coffeeType: CoffeeType?
+
+    func perform() async throws -> some IntentResult {
+        let type = coffeeType ?? .latte // Provide a sensible default
+        let order = CoffeeOrder(type: type)
+        await CoffeeOrderManager.shared.placeOrder(order)
+        return .result(dialog: "Order placed!")
+    }
+}
+```
+
+### Mistake 2: Not Testing with Siri
+
+Always test your phrases with actual Siri invocations. Text that looks clear may not be recognized by speech recognition.
+
+```swift
+// ❌ Phrases that are too generic or sound like system commands
+phrases: ["Do the thing", "Help me"]
+
+// ✅ Phrases that include your app name and are specific
+phrases: [
+    "Order coffee from \(.applicationName)",
+    "Get my usual from \(.applicationName)"
+]
+```
+
+### Mistake 3: Heavy Work in perform()
+
+```swift
+// ❌ Bad — intent may timeout with long operations
+func perform() async throws -> some IntentResult {
+    let image = try await downloadLargeImage() // May timeout
+    let processed = try await processImage(image)
+    return .result(dialog: "Done!")
+}
+
+// ✅ Good — open app for heavy work
+func perform() async throws -> some IntentResult & OpensIntent {
+    return .result(dialog: "Opening app to process...") {
+        // Deep link to processing screen
+    }
+}
+```
+
+### Edge Case: Intents in Widgets
+
+App Intents power interactive widgets (iOS 17+):
+
+```swift
+import AppIntents
+import WidgetKit
+
+struct ToggleFavoriteIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Favorite"
+
+    @Parameter(title: "Shop ID")
+    var shopID: String
+
+    func perform() async throws -> some IntentResult {
+        await FavoritesManager.shared.toggle(shopID: shopID)
+
+        // Reload widget timeline after the action
+        WidgetCenter.shared.reloadAllTimelines()
+
+        return .result()
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **App Intent** | `AppIntent` protocol | Define a discrete action |
+| **App Entity** | `AppEntity` protocol | Data objects intents work with |
+| **App Enum** | `AppEnum` protocol | Enumeration parameters |
+| **App Shortcut** | `AppShortcutsProvider` | Predefined Siri phrases |
+| **Parameter** | `@Parameter` property wrapper | Customizable intent inputs |
+| **Entity Query** | `EntityQuery` protocol | Fetch and suggest entities |
+| **Dialog result** | `.result(dialog:)` | Spoken/visual response |
+| **Value result** | `ReturnsValue<T>` | Return data for Shortcuts chains |
+| **Confirmation** | `requestConfirmation()` | Ask before destructive actions |
+| **Background run** | `openAppWhenRun = false` | Execute without opening app |
+| **Parameter summary** | `ParameterSummary` | Customize Shortcuts display |
+| **Widget integration** | Intent in widget button | Interactive widgets (iOS 17+) |
+
+## Official Resources
+
+- [Apple Documentation: App Intents](https://developer.apple.com/documentation/appintents)
+- [Apple Documentation: Making Actions Discoverable](https://developer.apple.com/documentation/appintents/making-actions-and-content-discoverable-and-widely-available)
+- [Apple Documentation: App Shortcuts](https://developer.apple.com/documentation/appintents/app-shortcuts)
+- [Apple: Siri and Shortcuts Design Guidelines](https://developer.apple.com/design/human-interface-guidelines/siri)
+- [WWDC 2023: Spotlight Your App with App Shortcuts](https://developer.apple.com/videos/play/wwdc2023/10102/)

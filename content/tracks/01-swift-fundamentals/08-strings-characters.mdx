@@ -1,0 +1,538 @@
+---
+title: "Strings & Characters"
+description: "String interpolation, Unicode, substrings, and manipulation"
+sectionId: "1.3-operators-strings"
+sectionTitle: "Operators & Strings"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Strings & Characters in Swift
+
+Strings are one of Swift's most powerful and complex types. Unlike simpler languages where strings are just arrays of characters, Swift strings are Unicode-correct by default, meaning they handle emoji, international characters, and complex scripts properly from the start. This sophistication comes with some quirks that developers new to Swift need to understand.
+
+## Why Strings Matter in Swift
+
+In iOS development, you'll work with strings constantly: user input, API responses, UI labels, file paths, and more. Swift's `String` type is designed to be:
+
+- **Unicode-correct**: Properly handles all human languages and emoji
+- **Value type**: Strings are copied on assignment (with copy-on-write optimization)
+- **Safe**: Index operations prevent common buffer overflow errors
+
+The tradeoff is that Swift strings don't support simple integer indexing like `string[5]`. This guide will show you the right way to work with strings in Swift.
+
+## Creating and Initializing Strings
+
+```swift
+// String literals
+let simple = "Hello, World!"
+let multiline = """
+    This is a multiline string.
+    It preserves line breaks.
+    Leading indentation is removed based on closing quotes.
+    """
+
+// Empty strings
+let empty1 = ""
+let empty2 = String()
+
+// Check if empty
+if simple.isEmpty {
+    print("String is empty")
+}
+
+// From other types
+let number = String(42)
+let boolean = String(true)
+let array = String(describing: [1, 2, 3])
+```
+
+## String Interpolation
+
+String interpolation lets you embed expressions directly into string literals using `\()`:
+
+```swift
+let name = "Alice"
+let age = 30
+let greeting = "Hello, \(name)! You are \(age) years old."
+// "Hello, Alice! You are 30 years old."
+
+// Works with expressions
+let price = 29.99
+let message = "Total: $\(price * 1.08)" // "Total: $32.3892"
+
+// Format numbers properly
+let formatted = String(format: "Total: $%.2f", price * 1.08)
+// "Total: $32.39"
+
+// Custom string interpolation (Swift 5.0+)
+extension String.StringInterpolation {
+    mutating func appendInterpolation(currency value: Double) {
+        let formatted = String(format: "%.2f", value)
+        appendLiteral("$\(formatted)")
+    }
+}
+
+let total = "Your total is \(currency: 45.678)"
+// "Your total is $45.68"
+```
+
+## Characters and Unicode
+
+Swift treats characters as extended grapheme clusters, which means what you see as "one character" is treated as one `Character`:
+
+```swift
+// Single characters
+let char: Character = "A"
+let emoji: Character = "😀"
+let flag: Character = "🇺🇸" // Single character, multiple Unicode scalars
+
+// Iterate over characters
+let word = "Hello"
+for character in word {
+    print(character) // H, e, l, l, o
+}
+
+// Count characters (not bytes!)
+let simple = "Hello"
+print(simple.count) // 5
+
+let complex = "Hello👋🏽"
+print(complex.count) // 6 (emoji with skin tone is ONE character)
+
+// Access character at position
+let firstChar = word.first // Optional<Character>: "H"
+let lastChar = word.last // Optional<Character>: "o"
+```
+
+### Unicode Scalars and Normalization
+
+```swift
+// Different Unicode representations can be equivalent
+let eAcute1 = "\u{E9}" // é (precomposed)
+let eAcute2 = "\u{65}\u{301}" // é (e + combining acute accent)
+
+print(eAcute1 == eAcute2) // true - Swift normalizes for comparison
+print(eAcute1.count) // 1
+print(eAcute2.count) // 1 (both treated as single character)
+
+// But byte counts differ
+print(eAcute1.utf8.count) // 2
+print(eAcute2.utf8.count) // 3
+
+// Access Unicode scalar values when needed
+let cafe = "café"
+for scalar in cafe.unicodeScalars {
+    print("\(scalar.value) - \(scalar)")
+}
+// 99 - c, 97 - a, 102 - f, 233 - é
+```
+
+## String Indices
+
+Swift strings cannot be indexed with integers. You must use `String.Index`:
+
+```swift
+let text = "Swift"
+
+// Get indices
+let startIndex = text.startIndex
+let endIndex = text.endIndex // One past the last character
+
+// First character
+let first = text[startIndex] // "S"
+
+// Second character
+let secondIndex = text.index(after: startIndex)
+let second = text[secondIndex] // "w"
+
+// Character at offset
+let thirdIndex = text.index(startIndex, offsetBy: 2)
+let third = text[thirdIndex] // "i"
+
+// Last character
+let lastIndex = text.index(before: endIndex)
+let last = text[lastIndex] // "t"
+
+// Safe access with bounds checking
+if let index = text.index(startIndex, offsetBy: 10, limitedBy: endIndex) {
+    print(text[index])
+} else {
+    print("Index out of bounds") // This executes
+}
+```
+
+**Common mistake**: Trying to use integer subscripts will result in a compile error:
+
+```swift
+let text = "Swift"
+let char = text[0] // ❌ ERROR: Cannot subscript String with Int
+```
+
+## Substrings
+
+When you slice a string, Swift returns a `Substring`, not a `String`. This is for performance—substrings share storage with the original string.
+
+```swift
+let original = "Hello, World!"
+let startIndex = original.startIndex
+let comma = original.firstIndex(of: ",")!
+
+// Create substring
+let hello: Substring = original[startIndex..<comma]
+print(hello) // "Hello"
+print(type(of: hello)) // Substring
+
+// Substrings share storage with original string
+// Convert to String to create independent copy
+let independent = String(hello)
+print(type(of: independent)) // String
+```
+
+**Important**: If you need to store a substring long-term, convert it to `String`. Otherwise, the substring keeps the entire original string in memory:
+
+```swift
+func extractFirstWord(from text: String) -> String {
+    let words = text.split(separator: " ")
+    // ❌ Bad: returns Substring, keeps entire text in memory
+    // return words.first ?? ""
+    
+    // ✅ Good: convert to String
+    return words.first.map(String.init) ?? ""
+}
+```
+
+## Common String Operations
+
+### Concatenation and Modification
+
+```swift
+var mutable = "Hello"
+mutable += " World" // "Hello World"
+mutable.append("!") // "Hello World!"
+mutable.append(contentsOf: " Welcome") // "Hello World! Welcome"
+
+// Join arrays
+let words = ["Swift", "is", "awesome"]
+let sentence = words.joined(separator: " ")
+// "Swift is awesome"
+```
+
+### Searching and Matching
+
+```swift
+let text = "The quick brown fox"
+
+// Contains
+if text.contains("quick") {
+    print("Found it")
+}
+
+// Prefix and suffix
+text.hasPrefix("The") // true
+text.hasSuffix("fox") // true
+
+// Find first occurrence
+if let range = text.firstIndex(of: "q") {
+    print(text[range]) // "q"
+}
+
+// Find substring
+if let range = text.range(of: "brown") {
+    let found = text[range] // "brown"
+    print(found)
+}
+
+// Case-insensitive search
+let range = text.range(of: "QUICK", options: .caseInsensitive)
+
+// Regular expressions (iOS 16+)
+if let regex = try? Regex("[0-9]+") {
+    let testString = "I have 42 apples"
+    if let match = testString.firstMatch(of: regex) {
+        print(match.0) // "42"
+    }
+}
+
+// Legacy NSRegularExpression (pre-iOS 16)
+let pattern = "[0-9]+"
+if let regex = try? NSRegularExpression(pattern: pattern) {
+    let testString = "I have 42 apples"
+    let range = NSRange(testString.startIndex..., in: testString)
+    if let match = regex.firstMatch(in: testString, range: range) {
+        if let matchRange = Range(match.range, in: testString) {
+            print(testString[matchRange]) // "42"
+        }
+    }
+}
+```
+
+### Replacing and Removing
+
+```swift
+var text = "Hello, World!"
+
+// Replace substring
+text = text.replacingOccurrences(of: "World", with: "Swift")
+// "Hello, Swift!"
+
+// Remove by range
+if let comma = text.firstIndex(of: ",") {
+    text.remove(at: comma)
+    // "Hello Swift!"
+}
+
+// Remove prefix/suffix
+var greeting = "Hello, World!"
+if greeting.hasPrefix("Hello, ") {
+    greeting.removeFirst(7) // "World!"
+}
+
+// Remove all instances
+var spaced = "H e l l o"
+spaced.removeAll(where: { $0 == " " })
+// "Hello"
+```
+
+### Splitting
+
+```swift
+let csv = "apple,banana,orange"
+let fruits = csv.split(separator: ",")
+// [Substring("apple"), Substring("banana"), Substring("orange")]
+
+// Limit number of splits
+let limited = csv.split(separator: ",", maxSplits: 1)
+// [Substring("apple"), Substring("banana,orange")]
+
+// Split by whitespace (handles multiple spaces)
+let sentence = "The  quick   brown"
+let words = sentence.split(separator: " ")
+// [Substring("The"), Substring("quick"), Substring("brown")]
+
+// Components (from Foundation)
+import Foundation
+let components = csv.components(separatedBy: ",")
+// [String("apple"), String("banana"), String("orange")]
+```
+
+### Case Conversion
+
+```swift
+let mixed = "Hello, World!"
+
+mixed.uppercased() // "HELLO, WORLD!"
+mixed.lowercased() // "hello, world!"
+mixed.capitalized // "Hello, World!" (capitalizes first letter of each word)
+
+// Locale-aware (Turkish 'i' problem)
+let turkish = "istanbul"
+print(turkish.uppercased()) // "ISTANBUL"
+print(turkish.uppercased(with: Locale(identifier: "tr"))) // "İSTANBUL"
+```
+
+### Trimming Whitespace
+
+```swift
+let padded = "  Hello, World!  \n"
+
+// Trim whitespace and newlines
+let trimmed = padded.trimmingCharacters(in: .whitespacesAndNewlines)
+// "Hello, World!"
+
+// Custom character set
+let brackets = "[Hello]"
+let cleaned = brackets.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+// "Hello"
+```
+
+## Edge Cases and Common Mistakes
+
+### 1. String Index Arithmetic
+
+```swift
+let emoji = "👨‍👩‍👧‍👦" // Family emoji (single character!)
+print(emoji.count) // 1
+
+// ❌ Wrong: Assuming character count equals visible characters
+let wrongIndex = emoji.index(emoji.startIndex, offsetBy: 1, limitedBy: emoji.endIndex)
+// wrongIndex is nil because there's only 1 character!
+
+// ✅ Right: Always check bounds
+if let index = emoji.index(emoji.startIndex, offsetBy: 1, limitedBy: emoji.endIndex) {
+    print(emoji[index])
+} else {
+    print("Index out of range")
+}
+```
+
+### 2. Substring Memory Leaks
+
+```swift
+// ❌ Memory leak: substring keeps entire original in memory
+class UserProfile {
+    let firstName: Substring
+    
+    init(fullName: String) {
+        self.firstName = fullName.split(separator: " ").first!
+        // If fullName is "John Doe...[1MB of data]", all 1MB stays in memory
+    }
+}
+
+// ✅ Fixed: Convert to String
+class UserProfile {
+    let firstName: String
+    
+    init(fullName: String) {
+        self.firstName = String(fullName.split(separator: " ").first!)
+        // Only "John" is stored, original can be deallocated
+    }
+}
+```
+
+### 3. String Comparison
+
+```swift
+// Basic equality works as expected
+"hello" == "hello" // true
+
+// But be careful with case
+"hello" == "Hello" // false
+
+// Case-insensitive comparison
+"hello".caseInsensitiveCompare("Hello") == .orderedSame // true
+
+// Locale-aware comparison
+"café".compare("cafe") // .orderedDescending
+
+// Sort strings properly
+let names = ["Émile", "Alice", "Zoë", "Bob"]
+let sorted = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+// ["Alice", "Bob", "Émile", "Zoë"]
+```
+
+### 4. String Mutability and Value Semantics
+
+```swift
+var original = "Hello"
+var copy = original
+
+copy.append(" World")
+
+print(original) // "Hello" (unchanged due to value semantics)
+print(copy) // "Hello World"
+
+// But be aware of reference types containing strings
+class Container {
+    var text: String
+    init(_ text: String) { self.text = text }
+}
+
+let container1 = Container("Hello")
+let container2 = container1 // Same reference!
+container2.text = "Goodbye"
+print(container1.text) // "Goodbye" (shared reference)
+```
+
+### 5. Empty String Checks
+
+```swift
+let empty = ""
+let whitespace = "   "
+
+// Check for empty
+empty.isEmpty // true
+whitespace.isEmpty // false!
+
+// Check for empty or whitespace
+whitespace.trimmingCharacters(in: .whitespaces).isEmpty // true
+
+// Better: Create an extension
+extension String {
+    var isBlank: Bool {
+        return self.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+whitespace.isBlank // true
+```
+
+## Performance Considerations
+
+```swift
+// ❌ Inefficient: String concatenation in loop creates many intermediate strings
+var result = ""
+for i in 1...1000 {
+    result += String(i) + ","
+}
+
+// ✅ Efficient: Use array and join
+let numbers = (1...1000).map(String.init)
+let result = numbers.joined(separator: ",")
+
+// ✅ Also efficient: Use string interpolation or append (copy-on-write)
+var result = ""
+result.reserveCapacity(10000) // Preallocate if you know approximate size
+for i in 1...1000 {
+    result.append(String(i))
+    result.append(",")
+}
+```
+
+## Working with Foundation
+
+Many iOS APIs use Foundation's `NSString`. Swift's `String` bridges automatically:
+
+```swift
+import Foundation
+
+let swift = "Hello, World!"
+
+// Automatic bridging to NSString
+let ns = swift as NSString
+let range = ns.range(of: "World")
+print(range.location) // 7
+
+// NSString methods available on String
+let path = "/Users/alice/documents/file.txt"
+let filename = (path as NSString).lastPathComponent // "file.txt"
+let directory = (path as NSString).deletingLastPathComponent
+// "/Users/alice/documents"
+
+// Encoding
+if let data = swift.data(using: .utf8) {
+    print(data.count) // Byte count
+}
+
+// URL encoding
+let query = "Hello, World!".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+// "Hello,%20World!"
+```
+
+## Summary Reference Table
+
+| Operation | Syntax | Notes |
+|-----------|--------|-------|
+| **Creation** | `let s = "text"` | String literals |
+| **Multiline** | `"""..."""` | Preserves line breaks |
+| **Interpolation** | `"Value: \(x)"` | Embeds expressions |
+| **Empty check** | `s.isEmpty` | Returns `Bool` |
+| **Character count** | `s.count` | Unicode-aware |
+| **Concatenation** | `s1 + s2` or `s.append(x)` | Creates new string or mutates |
+| **Contains** | `s.contains("x")` | Case-sensitive |
+| **Prefix/Suffix** | `s.hasPrefix("x")` | Returns `Bool` |
+| **Replace** | `s.replacingOccurrences(of:with:)` | Returns new string |
+| **Split** | `s.split(separator: " ")` | Returns `[Substring]` |
+| **Trim** | `s.trimmingCharacters(in:)` | Requires Foundation |
+| **Uppercase** | `s.uppercased()` | Returns new string |
+| **Lowercase** | `s.lowercased()` | Returns new string |
+| **First char** | `s.first` | Returns `Optional<Character>` |
+| **Index access** | `s[s.startIndex]` | Cannot use integer subscript |
+| **Substring** | `s[range]` | Returns `Substring`, not `String` |
+
+## Official Resources
+
+- [Apple Documentation: Strings and Characters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters/)
+- [Swift Standard Library: String](https://developer.apple.com/documentation/swift/string)

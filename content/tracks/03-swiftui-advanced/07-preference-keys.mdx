@@ -1,0 +1,487 @@
+---
+title: "PreferenceKey & Anchors"
+description: "Communicating up the view hierarchy with PreferenceKey"
+sectionId: "3.3-custom-views"
+sectionTitle: "Custom Views & Graphics"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# PreferenceKey & Anchors: Communicating Up the View Hierarchy
+
+## What Are PreferenceKeys and Why Do They Matter?
+
+In SwiftUI, data typically flows downward through the view hierarchy—parents pass data to children via initializers and environment values. But what if a child view needs to communicate information back up to its parent or ancestor? This is where `PreferenceKey` comes in.
+
+**PreferenceKey** is a protocol that allows child views to pass data upward through the view hierarchy. Common use cases include:
+
+- Reporting a view's size or position to a parent
+- Collecting data from multiple child views
+- Synchronizing scroll positions across views
+- Building custom navigation or layout systems
+
+**Anchors** work hand-in-hand with PreferenceKeys, providing a way to reference geometric properties of views (like bounds, size, or position) without calculating them manually.
+
+## Understanding PreferenceKey
+
+### The Basics
+
+A PreferenceKey requires two things:
+
+1. A `Value` type that will be passed up the hierarchy
+2. A `reduce(value:nextValue:)` method that combines multiple values
+
+Here's the simplest example:
+
+```swift
+struct MaxHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+```
+
+### How to Use PreferenceKey
+
+A child view sets a preference value using `.preference(key:value:)`:
+
+```swift
+struct ChildView: View {
+    var body: some View {
+        Text("Hello, World!")
+            .background(GeometryReader { geometry in
+                Color.clear
+                    .preference(key: MaxHeightPreferenceKey.self, 
+                               value: geometry.size.height)
+            })
+    }
+}
+```
+
+A parent view reads this value using `.onPreferenceChange(key:perform:)`:
+
+```swift
+struct ParentView: View {
+    @State private var maxHeight: CGFloat = 0
+    
+    var body: some View {
+        VStack {
+            ChildView()
+            ChildView()
+            Text("Max height: \(maxHeight)")
+        }
+        .onPreferenceChange(MaxHeightPreferenceKey.self) { value in
+            maxHeight = value
+        }
+    }
+}
+```
+
+## Working with Anchors
+
+Anchors provide a way to reference a view's geometry without immediately resolving it to concrete values. This is crucial for comparing positions across different coordinate spaces.
+
+### Anchor Types
+
+SwiftUI provides several anchor types:
+
+- `Anchor<CGRect>` - for bounds
+- `Anchor<CGPoint>` - for specific points
+- `Anchor<UnitPoint>` - for relative positions
+
+### Using Anchors with PreferenceKey
+
+Here's a practical example that reports a view's bounds:
+
+```swift
+struct BoundsPreferenceKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>?
+    
+    static func reduce(value: inout Anchor<CGRect>?, 
+                      nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+struct ChildWithBounds: View {
+    var body: some View {
+        Text("Track my position")
+            .padding()
+            .background(Color.blue)
+            .anchorPreference(key: BoundsPreferenceKey.self,
+                            value: .bounds) { $0 }
+    }
+}
+```
+
+To read the anchor value, use `.overlayPreferenceValue` or `.backgroundPreferenceValue`:
+
+```swift
+struct ContainerView: View {
+    var body: some View {
+        ZStack {
+            ChildWithBounds()
+            
+            Color.clear
+                .overlayPreferenceValue(BoundsPreferenceKey.self) { anchor in
+                    GeometryReader { geometry in
+                        if let anchor = anchor {
+                            let rect = geometry[anchor]
+                            Rectangle()
+                                .stroke(Color.red, lineWidth: 2)
+                                .frame(width: rect.width, height: rect.height)
+                                .position(x: rect.midX, y: rect.midY)
+                        }
+                    }
+                }
+        }
+    }
+}
+```
+
+## Practical Example: Dynamic Tab Bar
+
+Let's build a custom tab bar that highlights the selected tab with an animated indicator:
+
+```swift
+struct TabPositionKey: PreferenceKey {
+    static var defaultValue: [Int: Anchor<CGRect>] = [:]
+    
+    static func reduce(value: inout [Int: Anchor<CGRect>], 
+                      nextValue: () -> [Int: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+struct CustomTabBar: View {
+    @State private var selectedTab = 0
+    let tabs = ["Home", "Search", "Profile"]
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            
+            // Content area
+            Text("Tab \(selectedTab) selected")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // Tab bar
+            HStack {
+                ForEach(tabs.indices, id: \.self) { index in
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedTab = index
+                        }
+                    }) {
+                        Text(tabs[index])
+                            .foregroundColor(selectedTab == index ? .blue : .gray)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                    }
+                    .anchorPreference(key: TabPositionKey.self,
+                                    value: .bounds) { [index: $0] }
+                }
+            }
+            .overlayPreferenceValue(TabPositionKey.self) { anchors in
+                GeometryReader { geometry in
+                    if let anchor = anchors[selectedTab] {
+                        let rect = geometry[anchor]
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.blue)
+                            .frame(width: rect.width, height: 2)
+                            .position(x: rect.midX, y: rect.maxY)
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## Collecting Multiple Values
+
+When you need to collect values from multiple children, the `reduce` function combines them:
+
+```swift
+struct ViewSizePreferenceKey: PreferenceKey {
+    static var defaultValue: [CGSize] = []
+    
+    static func reduce(value: inout [CGSize], nextValue: () -> [CGSize]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+struct MultipleChildrenExample: View {
+    @State private var sizes: [CGSize] = []
+    
+    var body: some View {
+        VStack {
+            ForEach(0..<3) { index in
+                Text("Item \(index)")
+                    .padding(CGFloat(index + 1) * 10)
+                    .background(Color.blue.opacity(0.3))
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: ViewSizePreferenceKey.self,
+                            value: [geometry.size]
+                        )
+                    })
+            }
+            
+            Text("Collected \(sizes.count) sizes")
+        }
+        .onPreferenceChange(ViewSizePreferenceKey.self) { sizes = $0 }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### 1. Forgetting the GeometryReader Context
+
+**Wrong:**
+```swift
+Text("Hello")
+    .preference(key: MaxHeightPreferenceKey.self, value: 100) // Hardcoded value
+```
+
+**Right:**
+```swift
+Text("Hello")
+    .background(GeometryReader { geometry in
+        Color.clear.preference(key: MaxHeightPreferenceKey.self, 
+                              value: geometry.size.height)
+    })
+```
+
+### 2. Not Using `.frame()` with GeometryReader
+
+When using GeometryReader in `.background`, it can affect layout. Always be explicit:
+
+```swift
+Text("Hello")
+    .background(
+        GeometryReader { geometry in
+            Color.clear.preference(key: MaxHeightPreferenceKey.self,
+                                  value: geometry.size.height)
+        }
+        .frame(width: 0, height: 0) // Don't affect layout
+    )
+```
+
+### 3. Incorrect Reduce Function
+
+The `reduce` function must handle combining values correctly:
+
+**Wrong:**
+```swift
+static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = nextValue() // Overwrites, doesn't combine
+}
+```
+
+**Right:**
+```swift
+static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue()) // Properly combines
+}
+```
+
+### 4. Resolving Anchors in the Wrong Coordinate Space
+
+Always resolve anchors using the GeometryReader that has access to the coordinate space you need:
+
+```swift
+// The GeometryReader provides the coordinate space
+.overlayPreferenceValue(BoundsPreferenceKey.self) { anchor in
+    GeometryReader { geometry in
+        if let anchor = anchor {
+            let rect = geometry[anchor] // Resolved here
+            // Use rect...
+        }
+    }
+}
+```
+
+### 5. State Update Timing
+
+Preference changes may not trigger immediately. If you need synchronous updates, consider using `@State` carefully:
+
+```swift
+@State private var height: CGFloat = 0
+
+var body: some View {
+    VStack {
+        childView
+    }
+    .onPreferenceChange(MaxHeightPreferenceKey.self) { newHeight in
+        // This runs asynchronously
+        self.height = newHeight
+    }
+}
+```
+
+## Advanced: Transforming Anchor Data
+
+You can transform anchor values before passing them up:
+
+```swift
+struct CenterPointKey: PreferenceKey {
+    static var defaultValue: CGPoint?
+    
+    static func reduce(value: inout CGPoint?, nextValue: () -> CGPoint?) {
+        value = value ?? nextValue()
+    }
+}
+
+struct TransformAnchorExample: View {
+    var body: some View {
+        Text("Center me")
+            .anchorPreference(key: CenterPointKey.self, value: .bounds) { anchor in
+                // We don't have access to geometry here, so return nil
+                // We'll transform it when reading
+                nil
+            }
+            .backgroundPreferenceValue(CenterPointKey.self) { _ in
+                GeometryReader { geometry in
+                    Color.clear.anchorPreference(
+                        key: CenterPointKey.self,
+                        value: .bounds
+                    ) { anchor in
+                        let rect = geometry[anchor]
+                        return CGPoint(x: rect.midX, y: rect.midY)
+                    }
+                }
+            }
+    }
+}
+```
+
+## Performance Considerations
+
+PreferenceKeys are evaluated during the layout phase, which means:
+
+1. **Minimize complexity** in `reduce` functions—they may be called frequently
+2. **Avoid heavy computations** in preference callbacks
+3. **Be careful with arrays**—collecting many items can impact performance
+4. **Use conditional preference reading**—only read preferences where needed
+
+```swift
+// Good: Only observe when needed
+.onPreferenceChange(MyKey.self) { value in
+    if someCondition {
+        processValue(value)
+    }
+}
+
+// Consider: Throttling updates for frequently changing values
+.onPreferenceChange(MyKey.self) { value in
+    Task {
+        try? await Task.sleep(nanoseconds: 16_000_000) // ~60fps
+        await MainActor.run {
+            self.value = value
+        }
+    }
+}
+```
+
+## Real-World Use Case: Scroll-to-View
+
+Here's a complete example showing how to scroll to a specific view:
+
+```swift
+struct ScrollToViewKey: PreferenceKey {
+    static var defaultValue: [String: Anchor<CGRect>] = [:]
+    
+    static func reduce(value: inout [String: Anchor<CGRect>], 
+                      nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+struct ScrollToViewExample: View {
+    @State private var scrollTarget: String?
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 20) {
+                    ForEach(0..<20) { index in
+                        Text("Item \(index)")
+                            .frame(height: 100)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.blue.opacity(0.3))
+                            .id(index)
+                            .anchorPreference(
+                                key: ScrollToViewKey.self,
+                                value: .bounds
+                            ) { ["item_\(index)": $0] }
+                    }
+                }
+                .backgroundPreferenceValue(ScrollToViewKey.self) { anchors in
+                    GeometryReader { geometry in
+                        Color.clear.onChange(of: scrollTarget) { target in
+                            if let target = target,
+                               let anchor = anchors[target] {
+                                let rect = geometry[anchor]
+                                withAnimation {
+                                    proxy.scrollTo(
+                                        Int(target.replacingOccurrences(
+                                            of: "item_", with: "")),
+                                        anchor: .center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                Button("Scroll to Item 15") {
+                    scrollTarget = "item_15"
+                }
+                .padding()
+                .background(Color.white)
+                .cornerRadius(8)
+                .shadow(radius: 4)
+                .padding()
+            }
+        }
+    }
+}
+```
+
+## Documentation References
+
+Apple's official documentation provides additional details:
+
+- [PreferenceKey Protocol](https://developer.apple.com/documentation/swiftui/preferencekey)
+- [Anchor Type](https://developer.apple.com/documentation/swiftui/anchor)
+- [View.preference(key:value:)](https://developer.apple.com/documentation/swiftui/view/preference(key:value:))
+- [View.onPreferenceChange(_:perform:)](https://developer.apple.com/documentation/swiftui/view/onpreferencechange(_:perform:))
+- [View.anchorPreference(key:value:transform:)](https://developer.apple.com/documentation/swiftui/view/anchorpreference(key:value:transform:))
+
+## Summary Table
+
+| Concept | Purpose | Key Method | When to Use |
+|---------|---------|------------|-------------|
+| **PreferenceKey** | Pass data from child to parent | `preference(key:value:)` | When child needs to report state upward (sizes, selections, flags) |
+| **onPreferenceChange** | React to preference value changes | `onPreferenceChange(_:perform:)` | When parent needs to respond to child data |
+| **Anchor** | Reference to view geometry | `anchorPreference(key:value:transform:)` | When you need position/bounds in parent's coordinate space |
+| **overlayPreferenceValue** | Read and visualize anchors | `overlayPreferenceValue(_:_:)` | When drawing overlays based on child positions |
+| **backgroundPreferenceValue** | Read anchors for backgrounds | `backgroundPreferenceValue(_:_:)` | When drawing backgrounds based on child positions |
+| **reduce function** | Combine multiple preference values | `reduce(value:nextValue:)` | Every PreferenceKey must implement this |
+
+### Quick Decision Guide
+
+- **Need to pass simple data up?** → Use `PreferenceKey` with `.preference()`
+- **Need to track view positions?** → Use `Anchor` with `.anchorPreference()`
+- **Need to collect from multiple children?** → Implement `reduce` to combine values
+- **Need to overlay based on child positions?** → Use `.overlayPreferenceValue()`
+- **Performance concerns?** → Minimize `reduce` complexity and use conditional observation
+
+PreferenceKeys and Anchors are powerful tools that enable sophisticated layout and coordination in SwiftUI. While they add complexity, they're

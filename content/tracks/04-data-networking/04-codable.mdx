@@ -1,0 +1,610 @@
+---
+title: "Codable Protocol"
+description: "Encoding and decoding JSON with Codable, CodingKeys, and custom strategies"
+sectionId: "4.2-json-codable"
+sectionTitle: "JSON & Codable"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Codable Protocol in Swift
+
+## What is Codable and Why Should You Care?
+
+`Codable` is Swift's type-safe protocol for converting your custom types to and from external representations like JSON or Property Lists. It's actually a type alias for two protocols: `Encodable` (for converting Swift types to data) and `Decodable` (for converting data to Swift types).
+
+```swift
+typealias Codable = Decodable & Encodable
+```
+
+Before `Codable` (introduced in Swift 4), parsing JSON required manual dictionary manipulation with type casting, optional unwrapping, and lots of boilerplate code. `Codable` eliminates most of this drudgery by leveraging Swift's type system and compiler magic.
+
+**Why it matters:**
+- Most iOS apps communicate with web APIs using JSON
+- `Codable` reduces boilerplate by 90%+ compared to manual parsing
+- Compile-time safety catches errors before runtime
+- Built-in support from Foundation types (`JSONEncoder`, `JSONDecoder`)
+
+## Basic Usage
+
+Let's start with the simplest case: a struct that matches your JSON structure exactly.
+
+```swift
+struct User: Codable {
+    let id: Int
+    let name: String
+    let email: String
+}
+
+let json = """
+{
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com"
+}
+""".data(using: .utf8)!
+
+// Decoding JSON to Swift object
+let decoder = JSONDecoder()
+let user = try decoder.decode(User.self, from: json)
+print(user.name) // "John Doe"
+
+// Encoding Swift object to JSON
+let encoder = JSONEncoder()
+encoder.outputFormatting = .prettyPrinted
+let encodedData = try encoder.encode(user)
+print(String(data: encodedData, encoding: .utf8)!)
+```
+
+**Key points:**
+- Property names must match JSON keys exactly (case-sensitive)
+- All properties must themselves be `Codable`
+- You get `init(from:)` and `encode(to:)` implementations automatically
+
+## Handling Mismatched Property Names with CodingKeys
+
+Real-world APIs often use naming conventions that don't match Swift style (like snake_case vs camelCase).
+
+```swift
+struct Article: Codable {
+    let id: Int
+    let title: String
+    let createdAt: Date
+    let authorName: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case createdAt = "created_at"
+        case authorName = "author_name"
+    }
+}
+
+let json = """
+{
+    "id": 42,
+    "title": "Understanding Codable",
+    "created_at": "2024-01-15T10:30:00Z",
+    "author_name": "Jane Smith"
+}
+""".data(using: .utf8)!
+```
+
+**Important:** If you define `CodingKeys`, you must include ALL properties you want to decode, even those with matching names. To exclude a property from encoding/decoding entirely, simply omit it from `CodingKeys`.
+
+```swift
+struct Product: Codable {
+    let id: Int
+    let name: String
+    var localCache: String? // Won't be encoded/decoded
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        // localCache is omitted
+    }
+}
+```
+
+## Date and Data Encoding Strategies
+
+Dates and binary data have multiple representation formats. `JSONDecoder` and `JSONEncoder` provide strategies to handle them.
+
+### Date Strategies
+
+```swift
+struct Event: Codable {
+    let name: String
+    let timestamp: Date
+}
+
+let json = """
+{
+    "name": "Conference",
+    "timestamp": 1705320600
+}
+""".data(using: .utf8)!
+
+let decoder = JSONDecoder()
+
+// Strategy 1: Unix timestamp (seconds since 1970)
+decoder.dateDecodingStrategy = .secondsSince1970
+
+// Strategy 2: Milliseconds since 1970
+decoder.dateDecodingStrategy = .millisecondsSince1970
+
+// Strategy 3: ISO8601 string
+decoder.dateDecodingStrategy = .iso8601
+
+// Strategy 4: Custom format
+let formatter = DateFormatter()
+formatter.dateFormat = "yyyy-MM-dd"
+decoder.dateDecodingStrategy = .formatted(formatter)
+
+// Strategy 5: Custom decoding logic
+decoder.dateDecodingStrategy = .custom { decoder in
+    let container = try decoder.singleValueContainer()
+    let dateString = try container.decode(String.self)
+    // Your custom parsing logic here
+    return Date()
+}
+```
+
+**Common mistake:** Forgetting to set the same strategy on both encoder and decoder, leading to round-trip failures.
+
+```swift
+let encoder = JSONEncoder()
+encoder.dateEncodingStrategy = .iso8601 // Must match decoder strategy
+
+let decoder = JSONDecoder()
+decoder.dateDecodingStrategy = .iso8601
+```
+
+### Data Strategies
+
+```swift
+struct ImagePayload: Codable {
+    let filename: String
+    let data: Data
+}
+
+let encoder = JSONEncoder()
+
+// Base64 encoding (default)
+encoder.dataEncodingStrategy = .base64
+
+// Custom strategy
+encoder.dataEncodingStrategy = .custom { data, encoder in
+    var container = encoder.singleValueContainer()
+    try container.encode(data.base64EncodedString())
+}
+```
+
+## Handling Optional and Missing Values
+
+```swift
+struct Profile: Codable {
+    let username: String
+    let bio: String?           // Optional: can be null or missing
+    let age: Int               // Required: must be present
+    let verified: Bool = false // Default value if missing
+}
+
+// This works - bio is optional
+let json1 = """
+{
+    "username": "alice",
+    "age": 30
+}
+""".data(using: .utf8)!
+
+let decoder = JSONDecoder()
+let profile = try decoder.decode(Profile.self, from: json1)
+print(profile.bio) // nil
+print(profile.verified) // false
+```
+
+**Important distinction:** 
+- Optional properties (`String?`) allow `null` or missing keys
+- Properties with default values work only if the key is missing (not if it's `null`)
+
+```swift
+// This fails - null is not the same as missing
+let json2 = """
+{
+    "username": "bob",
+    "age": 25,
+    "verified": null
+}
+""".data(using: .utf8)!
+
+// Error: Expected Bool but found null
+// let profile2 = try decoder.decode(Profile.self, from: json2)
+```
+
+## Custom Encoding and Decoding
+
+Sometimes automatic synthesis isn't enough. You can implement custom logic while still leveraging `Codable`.
+
+```swift
+struct Temperature: Codable {
+    let celsius: Double
+    
+    // Computed property
+    var fahrenheit: Double {
+        celsius * 9/5 + 32
+    }
+    
+    // Store in JSON as fahrenheit, but use celsius internally
+    enum CodingKeys: String, CodingKey {
+        case fahrenheit
+    }
+    
+    init(celsius: Double) {
+        self.celsius = celsius
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fahrenheit = try container.decode(Double.self, forKey: .fahrenheit)
+        self.celsius = (fahrenheit - 32) * 5/9
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fahrenheit, forKey: .fahrenheit)
+    }
+}
+```
+
+### Decoding Nested JSON
+
+```swift
+struct APIResponse: Codable {
+    let users: [User]
+    let metadata: Metadata
+    
+    struct Metadata: Codable {
+        let page: Int
+        let total: Int
+    }
+}
+
+let json = """
+{
+    "users": [
+        {"id": 1, "name": "Alice", "email": "alice@example.com"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com"}
+    ],
+    "metadata": {
+        "page": 1,
+        "total": 100
+    }
+}
+""".data(using: .utf8)!
+
+let response = try JSONDecoder().decode(APIResponse.self, from: json)
+```
+
+### Flattening Nested JSON
+
+Sometimes you want to flatten a nested JSON structure:
+
+```swift
+struct OrderedProduct: Codable {
+    let id: Int
+    let name: String
+    let price: Double
+    
+    enum CodingKeys: String, CodingKey {
+        case product
+        case id, name, price
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let productContainer = try container.nestedContainer(
+            keyedBy: CodingKeys.self,
+            forKey: .product
+        )
+        
+        id = try productContainer.decode(Int.self, forKey: .id)
+        name = try productContainer.decode(String.self, forKey: .name)
+        price = try productContainer.decode(Double.self, forKey: .price)
+    }
+}
+
+let json = """
+{
+    "product": {
+        "id": 123,
+        "name": "Laptop",
+        "price": 999.99
+    }
+}
+""".data(using: .utf8)!
+```
+
+## Handling Polymorphic JSON
+
+When JSON can contain different types based on a discriminator field:
+
+```swift
+enum MediaType: String, Codable {
+    case image
+    case video
+}
+
+struct Media: Codable {
+    let type: MediaType
+    let url: String
+    let duration: Int? // Only for video
+    let dimensions: String? // Only for image
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(MediaType.self, forKey: .type)
+        url = try container.decode(String.self, forKey: .url)
+        
+        switch type {
+        case .video:
+            duration = try container.decode(Int.self, forKey: .duration)
+            dimensions = nil
+        case .image:
+            dimensions = try container.decode(String.self, forKey: .dimensions)
+            duration = nil
+        }
+    }
+}
+```
+
+For complex polymorphic scenarios, consider using an enum with associated values:
+
+```swift
+enum Content: Codable {
+    case text(String)
+    case image(url: String, width: Int, height: Int)
+    case video(url: String, duration: Int)
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text, url, width, height, duration
+    }
+    
+    enum ContentType: String, Codable {
+        case text, image, video
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(ContentType.self, forKey: .type)
+        
+        switch type {
+        case .text:
+            let text = try container.decode(String.self, forKey: .text)
+            self = .text(text)
+        case .image:
+            let url = try container.decode(String.self, forKey: .url)
+            let width = try container.decode(Int.self, forKey: .width)
+            let height = try container.decode(Int.self, forKey: .height)
+            self = .image(url: url, width: width, height: height)
+        case .video:
+            let url = try container.decode(String.self, forKey: .url)
+            let duration = try container.decode(Int.self, forKey: .duration)
+            self = .video(url: url, duration: duration)
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        switch self {
+        case .text(let text):
+            try container.encode(ContentType.text, forKey: .type)
+            try container.encode(text, forKey: .text)
+        case .image(let url, let width, let height):
+            try container.encode(ContentType.image, forKey: .type)
+            try container.encode(url, forKey: .url)
+            try container.encode(width, forKey: .width)
+            try container.encode(height, forKey: .height)
+        case .video(let url, let duration):
+            try container.encode(ContentType.video, forKey: .type)
+            try container.encode(url, forKey: .url)
+            try container.encode(duration, forKey: .duration)
+        }
+    }
+}
+```
+
+## Key Name Conversion Strategies
+
+Instead of manually mapping every property with `CodingKeys`, use automatic conversion:
+
+```swift
+struct UserProfile: Codable {
+    let firstName: String
+    let lastName: String
+    let emailAddress: String
+}
+
+let json = """
+{
+    "first_name": "John",
+    "last_name": "Doe",
+    "email_address": "john@example.com"
+}
+""".data(using: .utf8)!
+
+let decoder = JSONDecoder()
+decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+let profile = try decoder.decode(UserProfile.self, from: json)
+print(profile.firstName) // "John"
+
+// For encoding
+let encoder = JSONEncoder()
+encoder.keyEncodingStrategy = .convertToSnakeCase
+```
+
+Available strategies:
+- `.useDefaultKeys` - Exact match (default)
+- `.convertFromSnakeCase` / `.convertToSnakeCase`
+- `.custom` - Your own conversion logic
+
+```swift
+decoder.keyDecodingStrategy = .custom { keys in
+    let key = keys.last!
+    // Convert to uppercase
+    return CustomCodingKey(stringValue: key.stringValue.uppercased())
+}
+
+struct CustomCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+    
+    init(stringValue: String) {
+        self.stringValue = stringValue
+    }
+    
+    init?(intValue: Int) {
+        return nil
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Assuming Properties Are Immutable
+
+```swift
+// This works
+struct MutableUser: Codable {
+    var name: String // var, not let
+}
+
+var user = try decoder.decode(MutableUser.self, from: json)
+user.name = "Updated Name" // OK
+```
+
+### Mistake 2: Force Unwrapping Decoder Output
+
+```swift
+// ❌ Bad - crashes on invalid JSON
+let user = try! decoder.decode(User.self, from: json)
+
+// ✅ Good - handle errors gracefully
+do {
+    let user = try decoder.decode(User.self, from: json)
+    print(user)
+} catch let DecodingError.dataCorrupted(context) {
+    print("Data corrupted: \(context.debugDescription)")
+} catch let DecodingError.keyNotFound(key, context) {
+    print("Key '\(key)' not found: \(context.debugDescription)")
+} catch let DecodingError.typeMismatch(type, context) {
+    print("Type mismatch for type \(type): \(context.debugDescription)")
+} catch let DecodingError.valueNotFound(type, context) {
+    print("Value not found for type \(type): \(context.debugDescription)")
+} catch {
+    print("Decoding error: \(error)")
+}
+```
+
+### Mistake 3: Mixing Optional and Non-Optional Incorrectly
+
+```swift
+struct Config: Codable {
+    let apiKey: String
+    let timeout: Int?
+}
+
+// Works - timeout is optional
+let json1 = """
+{"apiKey": "abc123"}
+""".data(using: .utf8)!
+
+// Fails - apiKey is required
+let json2 = """
+{"timeout": 30}
+""".data(using: .utf8)!
+```
+
+### Edge Case: Decoding Arrays with Invalid Elements
+
+By default, one invalid element fails the entire array:
+
+```swift
+let json = """
+[
+    {"id": 1, "name": "Alice"},
+    {"id": "invalid", "name": 123},
+    {"id": 2, "name": "Bob"}
+]
+""".data(using: .utf8)!
+
+// This fails because element 2 is invalid
+// let users = try JSONDecoder().decode([User].self, from: json) // throws
+```
+
+To skip invalid elements, decode each individually:
+
+```swift
+struct LossyArray<T: Codable>: Codable {
+    let elements: [T]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var elements: [T] = []
+
+        while !container.isAtEnd {
+            if let element = try? container.decode(T.self) {
+                elements.append(element)
+            } else {
+                // Skip the invalid element
+                _ = try? container.decode(AnyCodable.self)
+            }
+        }
+
+        self.elements = elements
+    }
+}
+
+// Helper to skip any decodable value
+private struct AnyCodable: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { return }
+        if let _ = try? container.decode(Bool.self) { return }
+        if let _ = try? container.decode(Int.self) { return }
+        if let _ = try? container.decode(Double.self) { return }
+        if let _ = try? container.decode(String.self) { return }
+    }
+
+    func encode(to encoder: Encoder) throws {}
+}
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose | Example |
+|---------|--------|---------|---------|
+| **Basic Codable** | `struct T: Codable` | Auto JSON mapping | `try JSONDecoder().decode(T.self, from: data)` |
+| **CodingKeys** | `enum CodingKeys: String, CodingKey` | Map JSON keys to properties | `case createdAt = "created_at"` |
+| **Exclude property** | Omit from `CodingKeys` | Skip encoding/decoding | Don't list `localCache` in enum |
+| **Date strategy** | `decoder.dateDecodingStrategy` | Handle date formats | `.iso8601`, `.secondsSince1970`, `.formatted()` |
+| **Snake case** | `decoder.keyDecodingStrategy` | Auto key conversion | `.convertFromSnakeCase` |
+| **Optional fields** | `Type?` property | Handle null/missing values | `let bio: String?` |
+| **Custom decoding** | `init(from decoder:)` | Full control over parsing | Temperature conversion, flattening |
+| **Nested JSON** | Nested `Codable` structs | Map nested structures | `struct APIResponse { let users: [User] }` |
+| **Polymorphic** | Enum with associated values | Different types by discriminator | `case text(String)`, `case image(url:width:height:)` |
+| **Error handling** | `DecodingError` cases | Diagnose parse failures | `.keyNotFound`, `.typeMismatch`, `.dataCorrupted` |
+| **Lossy arrays** | Custom container decoding | Skip invalid elements | Decode each element with `try?` |
+
+## Official Resources
+
+- [Swift Language Guide: Encoding and Decoding Custom Types](https://developer.apple.com/documentation/foundation/archives_and_serialization/encoding_and_decoding_custom_types)
+- [Apple Documentation: Codable](https://developer.apple.com/documentation/swift/codable)
+- [Apple Documentation: JSONDecoder](https://developer.apple.com/documentation/foundation/jsondecoder)
+- [Apple Documentation: JSONEncoder](https://developer.apple.com/documentation/foundation/jsonencoder)
+- [Swift Evolution: SE-0166 Swift Archival & Serialization](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md)

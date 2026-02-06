@@ -1,0 +1,566 @@
+---
+title: "App Updates & Versioning"
+description: "Semantic versioning, phased releases, and backward compatibility"
+sectionId: "7.4-post-launch"
+sectionTitle: "Post-Launch"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Updates & Versioning
+
+When you publish an iOS app, you're not just shipping code once—you're entering a long-term relationship with your users. App updates and versioning are the mechanisms that allow you to improve your app over time while maintaining trust and stability. Getting this right means your users get new features smoothly, while getting it wrong can break their experience or erode confidence in your app.
+
+In this guide, we'll cover semantic versioning principles, how iOS apps handle version numbers, strategies for phased releases, and how to maintain backward compatibility as your app evolves.
+
+## Why Versioning Matters
+
+Every time you submit an update to the App Store, you're answering three critical questions:
+
+1. **What changed?** (Communicated through version numbers)
+2. **Will this break existing functionality?** (Backward compatibility)
+3. **How do we roll this out safely?** (Phased releases)
+
+Poor versioning can lead to confusion, broken apps for users who haven't updated, and difficult-to-debug issues in production.
+
+## Understanding Version Numbers in iOS
+
+iOS apps have two distinct version identifiers defined in your project settings or `Info.plist`:
+
+- **CFBundleShortVersionString** (Marketing Version): The public-facing version number users see (e.g., "1.2.3")
+- **CFBundleVersion** (Build Number): A unique identifier for each build submitted to App Store Connect (e.g., "42")
+
+```swift
+// Accessing version information in code
+if let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+    print("App Version: \(appVersion)")
+}
+
+if let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+    print("Build Number: \(buildNumber)")
+}
+```
+
+### Marketing Version vs Build Number
+
+The **marketing version** is what users see and should follow semantic versioning. The **build number** must be monotonically increasing—each submission to App Store Connect requires a unique, higher build number than the previous one.
+
+```swift
+// Example: Creating a version comparison utility
+struct AppVersion {
+    let marketing: String  // "2.1.0"
+    let build: String      // "147"
+    
+    static var current: AppVersion {
+        let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        return AppVersion(marketing: marketing, build: build)
+    }
+    
+    var displayString: String {
+        return "\(marketing) (\(build))"
+    }
+}
+
+// Usage
+print("Running version: \(AppVersion.current.displayString)")
+// Output: "Running version: 2.1.0 (147)"
+```
+
+## Semantic Versioning
+
+Semantic versioning (SemVer) uses a three-part number scheme: **MAJOR.MINOR.PATCH** (e.g., 2.3.1). This communicates the nature of changes to your users and fellow developers.
+
+- **MAJOR** (2.0.0): Breaking changes, incompatible API changes
+- **MINOR** (1.3.0): New features, backward compatible
+- **PATCH** (1.2.4): Bug fixes, backward compatible
+
+```swift
+struct SemanticVersion: Comparable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    
+    init(_ versionString: String) {
+        let components = versionString.split(separator: ".").compactMap { Int($0) }
+        self.major = components.count > 0 ? components[0] : 0
+        self.minor = components.count > 1 ? components[1] : 0
+        self.patch = components.count > 2 ? components[2] : 0
+    }
+    
+    var string: String {
+        return "\(major).\(minor).\(patch)"
+    }
+    
+    static func < (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
+        if lhs.major != rhs.major { return lhs.major < rhs.major }
+        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        return lhs.patch < rhs.patch
+    }
+    
+    static func == (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
+        return lhs.major == rhs.major && 
+               lhs.minor == rhs.minor && 
+               lhs.patch == rhs.patch
+    }
+}
+
+// Usage
+let current = SemanticVersion("2.1.0")
+let required = SemanticVersion("2.0.0")
+
+if current >= required {
+    print("Version compatible")
+}
+```
+
+### When to Increment Each Number
+
+**MAJOR version** increments when you:
+- Remove or significantly change existing features
+- Require users to take action (like re-login)
+- Break compatibility with old data formats
+- Change minimum iOS version requirements significantly
+
+**MINOR version** increments when you:
+- Add new features
+- Add new API endpoints your app consumes
+- Deprecate (but don't remove) features
+- Make database schema changes that are backward compatible
+
+**PATCH version** increments when you:
+- Fix bugs
+- Make performance improvements
+- Update dependencies
+- Make minor UI adjustments
+
+## Checking App Versions at Runtime
+
+You often need to check versions to determine feature availability or migration requirements:
+
+```swift
+class VersionManager {
+    private let lastVersionKey = "LastRunAppVersion"
+    private let userDefaults = UserDefaults.standard
+    
+    var currentVersion: SemanticVersion {
+        let versionString = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        return SemanticVersion(versionString)
+    }
+    
+    var lastRunVersion: SemanticVersion? {
+        guard let versionString = userDefaults.string(forKey: lastVersionKey) else {
+            return nil
+        }
+        return SemanticVersion(versionString)
+    }
+    
+    func saveCurrentVersion() {
+        userDefaults.set(currentVersion.string, forKey: lastVersionKey)
+    }
+    
+    var isFirstLaunch: Bool {
+        return lastRunVersion == nil
+    }
+    
+    func isUpdatedFrom(_ version: SemanticVersion) -> Bool {
+        guard let lastVersion = lastRunVersion else { return false }
+        return currentVersion > lastVersion && lastVersion >= version
+    }
+}
+
+// Usage example in AppDelegate or SceneDelegate
+let versionManager = VersionManager()
+
+if versionManager.isFirstLaunch {
+    print("First launch - show onboarding")
+} else if let lastVersion = versionManager.lastRunVersion {
+    if versionManager.currentVersion.major > lastVersion.major {
+        print("Major update - might need data migration")
+        performMajorVersionMigration()
+    } else if versionManager.isUpdatedFrom(SemanticVersion("2.0.0")) {
+        print("Updated from 2.0.0 or later")
+    }
+}
+
+versionManager.saveCurrentVersion()
+```
+
+## Backward Compatibility Strategies
+
+Backward compatibility ensures users on older versions can still use your app while new versions are being rolled out. This is critical for iOS apps because:
+
+- Users update at different times
+- You might maintain both old and new app versions simultaneously
+- Server APIs need to support multiple app versions
+
+### Data Persistence Compatibility
+
+When your data models evolve, you need strategies to handle both old and new formats:
+
+```swift
+// Bad: Breaks backward compatibility
+struct UserProfile: Codable {
+    let name: String
+    let email: String
+    let age: Int  // Added in v2.0 - will fail to decode old data!
+}
+
+// Good: Uses optional for new fields
+struct UserProfile: Codable {
+    let name: String
+    let email: String
+    let age: Int?  // Optional - won't break decoding old data
+    
+    // Provide sensible defaults
+    var displayAge: Int {
+        return age ?? 0
+    }
+}
+
+// Better: Handle migration explicitly
+struct UserProfile: Codable {
+    let name: String
+    let email: String
+    let age: Int
+    let profileVersion: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case name, email, age, profileVersion
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        email = try container.decode(String.self, forKey: .email)
+        
+        // Try to decode age, provide default if missing
+        age = try container.decodeIfPresent(Int.self, forKey: .age) ?? 18
+        
+        // Track which version of the model this is
+        profileVersion = try container.decodeIfPresent(Int.self, forKey: .profileVersion) ?? 1
+        
+        // If old version, perform migration
+        if profileVersion < 2 {
+            // Migration logic here
+        }
+    }
+}
+```
+
+### API Versioning
+
+When communicating with a backend, your app should indicate its version:
+
+```swift
+class APIClient {
+    private let baseURL = "https://api.example.com"
+    private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    
+    func makeRequest(endpoint: String) async throws -> Data {
+        guard let url = URL(string: "\(baseURL)/\(endpoint)") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        
+        // Send app version in headers
+        request.setValue(appVersion, forHTTPHeaderField: "X-App-Version")
+        request.setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-iOS-Version")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // Check if server indicates version is unsupported
+        if let httpResponse = response as? HTTPURLResponse,
+           httpResponse.statusCode == 426 {  // Upgrade Required
+            throw APIError.versionUnsupported
+        }
+        
+        return data
+    }
+}
+
+enum APIError: Error {
+    case versionUnsupported
+}
+```
+
+### Feature Flags for Gradual Rollouts
+
+Feature flags allow you to enable features gradually, even within a single app version:
+
+```swift
+class FeatureFlags {
+    static let shared = FeatureFlags()
+    
+    private let appVersion = SemanticVersion(
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    )
+    
+    // Local feature flags
+    private var localFlags: [String: Bool] = [:]
+    
+    // Remote feature flags (fetched from server)
+    private var remoteFlags: [String: Any] = [:]
+    
+    func isEnabled(_ feature: String) -> Bool {
+        // Check remote flags first (can override local)
+        if let remoteValue = remoteFlags[feature] as? Bool {
+            return remoteValue
+        }
+        
+        // Check local flags
+        if let localValue = localFlags[feature] {
+            return localValue
+        }
+        
+        // Default to false
+        return false
+    }
+    
+    func enableFeatureForVersion(_ feature: String, minimumVersion: String) -> Bool {
+        let required = SemanticVersion(minimumVersion)
+        return appVersion >= required
+    }
+    
+    func updateRemoteFlags(_ flags: [String: Any]) {
+        remoteFlags = flags
+    }
+}
+
+// Usage
+extension FeatureFlags {
+    var newCheckoutFlow: Bool {
+        enableFeatureForVersion("new_checkout", minimumVersion: "2.1.0")
+    }
+    
+    var experimentalAIFeatures: Bool {
+        isEnabled("ai_features")  // Controlled remotely
+    }
+}
+
+// In your view controller
+if FeatureFlags.shared.newCheckoutFlow {
+    // Use new checkout
+    presentNewCheckout()
+} else {
+    // Use legacy checkout
+    presentLegacyCheckout()
+}
+```
+
+## Handling Forced Updates
+
+Sometimes you need to force users to update (security vulnerabilities, critical bugs, deprecated APIs):
+
+```swift
+class UpdateManager {
+    private let apiClient = APIClient()
+    
+    struct VersionRequirements: Codable {
+        let minimumVersion: String
+        let recommendedVersion: String
+        let forceUpdate: Bool
+        let updateMessage: String
+    }
+    
+    func checkForRequiredUpdate() async throws -> VersionRequirements? {
+        let data = try await apiClient.makeRequest(endpoint: "version/requirements")
+        return try JSONDecoder().decode(VersionRequirements.self, from: data)
+    }
+    
+    func showUpdateAlertIfNeeded() async {
+        guard let requirements = try? await checkForRequiredUpdate() else {
+            return
+        }
+        
+        let currentVersion = SemanticVersion(
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        )
+        let minimumVersion = SemanticVersion(requirements.minimumVersion)
+        
+        if currentVersion < minimumVersion {
+            await showUpdateAlert(
+                message: requirements.updateMessage,
+                forced: requirements.forceUpdate
+            )
+        }
+    }
+    
+    @MainActor
+    private func showUpdateAlert(message: String, forced: Bool) async {
+        let alert = UIAlertController(
+            title: "Update Required",
+            message: message,
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Update Now", style: .default) { _ in
+            if let appStoreURL = URL(string: "https://apps.apple.com/app/idYOUR_APP_ID") {
+                UIApplication.shared.open(appStoreURL)
+            }
+        })
+        
+        if !forced {
+            alert.addAction(UIAlertAction(title: "Later", style: .cancel))
+        }
+        
+        // Present on root view controller
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = scene.windows.first?.rootViewController {
+            rootVC.present(alert, animated: true)
+        }
+    }
+}
+```
+
+## Phased Releases
+
+Apple offers phased releases that automatically roll out updates to a percentage of users over 7 days. This is enabled in App Store Connect and happens automatically.
+
+### Benefits of Phased Releases
+
+- **Early detection**: Catch issues with a small user percentage
+- **Rollback capability**: You can halt the release if problems occur
+- **Reduced server load**: Backend services scale gradually
+- **User experience**: Not all users face issues simultaneously
+
+### Monitoring During Phased Releases
+
+```swift
+class AnalyticsManager {
+    static let shared = AnalyticsManager()
+    
+    func trackAppVersion() {
+        let version = AppVersion.current
+        
+        // Track version distribution
+        logEvent("app_version", parameters: [
+            "marketing_version": version.marketing,
+            "build_number": version.build,
+            "ios_version": UIDevice.current.systemVersion
+        ])
+    }
+    
+    func trackCriticalError(_ error: Error, context: String) {
+        let version = AppVersion.current
+        
+        logEvent("critical_error", parameters: [
+            "error_description": error.localizedDescription,
+            "context": context,
+            "app_version": version.marketing,
+            "build_number": version.build
+        ])
+        
+        // In production, send to your analytics service
+        print("Critical error in \(version.displayString): \(error)")
+    }
+    
+    private func logEvent(_ name: String, parameters: [String: Any]) {
+        // Implement with your analytics SDK (Firebase, Mixpanel, etc.)
+        print("Event: \(name), Parameters: \(parameters)")
+    }
+}
+```
+
+## Database Migration Strategies
+
+As your app evolves, your data model will change. Core Data and other persistence frameworks need careful migration:
+
+```swift
+import CoreData
+
+class PersistenceManager {
+    static let shared = PersistenceManager()
+    
+    lazy var persistentContainer: NSPersistentContainer = {
+        let container = NSPersistentContainer(name: "MyApp")
+        
+        // Enable automatic lightweight migration
+        let description = container.persistentStoreDescriptions.first
+        description?.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+        description?.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
+
+        container.loadPersistentStores { description, error in
+            if let error = error {
+                // In production, log this and attempt recovery
+                print("Core Data failed to load: \(error.localizedDescription)")
+            }
+        }
+
+        return container
+    }()
+}
+```
+
+### UserDefaults Migration
+
+For simpler data stored in UserDefaults:
+
+```swift
+class UserDefaultsMigrator {
+    private let currentSchemaVersion = 3
+    private let schemaVersionKey = "userDefaultsSchemaVersion"
+
+    func migrateIfNeeded() {
+        let savedVersion = UserDefaults.standard.integer(forKey: schemaVersionKey)
+
+        guard savedVersion < currentSchemaVersion else { return }
+
+        if savedVersion < 2 {
+            migrateToV2()
+        }
+
+        if savedVersion < 3 {
+            migrateToV3()
+        }
+
+        UserDefaults.standard.set(currentSchemaVersion, forKey: schemaVersionKey)
+    }
+
+    private func migrateToV2() {
+        // Rename key from old format to new
+        if let oldValue = UserDefaults.standard.string(forKey: "user_name") {
+            UserDefaults.standard.set(oldValue, forKey: "userName")
+            UserDefaults.standard.removeObject(forKey: "user_name")
+        }
+    }
+
+    private func migrateToV3() {
+        // Convert stored format
+        if let legacyDate = UserDefaults.standard.string(forKey: "lastSync") {
+            let formatter = ISO8601DateFormatter()
+            if let date = formatter.date(from: legacyDate) {
+                UserDefaults.standard.set(date, forKey: "lastSyncDate")
+                UserDefaults.standard.removeObject(forKey: "lastSync")
+            }
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Implementation | Purpose |
+|---------|---------------|---------|
+| **Marketing version** | `CFBundleShortVersionString` | User-visible version (e.g., "2.1.0") |
+| **Build number** | `CFBundleVersion` | Unique build identifier |
+| **Semantic versioning** | MAJOR.MINOR.PATCH | Communicate change scope |
+| **Version comparison** | `SemanticVersion` struct with `Comparable` | Compare app versions at runtime |
+| **Version tracking** | `VersionManager` with UserDefaults | Detect first launch and updates |
+| **Data migration** | Optional fields + `decodeIfPresent` | Backward-compatible Codable models |
+| **API versioning** | `X-App-Version` header | Server-side version support |
+| **Feature flags** | `FeatureFlags` with local/remote flags | Gradual feature rollout |
+| **Forced updates** | Server-driven minimum version check | Ensure critical updates |
+| **Phased releases** | App Store Connect setting | Gradual rollout to users |
+| **DB migration** | Lightweight Core Data migration | Evolve data models safely |
+
+## Official Resources
+
+- [Apple Documentation: CFBundleShortVersionString](https://developer.apple.com/documentation/bundleresources/information_property_list/cfbundleshortversionstring)
+- [Apple Documentation: CFBundleVersion](https://developer.apple.com/documentation/bundleresources/information_property_list/cfbundleversion)
+- [Apple Documentation: Core Data Migration](https://developer.apple.com/documentation/coredata/using_lightweight_migration)
+- [App Store Connect Help: Phased Releases](https://developer.apple.com/help/app-store-connect/update-your-app/release-a-version-update-in-phases)
+- [Semantic Versioning Specification](https://semver.org/)

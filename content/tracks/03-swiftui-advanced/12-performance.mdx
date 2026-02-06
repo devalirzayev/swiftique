@@ -1,0 +1,647 @@
+---
+title: "SwiftUI Performance"
+description: "Avoiding unnecessary redraws, Equatable views, and profiling"
+sectionId: "3.4-advanced-patterns"
+sectionTitle: "Advanced Patterns"
+order: 12
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# SwiftUI Performance: Optimizing Redraws and View Updates
+
+Performance optimization in SwiftUI centers around understanding when and why views redraw. Unlike UIKit where you manually update UI elements, SwiftUI automatically redraws views when their data changes. This automatic behavior is powerful but can lead to performance problems if you don't understand how it works.
+
+In this guide, you'll learn how to identify unnecessary redraws, optimize view updates using `Equatable`, and profile your SwiftUI apps to find bottlenecks.
+
+## Why SwiftUI Performance Matters
+
+SwiftUI's declarative nature means you describe what your UI should look like for a given state, and the framework handles updates. However, SwiftUI doesn't always know which parts of your view hierarchy actually need updating, so it may redraw more than necessary.
+
+Poor performance manifests as:
+- Laggy scrolling in lists
+- Delayed UI responses to user input
+- High CPU usage and battery drain
+- Dropped frames (animations running below 60fps)
+
+## Understanding View Updates
+
+SwiftUI views are structs that conform to the `View` protocol. When a view's dependencies change (like `@State`, `@Binding`, or `@ObservableObject` properties), SwiftUI re-evaluates the view's `body` property.
+
+```swift
+struct CounterView: View {
+    @State private var count = 0
+    
+    var body: some View {
+        // This entire body is re-evaluated when count changes
+        VStack {
+            Text("Count: \(count)")
+            Button("Increment") {
+                count += 1
+            }
+        }
+    }
+}
+```
+
+Every time `count` changes, SwiftUI calls `body` again. For simple views, this is negligible. For complex view hierarchies, it adds up.
+
+## Identifying Unnecessary Redraws
+
+Let's add logging to see when views redraw:
+
+```swift
+struct ParentView: View {
+    @State private var parentCounter = 0
+    
+    var body: some View {
+        let _ = print("ParentView body evaluated")
+        
+        VStack {
+            Text("Parent: \(parentCounter)")
+            Button("Increment Parent") {
+                parentCounter += 1
+            }
+            
+            ChildView(message: "Hello")
+        }
+    }
+}
+
+struct ChildView: View {
+    let message: String
+    
+    var body: some View {
+        let _ = print("ChildView body evaluated")
+        Text(message)
+    }
+}
+```
+
+When you tap "Increment Parent", you'll see:
+```
+ParentView body evaluated
+ChildView body evaluated
+```
+
+**The problem**: `ChildView` redraws even though `message` didn't change. SwiftUI conservatively redraws child views when their parent redraws.
+
+## Solution 1: Extract Subviews Strategically
+
+Breaking views into smaller pieces helps SwiftUI understand what needs updating:
+
+```swift
+struct OptimizedParentView: View {
+    @State private var parentCounter = 0
+    
+    var body: some View {
+        VStack {
+            ParentCounterDisplay(count: parentCounter)
+            Button("Increment Parent") {
+                parentCounter += 1
+            }
+            StaticChildView()
+        }
+    }
+}
+
+struct ParentCounterDisplay: View {
+    let count: Int
+    
+    var body: some View {
+        Text("Parent: \(count)")
+    }
+}
+
+struct StaticChildView: View {
+    var body: some View {
+        Text("I don't change")
+    }
+}
+```
+
+This helps, but `StaticChildView` still redraws when the parent does.
+
+## Solution 2: Equatable Views
+
+The `Equatable` protocol tells SwiftUI when a view has meaningfully changed. When a view conforms to `Equatable`, SwiftUI compares the old and new instances before redrawing.
+
+```swift
+struct ChildView: View, Equatable {
+    let message: String
+    let timestamp: Date
+    
+    var body: some View {
+        let _ = print("ChildView body evaluated")
+        VStack {
+            Text(message)
+            Text("Created: \(timestamp.formatted())")
+        }
+    }
+    
+    // SwiftUI uses this to compare view instances
+    static func == (lhs: ChildView, rhs: ChildView) -> Bool {
+        // Only redraw if message changes (ignore timestamp)
+        lhs.message == rhs.message
+    }
+}
+
+struct ParentView: View {
+    @State private var counter = 0
+    
+    var body: some View {
+        VStack {
+            Text("Parent: \(counter)")
+            Button("Increment") {
+                counter += 1
+            }
+            
+            // Use .equatable() modifier
+            ChildView(message: "Static", timestamp: Date())
+                .equatable()
+        }
+    }
+}
+```
+
+**Critical**: You must add the `.equatable()` modifier to enable the comparison. Without it, SwiftUI ignores your `Equatable` conformance.
+
+### Automatic Equatable Conformance
+
+If all properties in your view are `Equatable`, Swift can synthesize the comparison:
+
+```swift
+struct ProductCard: View, Equatable {
+    let name: String
+    let price: Double
+    let imageURL: URL
+    
+    // Swift automatically generates == comparing all properties
+    
+    var body: some View {
+        HStack {
+            AsyncImage(url: imageURL)
+            VStack {
+                Text(name)
+                Text("$\(price, specifier: "%.2f")")
+            }
+        }
+        .equatable()
+    }
+}
+```
+
+### Custom Equatable Logic
+
+Sometimes you need custom comparison logic:
+
+```swift
+struct UserProfile: View, Equatable {
+    let user: User
+    let lastUpdated: Date // Changes frequently, not relevant for display
+    
+    var body: some View {
+        VStack {
+            Text(user.name)
+            Text(user.email)
+        }
+    }
+    
+    static func == (lhs: UserProfile, rhs: UserProfile) -> Bool {
+        // Only compare user, ignore lastUpdated
+        lhs.user.id == rhs.user.id &&
+        lhs.user.name == rhs.user.name &&
+        lhs.user.email == rhs.user.email
+    }
+}
+```
+
+## Common Mistake: Closures in Equatable Views
+
+This is a frequent pitfall:
+
+```swift
+struct ButtonView: View, Equatable {
+    let title: String
+    let action: () -> Void // ❌ Closures are never Equatable
+    
+    var body: some View {
+        Button(title) {
+            action()
+        }
+    }
+    
+    static func == (lhs: ButtonView, rhs: ButtonView) -> Bool {
+        lhs.title == rhs.title
+        // Can't compare action closures!
+    }
+}
+```
+
+**Problem**: Closures don't conform to `Equatable`. Even if two closures do the same thing, Swift can't compare them.
+
+**Solution**: Don't include closures in equatable views, or use action-based patterns:
+
+```swift
+struct ButtonView: View, Equatable {
+    let title: String
+    let actionID: String // Unique identifier for the action
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(title) {
+            onTap()
+        }
+    }
+    
+    static func == (lhs: ButtonView, rhs: ButtonView) -> Bool {
+        lhs.title == rhs.title && lhs.actionID == rhs.actionID
+    }
+}
+```
+
+## Optimizing Lists and ForEach
+
+Lists are performance-critical. SwiftUI needs to identify each row uniquely:
+
+```swift
+struct Item: Identifiable {
+    let id: UUID
+    let name: String
+}
+
+struct ItemListView: View {
+    let items: [Item]
+    
+    var body: some View {
+        List(items) { item in
+            ItemRow(item: item)
+                .equatable()
+        }
+    }
+}
+
+struct ItemRow: View, Equatable {
+    let item: Item
+    
+    var body: some View {
+        Text(item.name)
+    }
+    
+    static func == (lhs: ItemRow, rhs: ItemRow) -> Bool {
+        lhs.item.id == rhs.item.id &&
+        lhs.item.name == rhs.item.name
+    }
+}
+```
+
+**Without `.equatable()`**, every row redraws when the list data changes, even if individual items haven't changed.
+
+### List Performance Anti-Pattern
+
+```swift
+struct SlowListView: View {
+    @State private var items = (1...1000).map { "Item \($0)" }
+    @State private var unrelatedCounter = 0
+    
+    var body: some View {
+        VStack {
+            Button("Increment (unrelated)") {
+                unrelatedCounter += 1
+            }
+            
+            // ❌ All 1000 items redraw when counter changes
+            List(items, id: \.self) { item in
+                ComplexItemView(name: item)
+            }
+        }
+    }
+}
+```
+
+**Fix**: Extract the list to its own view or make rows equatable:
+
+```swift
+struct OptimizedListView: View {
+    @State private var items = (1...1000).map { "Item \($0)" }
+    @State private var unrelatedCounter = 0
+    
+    var body: some View {
+        VStack {
+            Button("Increment (unrelated)") {
+                unrelatedCounter += 1
+            }
+            
+            ItemList(items: items)
+        }
+    }
+}
+
+struct ItemList: View {
+    let items: [String]
+    
+    var body: some View {
+        List(items, id: \.self) { item in
+            ComplexItemView(name: item)
+                .equatable()
+        }
+    }
+}
+
+struct ComplexItemView: View, Equatable {
+    let name: String
+    
+    var body: some View {
+        // Expensive rendering logic here
+        Text(name)
+    }
+}
+```
+
+## ObservableObject Performance
+
+`ObservableObject` classes can trigger widespread redraws:
+
+```swift
+class AppState: ObservableObject {
+    @Published var userName: String = ""
+    @Published var isDarkMode: Bool = false
+    @Published var unreadCount: Int = 0
+}
+
+struct ProfileView: View {
+    @ObservedObject var state: AppState
+    
+    var body: some View {
+        let _ = print("ProfileView redrawn")
+        Text("User: \(state.userName)")
+        // ⚠️ Redraws when ANY @Published property changes
+        // even though this view only uses userName
+    }
+}
+```
+
+**Problem**: This view redraws when `isDarkMode` or `unreadCount` change, even though it only displays `userName`.
+
+### Solution 1: Granular Observable Objects
+
+```swift
+class UserProfile: ObservableObject {
+    @Published var userName: String = ""
+}
+
+class AppSettings: ObservableObject {
+    @Published var isDarkMode: Bool = false
+}
+
+class NotificationState: ObservableObject {
+    @Published var unreadCount: Int = 0
+}
+
+struct ProfileView: View {
+    @ObservedObject var profile: UserProfile
+    // Now only redraws when userName changes
+    
+    var body: some View {
+        Text("User: \(profile.userName)")
+    }
+}
+```
+
+### Solution 2: Use @State for Derived Values
+
+```swift
+struct ProfileView: View {
+    @ObservedObject var state: AppState
+    @State private var displayName: String = ""
+    
+    var body: some View {
+        Text("User: \(displayName)")
+            .onAppear {
+                displayName = state.userName
+            }
+            .onChange(of: state.userName) { newValue in
+                displayName = newValue
+            }
+    }
+}
+```
+
+This is more complex but gives fine-grained control.
+
+### Solution 3: Observable Macro (iOS 17+)
+
+iOS 17 introduced the `@Observable` macro with better performance characteristics:
+
+```swift
+@Observable
+class AppState {
+    var userName: String = ""
+    var isDarkMode: Bool = false
+    var unreadCount: Int = 0
+}
+
+struct ProfileView: View {
+    var state: AppState
+    
+    var body: some View {
+        // Only redraws when userName changes
+        Text("User: \(state.userName)")
+    }
+}
+```
+
+The `@Observable` macro automatically tracks which properties each view uses and only triggers redraws when those specific properties change. This is a significant improvement over `ObservableObject`.
+
+## Profiling SwiftUI Performance
+
+Visual debugging helps identify performance issues:
+
+### Time Profiler
+
+1. Select **Product > Profile** in Xcode (or press Cmd+I)
+2. Choose **Time Profiler**
+3. Record while using your app
+4. Look for `body` computations taking significant time
+5. Filter by "SwiftUI" to focus on view updates
+
+### View Body Statistics
+
+Add this helper to measure body evaluation time:
+
+```swift
+struct PerformanceView<Content: View>: View {
+    let name: String
+    let content: Content
+    
+    init(name: String, @ViewBuilder content: () -> Content) {
+        self.name = name
+        self.content = content()
+    }
+    
+    var body: some View {
+        let start = CFAbsoluteTimeGetCurrent()
+        
+        return content
+            .onAppear {
+                let end = CFAbsoluteTimeGetCurrent()
+                let elapsed = (end - start) * 1000
+                print("\(name) took \(elapsed)ms")
+            }
+    }
+}
+
+// Usage
+struct MyView: View {
+    var body: some View {
+        PerformanceView(name: "MyView") {
+            // Your view content
+            Text("Hello")
+        }
+    }
+}
+```
+
+### SwiftUI View Inspector (Xcode 15+)
+
+Xcode 15+ includes runtime view inspection:
+
+1. Run your app in debug mode
+2. Click the view hierarchy inspector button
+3. Select a SwiftUI view
+4. Check the "Body Recomputation Count" in the inspector
+
+This shows how many times each view's body has been evaluated.
+
+## Edge Cases and Gotchas
+
+### 1. Equatable with Computed Properties
+
+```swift
+struct ExpensiveView: View, Equatable {
+    let data: [Int]
+    
+    var sum: Int {
+        data.reduce(0, +) // Computed every time
+    }
+    
+    var body: some View {
+        Text("Sum: \(sum)")
+    }
+    
+    static func == (lhs: ExpensiveView, rhs: ExpensiveView) -> Bool {
+        lhs.data == rhs.data
+    }
+}
+```
+
+**Issue**: Even with `Equatable`, computed properties recalculate during each body evaluation. Store expensive calculations:
+
+```swift
+struct OptimizedView: View, Equatable {
+    let data: [Int]
+    let sum: Int // Stored property
+    
+    init(data: [Int]) {
+        self.data = data
+        self.sum = data.reduce(0, +) // Calculate once
+    }
+    
+    var body: some View {
+        Text("Sum: \(sum)")
+    }
+}
+```
+
+### 2. Incorrect Equatable Implementation
+
+```swift
+struct BrokenView: View, Equatable {
+    @State private var internalState = 0
+    let externalData: String
+    
+    var body: some View {
+        VStack {
+            Text(externalData)
+            Text("Internal: \(internalState)")
+        }
+    }
+    
+    static func == (lhs: BrokenView, rhs: BrokenView) -> Bool {
+        // ❌ Doesn't compare @State properties
+        lhs.externalData == rhs.externalData
+    }
+}
+```
+
+**Issue**: `@State` properties aren't compared, potentially causing incorrect skip logic. Generally, don't make views with `@State` properties `Equatable`, or carefully consider what should trigger redraws.
+
+### 3. Struct Identity vs Value
+
+```swift
+struct Container: Equatable {
+    var items: [Item]
+}
+
+struct Item: Equatable {
+    let id: UUID
+    var name: String
+}
+
+// These are NOT equal even if contents match:
+let container1 = Container(items: [Item(id: UUID(), name: "Test")])
+let container2 = Container(items: [Item(id: UUID(), name: "Test")])
+// container1 != container2 (different UUIDs)
+```
+
+Each `UUID()` generates a unique value, so even identical-looking items are not equal. Use stable identifiers when comparing for equality.
+
+### 4. Over-Optimizing Simple Views
+
+Don't add `Equatable` conformance to views that are trivially cheap to redraw:
+
+```swift
+// ❌ Overkill - this view is so simple it doesn't need Equatable
+struct SimpleLabel: View, Equatable {
+    let text: String
+
+    var body: some View {
+        Text(text)
+    }
+}
+
+// ✅ Just use a regular view - SwiftUI handles this efficiently
+struct SimpleLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+    }
+}
+```
+
+Focus optimization efforts on views with expensive `body` computations, complex layouts, or many subviews.
+
+## Summary Table
+
+| Technique | When to Use | Key Benefit |
+|-----------|------------|-------------|
+| **Extract subviews** | Complex parent views | Isolates state dependencies |
+| **Equatable + .equatable()** | Expensive views with known comparison logic | Prevents unnecessary body evaluations |
+| **Granular ObservableObject** | Large shared state objects | Reduces scope of redraws |
+| **@Observable macro** | iOS 17+, any observable state | Automatic per-property tracking |
+| **Stored vs computed** | Expensive calculations | Avoids repeated computation |
+| **Stable identifiers** | Lists and ForEach | Correct diff and animation |
+| **Time Profiler** | Debugging slow frames | Identifies body evaluation hotspots |
+| **let _ = print()** | Development debugging | See when views redraw |
+
+> **Modern Alternative (iOS 17+):** The `@Observable` macro automatically provides per-property tracking, eliminating most `ObservableObject` performance issues. Views only redraw when properties they actually read change—no need for granular observable objects or manual optimization in most cases.
+
+## Official Resources
+
+- [Apple Documentation: Equatable Views](https://developer.apple.com/documentation/swiftui/view/equatable())
+- [Apple Documentation: Observable](https://developer.apple.com/documentation/observation/observable())
+- [WWDC 2023: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)
+- [WWDC 2021: Demystify SwiftUI](https://developer.apple.com/videos/play/wwdc2021/10022/)
+- [Apple Documentation: Instruments](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance)

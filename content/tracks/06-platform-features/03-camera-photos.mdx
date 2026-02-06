@@ -1,0 +1,651 @@
+---
+title: "Camera & PhotosPicker"
+description: "Capturing photos, PHPickerViewController, and image handling"
+sectionId: "6.1-system-frameworks"
+sectionTitle: "System Frameworks"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Camera & PhotosPicker in Swift/iOS Development
+
+Working with photos is a fundamental requirement for many iOS apps. Whether you're building a social media app, a profile editor, or a document scanner, you'll need to access the device camera and photo library. iOS provides robust APIs for both capturing new photos and selecting existing ones from the user's library.
+
+In this guide, we'll cover two main approaches: using `UIImagePickerController` for simple camera access and `PHPickerViewController` for modern photo library selection. We'll also explore image handling, permissions, and common pitfalls.
+
+## Why Camera and Photo Access Matter
+
+Users expect seamless integration with their device's camera and photo library. Getting this right means:
+
+- **Respecting privacy**: Proper permission handling builds trust
+- **Performance**: Handling images efficiently prevents memory issues
+- **User experience**: Native pickers provide familiar interfaces
+- **Flexibility**: Supporting both camera and library access gives users options
+
+## Understanding the Available APIs
+
+Apple provides several frameworks for working with photos:
+
+- **UIKit's UIImagePickerController**: Legacy API, simple but limited
+- **PhotosUI's PHPickerViewController**: Modern, privacy-focused picker (iOS 14+)
+- **AVFoundation**: Low-level camera control for custom experiences
+- **Photos framework**: Direct access to the photo library
+
+For most apps, `PHPickerViewController` combined with `UIImagePickerController` for camera access provides the best balance of simplicity and functionality.
+
+## Setting Up Permissions
+
+Before accessing the camera or photos, you must declare usage in your `Info.plist` file. Add these keys with user-friendly descriptions:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>We need camera access to take photos for your profile</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>We need access to your photos to select a profile picture</string>
+```
+
+**Important**: Starting with iOS 14, `PHPickerViewController` doesn't require photo library permissions for read access. This is a significant privacy improvement.
+
+## Using PHPickerViewController for Photo Selection
+
+`PHPickerViewController` is the modern way to let users select photos. It runs in a separate process, meaning your app never gets access to the full photo library—only the photos the user explicitly selects.
+
+### Basic Implementation
+
+```swift
+import PhotosUI
+import UIKit
+
+class PhotoPickerViewController: UIViewController {
+    
+    let imageView = UIImageView()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+    }
+    
+    func setupUI() {
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imageView)
+        
+        NSLayoutConstraint.activate([
+            imageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            imageView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.8),
+            imageView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.6)
+        ])
+        
+        let button = UIButton(type: .system)
+        button.setTitle("Select Photo", for: .normal)
+        button.addTarget(self, action: #selector(selectPhoto), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+        
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20)
+        ])
+    }
+    
+    @objc func selectPhoto() {
+        var configuration = PHPickerConfiguration()
+        configuration.selectionLimit = 1
+        configuration.filter = .images
+        
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+}
+
+extension PhotoPickerViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        
+        guard let result = results.first else { return }
+        
+        // Load the image
+        result.itemProvider.loadObject(ofClass: UIImage.self) { [weak self] object, error in
+            if let error = error {
+                print("Error loading image: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let image = object as? UIImage else { return }
+            
+            DispatchQueue.main.async {
+                self?.imageView.image = image
+            }
+        }
+    }
+}
+```
+
+### Configuring PHPickerConfiguration
+
+The `PHPickerConfiguration` object controls picker behavior:
+
+```swift
+var configuration = PHPickerConfiguration()
+
+// Limit number of selections (0 = unlimited)
+configuration.selectionLimit = 3
+
+// Filter media types
+configuration.filter = .images // Only images
+// configuration.filter = .videos // Only videos
+// configuration.filter = .any(of: [.images, .videos]) // Both
+
+// Preferred asset representation mode (iOS 15+)
+if #available(iOS 15, *) {
+    configuration.preferredAssetRepresentationMode = .current // Original format
+    // .compatible converts HEIC to JPEG, etc.
+}
+
+// Pre-selected assets (iOS 15+)
+if #available(iOS 15, *) {
+    configuration.preselectedAssetIdentifiers = ["existing-asset-id"]
+}
+
+// Photo library (default is shared library)
+configuration.photoLibrary = .shared()
+```
+
+### Handling Multiple Selections
+
+```swift
+extension PhotoPickerViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        
+        let group = DispatchGroup()
+        var images: [UIImage] = []
+        
+        for result in results {
+            group.enter()
+            
+            result.itemProvider.loadObject(ofClass: UIImage.self) { object, error in
+                defer { group.leave() }
+                
+                if let error = error {
+                    print("Error: \(error.localizedDescription)")
+                    return
+                }
+                
+                if let image = object as? UIImage {
+                    images.append(image)
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            // All images loaded
+            print("Loaded \(images.count) images")
+            // Update UI with images
+        }
+    }
+}
+```
+
+## Using UIImagePickerController for Camera Access
+
+While `PHPickerViewController` handles photo library selection, you still need `UIImagePickerController` for camera access.
+
+### Checking Camera Availability
+
+```swift
+import UIKit
+
+class CameraViewController: UIViewController {
+    
+    func checkCameraAccess() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            showAlert(message: "Camera not available on this device")
+            return
+        }
+        
+        let authStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        
+        switch authStatus {
+        case .authorized:
+            presentCamera()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.presentCamera()
+                    } else {
+                        self?.showAlert(message: "Camera access denied")
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showSettingsAlert()
+        @unknown default:
+            break
+        }
+    }
+    
+    func presentCamera() {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.cameraDevice = .rear
+        picker.allowsEditing = false
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+    
+    func showAlert(message: String) {
+        let alert = UIAlertController(
+            title: "Camera Access",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    func showSettingsAlert() {
+        let alert = UIAlertController(
+            title: "Camera Access Required",
+            message: "Please enable camera access in Settings",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Settings", style: .default) { _ in
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(settingsURL)
+            }
+        })
+        
+        present(alert, animated: true)
+    }
+}
+
+extension CameraViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true)
+        
+        // Get the captured image
+        if let image = info[.originalImage] as? UIImage {
+            // Process the image
+            handleCapturedImage(image)
+        } else if let editedImage = info[.editedImage] as? UIImage {
+            handleCapturedImage(editedImage)
+        }
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
+    }
+    
+    func handleCapturedImage(_ image: UIImage) {
+        // Save or display the image
+        print("Image captured: \(image.size)")
+    }
+}
+```
+
+### Enabling Image Editing
+
+```swift
+let picker = UIImagePickerController()
+picker.sourceType = .camera
+picker.allowsEditing = true
+picker.delegate = self
+
+// In delegate method, get edited image
+func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+    picker.dismiss(animated: true)
+    
+    // Prefer edited image if available
+    let image = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage
+    
+    if let finalImage = image {
+        // Use the image
+        imageView.image = finalImage
+    }
+}
+```
+
+## Efficient Image Handling
+
+Images can consume significant memory. Here are strategies for handling them efficiently:
+
+### Downsampling Large Images
+
+```swift
+import UIKit
+import ImageIO
+
+func downsample(imageAt imageURL: URL, to pointSize: CGSize, scale: CGFloat = UIScreen.main.scale) -> UIImage? {
+    let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else {
+        return nil
+    }
+    
+    let maxDimensionInPixels = max(pointSize.width, pointSize.height) * scale
+    
+    let downsampleOptions = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxDimensionInPixels
+    ] as CFDictionary
+    
+    guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
+        return nil
+    }
+    
+    return UIImage(cgImage: downsampledImage)
+}
+
+// Usage
+if let url = someImageURL {
+    let targetSize = CGSize(width: 300, height: 300)
+    let downsampledImage = downsample(imageAt: url, to: targetSize)
+    imageView.image = downsampledImage
+}
+```
+
+### Compressing Images for Upload
+
+```swift
+extension UIImage {
+    func compressForUpload(maxSizeKB: Int = 1024) -> Data? {
+        var compression: CGFloat = 1.0
+        let maxBytes = maxSizeKB * 1024
+        
+        guard var imageData = self.jpegData(compressionQuality: compression) else {
+            return nil
+        }
+        
+        // Reduce quality until size is acceptable
+        while imageData.count > maxBytes && compression > 0.1 {
+            compression -= 0.1
+            guard let compressedData = self.jpegData(compressionQuality: compression) else {
+                break
+            }
+            imageData = compressedData
+        }
+        
+        // If still too large, resize the image
+        if imageData.count > maxBytes {
+            let ratio = sqrt(CGFloat(maxBytes) / CGFloat(imageData.count))
+            let newSize = CGSize(
+                width: self.size.width * ratio,
+                height: self.size.height * ratio
+            )
+            return self.resized(to: newSize)?.jpegData(compressionQuality: 0.8)
+        }
+        
+        return imageData
+    }
+    
+    func resized(to targetSize: CGSize) -> UIImage? {
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+}
+
+// Usage
+if let compressedData = originalImage.compressForUpload(maxSizeKB: 500) {
+    // Upload compressedData
+    print("Compressed size: \(compressedData.count / 1024)KB")
+}
+```
+
+### Getting Image Data Efficiently
+
+```swift
+extension PhotoPickerViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        
+        guard let result = results.first else { return }
+        
+        // Option 1: Load as UIImage (loads full image into memory)
+        result.itemProvider.loadObject(ofClass: UIImage.self) { object, error in
+            if let image = object as? UIImage {
+                // Use image
+            }
+        }
+        
+        // Option 2: Load data representation (more control)
+        result.itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
+            guard let data = data, let image = UIImage(data: data) else { return }
+            // Use image
+        }
+        
+        // Option 3: Load file representation (best for large images)
+        result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { url, error in
+            guard let url = url else { return }
+            
+            // Copy to temporary location if needed
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(url.pathExtension)
+            
+            do {
+                try FileManager.default.copyItem(at: url, to: tempURL)
+                // Now process the file at tempURL
+                // Remember to delete it when done
+            } catch {
+                print("Error copying file: \(error)")
+            }
+        }
+    }
+}
+```
+
+## Saving Images to Photo Library
+
+To save images back to the photo library, you need write permissions.
+
+### Setting Up Save Permissions
+
+Add to `Info.plist`:
+
+```xml
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>We need permission to save photos to your library</string>
+```
+
+### Saving Images
+
+```swift
+import Photos
+
+class ImageSaver {
+    func saveImage(_ image: UIImage, completion: @escaping (Bool, Error?) -> Void) {
+        PHPhotoLibrary.requestAuthorization { status in
+            guard status == .authorized else {
+                DispatchQueue.main.async {
+                    completion(false, NSError(domain: "Permission denied", code: 403))
+                }
+                return
+            }
+            
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }) { success, error in
+                DispatchQueue.main.async {
+                    completion(success, error)
+                }
+            }
+        }
+    }
+}
+
+// Usage
+let saver = ImageSaver()
+saver.saveImage(myImage) { success, error in
+    if success {
+        print("Image saved successfully")
+    } else if let error = error {
+        print("Save error: \(error.localizedDescription)")
+    }
+}
+```
+
+## SwiftUI PhotosPicker (iOS 16+)
+
+Starting with iOS 16, SwiftUI includes a native `PhotosPicker` view that's even easier to use:
+
+```swift
+import SwiftUI
+import PhotosUI
+
+struct SwiftUIPhotoPickerView: View {
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var selectedImage: Image?
+
+    var body: some View {
+        VStack {
+            PhotosPicker(
+                selection: $selectedItem,
+                matching: .images,
+                photoLibrary: .shared()
+            ) {
+                Label("Select Photo", systemImage: "photo.on.rectangle")
+            }
+
+            if let selectedImage {
+                selectedImage
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 300)
+            }
+        }
+        .onChange(of: selectedItem) { newItem in
+            Task {
+                if let data = try? await newItem?.loadTransferable(type: Data.self),
+                   let uiImage = UIImage(data: data) {
+                    selectedImage = Image(uiImage: uiImage)
+                }
+            }
+        }
+    }
+}
+```
+
+### Multiple Selection with SwiftUI
+
+```swift
+struct MultiPhotoPickerView: View {
+    @State private var selectedItems: [PhotosPickerItem] = []
+    @State private var selectedImages: [Image] = []
+
+    var body: some View {
+        VStack {
+            PhotosPicker(
+                selection: $selectedItems,
+                maxSelectionCount: 5,
+                matching: .images
+            ) {
+                Text("Select Photos (max 5)")
+            }
+
+            ScrollView(.horizontal) {
+                HStack {
+                    ForEach(0..<selectedImages.count, id: \.self) { index in
+                        selectedImages[index]
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 100, height: 100)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+        }
+        .onChange(of: selectedItems) { newItems in
+            Task {
+                selectedImages = []
+                for item in newItems {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        selectedImages.append(Image(uiImage: uiImage))
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Handling Permission Denial Gracefully
+
+```swift
+// ❌ Bad — app crashes or shows nothing
+func openCamera() {
+    let picker = UIImagePickerController()
+    picker.sourceType = .camera // Crashes if no camera or no permission
+    present(picker, animated: true)
+}
+
+// ✅ Good — check availability and permission first
+func openCamera() {
+    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+        showAlert(message: "Camera not available")
+        return
+    }
+    checkCameraAccess() // Handles all permission states
+}
+```
+
+### Mistake 2: Loading Full-Size Images Into Memory
+
+```swift
+// ❌ Bad — 12MP photo uses ~48MB of memory
+let image = UIImage(contentsOfFile: path)
+imageView.image = image
+
+// ✅ Good — downsample to display size
+let thumbnail = downsample(imageAt: url, to: imageView.bounds.size)
+imageView.image = thumbnail
+```
+
+### Mistake 3: Not Handling the Simulator
+
+```swift
+// The iOS Simulator doesn't have a real camera
+#if targetEnvironment(simulator)
+    // Use photo library instead of camera for testing
+    picker.sourceType = .photoLibrary
+#else
+    picker.sourceType = .camera
+#endif
+```
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **PHPickerViewController** | `PHPickerConfiguration`, `PHPickerViewControllerDelegate` | Modern photo library picker (iOS 14+) |
+| **SwiftUI PhotosPicker** | `PhotosPicker(selection:matching:)` | Native SwiftUI photo picker (iOS 16+) |
+| **UIImagePickerController** | `.sourceType = .camera` | Camera access |
+| **Camera permission** | `AVCaptureDevice.requestAccess(for: .video)` | Request camera access |
+| **Photo save permission** | `NSPhotoLibraryAddUsageDescription` | Save to photo library |
+| **Downsampling** | `CGImageSourceCreateThumbnailAtIndex` | Memory-efficient image loading |
+| **Image compression** | `image.jpegData(compressionQuality:)` | Reduce image file size |
+| **Multiple selection** | `configuration.selectionLimit` | Allow multiple photo picks |
+| **File representation** | `loadFileRepresentation(forTypeIdentifier:)` | Efficient large image loading |
+| **Transferable** | `loadTransferable(type:)` | SwiftUI async image loading |
+
+## Official Resources
+
+- [Apple Documentation: PHPickerViewController](https://developer.apple.com/documentation/photokit/phpickerviewcontroller)
+- [Apple Documentation: PhotosPicker (SwiftUI)](https://developer.apple.com/documentation/photokit/photospicker)
+- [Apple Documentation: UIImagePickerController](https://developer.apple.com/documentation/uikit/uiimagepickercontroller)
+- [Apple Documentation: Saving Photos](https://developer.apple.com/documentation/photokit/phassetchangerequest)
+- [WWDC 2022: What's New in PhotoKit](https://developer.apple.com/videos/play/wwdc2022/10023/)

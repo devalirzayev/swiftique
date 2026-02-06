@@ -1,0 +1,668 @@
+---
+title: "Haptics & Feedback"
+description: "Core Haptics, UIFeedbackGenerator, and tactile feedback"
+sectionId: "6.4-platform-specific"
+sectionTitle: "Platform-Specific Features"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Haptics & Feedback
+
+Haptics provide tactile feedback to users through vibrations and taps, making your iOS app feel more responsive and alive. When implemented correctly, haptics enhance user interactions by confirming actions, signaling events, and providing subtle cues without requiring users to look at the screen.
+
+Apple provides two main frameworks for haptics: **UIFeedbackGenerator** for simple, predefined feedback patterns, and **Core Haptics** for custom, complex haptic experiences. This guide will cover both, starting with the simpler UIFeedbackGenerator before moving to the more powerful Core Haptics framework.
+
+## Why Haptics Matter
+
+Haptics bridge the gap between digital interfaces and physical interactions. They:
+
+- **Confirm actions**: Let users know a button press registered
+- **Communicate state changes**: Signal success, failure, or warnings
+- **Enhance immersion**: Make games and interactive experiences feel more realistic
+- **Improve accessibility**: Provide non-visual feedback for all users
+
+## UIFeedbackGenerator: Simple Haptic Feedback
+
+UIFeedbackGenerator is the easiest way to add haptics to your app. It provides three types of generators for different use cases.
+
+### Impact Feedback
+
+Impact feedback simulates physical impacts and collisions. Use it when UI elements collide or when confirming a user action.
+
+```swift
+import UIKit
+
+class ImpactHapticsViewController: UIViewController {
+    // Create the generator as a property to reuse it
+    private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Prepare the generator to reduce latency
+        impactGenerator.prepare()
+    }
+    
+    @IBAction func buttonTapped(_ sender: UIButton) {
+        // Trigger the haptic feedback
+        impactGenerator.impactOccurred()
+        
+        // Prepare for the next haptic
+        impactGenerator.prepare()
+    }
+}
+```
+
+Impact feedback comes in five intensity levels:
+
+```swift
+// Light impact - subtle feedback for lightweight interactions
+let lightImpact = UIImpactFeedbackGenerator(style: .light)
+
+// Medium impact - balanced feedback for standard interactions
+let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
+
+// Heavy impact - strong feedback for significant interactions
+let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
+
+// Soft impact - gentle, rounded feedback (iOS 13+)
+let softImpact = UIImpactFeedbackGenerator(style: .soft)
+
+// Rigid impact - sharp, precise feedback (iOS 13+)
+let rigidImpact = UIImpactFeedbackGenerator(style: .rigid)
+```
+
+You can also specify impact intensity programmatically:
+
+```swift
+let generator = UIImpactFeedbackGenerator(style: .light)
+generator.prepare()
+
+// Intensity ranges from 0.0 to 1.0
+generator.impactOccurred(intensity: 0.7)
+```
+
+### Selection Feedback
+
+Selection feedback provides light haptic feedback when users browse through options or select items. Think of it as the digital equivalent of a mechanical scroll wheel click.
+
+```swift
+class SelectionHapticsViewController: UIViewController {
+    private let selectionGenerator = UISelectionFeedbackGenerator()
+    private var selectedIndex = 0
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        selectionGenerator.prepare()
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        // Trigger feedback when user selects a new row
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
+        
+        selectedIndex = row
+    }
+    
+    @IBAction func segmentedControlChanged(_ sender: UISegmentedControl) {
+        // Also great for segmented controls
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
+    }
+}
+```
+
+### Notification Feedback
+
+Notification feedback communicates success, failure, or warning states. Use it sparingly for important events.
+
+```swift
+class NotificationHapticsViewController: UIViewController {
+    private let notificationGenerator = UINotificationFeedbackGenerator()
+    
+    func performAction() {
+        notificationGenerator.prepare()
+        
+        // Simulate an async operation
+        performAsyncTask { [weak self] result in
+            switch result {
+            case .success:
+                self?.notificationGenerator.notificationOccurred(.success)
+            case .failure:
+                self?.notificationGenerator.notificationOccurred(.error)
+            case .warning:
+                self?.notificationGenerator.notificationOccurred(.warning)
+            }
+        }
+    }
+    
+    private func performAsyncTask(completion: @escaping (Result) -> Void) {
+        // Your async code here
+    }
+    
+    enum Result {
+        case success, failure, warning
+    }
+}
+```
+
+### Common Mistakes with UIFeedbackGenerator
+
+**Mistake 1: Not calling `prepare()`**
+
+```swift
+// ❌ Bad - noticeable latency
+let generator = UIImpactFeedbackGenerator(style: .medium)
+generator.impactOccurred() // Delayed feedback
+
+// ✅ Good - minimal latency
+let generator = UIImpactFeedbackGenerator(style: .medium)
+generator.prepare() // Call 0.1-0.5 seconds before triggering
+generator.impactOccurred() // Immediate feedback
+```
+
+**Mistake 2: Creating new generators every time**
+
+```swift
+// ❌ Bad - inefficient
+func buttonTapped() {
+    let generator = UIImpactFeedbackGenerator(style: .medium)
+    generator.prepare()
+    generator.impactOccurred()
+}
+
+// ✅ Good - reuse the generator
+class MyViewController: UIViewController {
+    private let generator = UIImpactFeedbackGenerator(style: .medium)
+    
+    func buttonTapped() {
+        generator.impactOccurred()
+        generator.prepare() // Prepare for next use
+    }
+}
+```
+
+**Mistake 3: Overusing haptics**
+
+```swift
+// ❌ Bad - haptic fatigue
+func textFieldDidChange(_ textField: UITextField) {
+    generator.impactOccurred() // Too frequent
+}
+
+// ✅ Good - haptics for meaningful events only
+func textFieldDidEndEditing(_ textField: UITextField) {
+    if validateInput(textField.text) {
+        notificationGenerator.notificationOccurred(.success)
+    }
+}
+```
+
+## Core Haptics: Advanced Haptic Patterns
+
+Core Haptics provides fine-grained control over haptic feedback, allowing you to create custom patterns with precise timing and intensity curves. Available on devices with the Taptic Engine (iPhone 8 and later).
+
+### Checking Haptics Capability
+
+Always check if the device supports haptics before using Core Haptics:
+
+```swift
+import CoreHaptics
+
+class HapticsManager {
+    private var engine: CHHapticEngine?
+    private var supportsHaptics: Bool = false
+    
+    init() {
+        // Check if the device supports haptics
+        supportsHaptics = CHHapticEngine.capabilitiesForHardware().supportsHaptics
+        
+        guard supportsHaptics else {
+            print("Device doesn't support haptics")
+            return
+        }
+        
+        setupHapticsEngine()
+    }
+    
+    private func setupHapticsEngine() {
+        do {
+            engine = try CHHapticEngine()
+            try engine?.start()
+            
+            // Handle engine stopping (e.g., audio session interruption)
+            engine?.stoppedHandler = { [weak self] reason in
+                print("Haptic engine stopped: \(reason)")
+                self?.restartEngine()
+            }
+            
+            // Handle engine reset
+            engine?.resetHandler = { [weak self] in
+                print("Haptic engine reset")
+                self?.restartEngine()
+            }
+        } catch {
+            print("Failed to create haptic engine: \(error)")
+        }
+    }
+    
+    private func restartEngine() {
+        do {
+            try engine?.start()
+        } catch {
+            print("Failed to restart engine: \(error)")
+        }
+    }
+}
+```
+
+### Creating Simple Haptic Patterns
+
+A haptic pattern consists of events with specific parameters:
+
+```swift
+func playSimpleHaptic() {
+    guard supportsHaptics, let engine = engine else { return }
+    
+    do {
+        // Create a haptic event
+        let intensity = CHHapticEventParameter(
+            parameterID: .hapticIntensity,
+            value: 1.0 // 0.0 to 1.0
+        )
+        
+        let sharpness = CHHapticEventParameter(
+            parameterID: .hapticSharpness,
+            value: 0.5 // 0.0 (soft) to 1.0 (sharp)
+        )
+        
+        // Create the event
+        let event = CHHapticEvent(
+            eventType: .hapticTransient, // Short, immediate tap
+            parameters: [intensity, sharpness],
+            relativeTime: 0 // Start immediately
+        )
+        
+        // Create a pattern from the event
+        let pattern = try CHHapticPattern(events: [event], parameters: [])
+        
+        // Play the pattern
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        
+    } catch {
+        print("Failed to play haptic: \(error)")
+    }
+}
+```
+
+### Haptic Event Types
+
+Core Haptics provides two main event types:
+
+```swift
+// Transient: Short, immediate tap
+let transientEvent = CHHapticEvent(
+    eventType: .hapticTransient,
+    parameters: [intensity, sharpness],
+    relativeTime: 0
+)
+
+// Continuous: Sustained vibration with duration
+let continuousEvent = CHHapticEvent(
+    eventType: .hapticContinuous,
+    parameters: [intensity, sharpness],
+    relativeTime: 0,
+    duration: 1.0 // Duration in seconds
+)
+```
+
+### Creating Complex Patterns
+
+You can combine multiple events to create sophisticated haptic experiences:
+
+```swift
+func playComplexPattern() {
+    guard supportsHaptics, let engine = engine else { return }
+    
+    do {
+        var events: [CHHapticEvent] = []
+        
+        // Create a drum roll effect
+        for i in 0..<10 {
+            let intensity = CHHapticEventParameter(
+                parameterID: .hapticIntensity,
+                value: Float(i) / 10.0 // Increasing intensity
+            )
+            
+            let sharpness = CHHapticEventParameter(
+                parameterID: .hapticSharpness,
+                value: 0.8
+            )
+            
+            let event = CHHapticEvent(
+                eventType: .hapticTransient,
+                parameters: [intensity, sharpness],
+                relativeTime: TimeInterval(i) * 0.1 // 0.1 second apart
+            )
+            
+            events.append(event)
+        }
+        
+        let pattern = try CHHapticPattern(events: events, parameters: [])
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        
+    } catch {
+        print("Failed to play pattern: \(error)")
+    }
+}
+```
+
+### Dynamic Haptic Parameters
+
+You can modify haptic parameters in real-time using dynamic parameters and parameter curves:
+
+```swift
+func playDynamicHaptic() {
+    guard supportsHaptics, let engine = engine else { return }
+    
+    do {
+        // Create a continuous event
+        let intensity = CHHapticEventParameter(
+            parameterID: .hapticIntensity,
+            value: 0.5
+        )
+        
+        let sharpness = CHHapticEventParameter(
+            parameterID: .hapticSharpness,
+            value: 0.5
+        )
+        
+        let continuousEvent = CHHapticEvent(
+            eventType: .hapticContinuous,
+            parameters: [intensity, sharpness],
+            relativeTime: 0,
+            duration: 2.0
+        )
+        
+        // Create a parameter curve for intensity fade-out
+        let intensityCurve = CHHapticParameterCurve(
+            parameterID: .hapticIntensityControl,
+            controlPoints: [
+                CHHapticParameterCurve.ControlPoint(relativeTime: 0, value: 1.0),
+                CHHapticParameterCurve.ControlPoint(relativeTime: 1.0, value: 0.5),
+                CHHapticParameterCurve.ControlPoint(relativeTime: 2.0, value: 0.0)
+            ],
+            relativeTime: 0
+        )
+        
+        let pattern = try CHHapticPattern(
+            events: [continuousEvent],
+            parameterCurves: [intensityCurve]
+        )
+        
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        
+    } catch {
+        print("Failed to play dynamic haptic: \(error)")
+    }
+}
+```
+
+### Advanced Player Control
+
+For interactive scenarios, create a player and control it dynamically:
+
+```swift
+class InteractiveHapticsController {
+    private var engine: CHHapticEngine?
+    private var player: CHHapticAdvancedPatternPlayer?
+    
+    func setupInteractiveHaptics() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        
+        do {
+            engine = try CHHapticEngine()
+            try engine?.start()
+            
+            // Create a long continuous pattern
+            let intensity = CHHapticEventParameter(
+                parameterID: .hapticIntensity,
+                value: 0.6
+            )
+            
+            let sharpness = CHHapticEventParameter(
+                parameterID: .hapticSharpness,
+                value: 0.4
+            )
+            
+            let event = CHHapticEvent(
+                eventType: .hapticContinuous,
+                parameters: [intensity, sharpness],
+                relativeTime: 0,
+                duration: 10.0 // Long duration
+            )
+            
+            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            player = try engine?.makeAdvancedPlayer(with: pattern)
+            
+        } catch {
+            print("Failed to setup interactive haptics: \(error)")
+        }
+    }
+    
+    func startHaptic() {
+        do {
+            try player?.start(atTime: 0)
+        } catch {
+            print("Failed to start player: \(error)")
+        }
+    }
+    
+    func updateIntensity(_ value: Float) {
+        // Update intensity in real-time (e.g., based on slider value)
+        let parameter = CHHapticDynamicParameter(
+            parameterID: .hapticIntensityControl,
+            value: value,
+            relativeTime: 0
+        )
+        
+        do {
+            try player?.sendParameters([parameter], atTime: 0)
+        } catch {
+            print("Failed to update parameter: \(error)")
+        }
+    }
+    
+    func stopHaptic() {
+        do {
+            try player?.stop(atTime: 0)
+        } catch {
+            print("Failed to stop player: \(error)")
+        }
+    }
+}
+```
+
+### Using AHAP Files
+
+Apple Haptic and Audio Pattern (AHAP) files let you define complex patterns in JSON format:
+
+```swift
+func playAHAPPattern() {
+    guard supportsHaptics, let engine = engine else { return }
+    
+    do {
+        // Load AHAP file from bundle
+        guard let path = Bundle.main.path(forResource: "MyPattern", ofType: "ahap") else {
+            print("AHAP file not found")
+            return
+        }
+        
+        // Create pattern from file
+        try engine.playPattern(from: URL(fileURLWithPath: path))
+        
+    } catch {
+        print("Failed to play AHAP pattern: \(error)")
+    }
+}
+```
+
+Example AHAP file structure (`MyPattern.ahap`):
+
+```json
+{
+  "Version": 1.0,
+  "Pattern": [
+    {
+      "Event": {
+        "Time": 0.0,
+        "EventType": "HapticTransient",
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 1.0 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.5 }
+        ]
+      }
+    },
+    {
+      "Event": {
+        "Time": 0.1,
+        "EventType": "HapticTransient",
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 0.8 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.4 }
+        ]
+      }
+    },
+    {
+      "Event": {
+        "Time": 0.2,
+        "EventType": "HapticContinuous",
+        "EventDuration": 0.5,
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 0.6 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.3 }
+        ]
+      }
+    }
+  ]
+}
+```
+
+AHAP files are great for designers — they can be authored independently of code and loaded at runtime.
+
+## SwiftUI Integration
+
+Use haptics in SwiftUI with a wrapper:
+
+```swift
+import SwiftUI
+import CoreHaptics
+
+struct HapticButton: View {
+    let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
+
+    var body: some View {
+        Button("Tap Me") {
+            impactGenerator.impactOccurred()
+        }
+        .onAppear {
+            impactGenerator.prepare()
+        }
+    }
+}
+```
+
+For SwiftUI's built-in sensory feedback (iOS 17+):
+
+```swift
+struct FeedbackView: View {
+    @State private var isToggled = false
+
+    var body: some View {
+        Toggle("Dark Mode", isOn: $isToggled)
+            .sensoryFeedback(.selection, trigger: isToggled)
+
+        Button("Delete") {
+            // Delete action
+        }
+        .sensoryFeedback(.warning, trigger: isToggled)
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Checking Device Capability
+
+```swift
+// ❌ Bad — crashes on devices without Taptic Engine
+let engine = try! CHHapticEngine()
+
+// ✅ Good — always check first
+guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+    return
+}
+let engine = try? CHHapticEngine()
+```
+
+### Mistake 2: Forgetting to Restart the Engine
+
+```swift
+// ❌ Bad — engine may stop due to audio interruptions
+// and never restart
+
+// ✅ Good — handle engine lifecycle
+engine?.stoppedHandler = { reason in
+    try? self.engine?.start()
+}
+engine?.resetHandler = {
+    try? self.engine?.start()
+}
+```
+
+### Mistake 3: Playing Haptics Too Rapidly
+
+```swift
+// ❌ Bad — haptic fatigue, wastes battery
+Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+    generator.impactOccurred()
+}
+
+// ✅ Good — meaningful, spaced haptics
+// Only trigger on user interactions or significant events
+```
+
+### Edge Case: Silent Mode and Focus
+
+Haptics respect the device's silent switch setting. `UIFeedbackGenerator` haptics still play in silent mode, but Core Haptics audio components are silenced. Always test with silent mode enabled.
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **Impact feedback** | `UIImpactFeedbackGenerator` | Physical collision feel |
+| **Selection feedback** | `UISelectionFeedbackGenerator` | Scroll/picker selection ticks |
+| **Notification feedback** | `UINotificationFeedbackGenerator` | Success, warning, error signals |
+| **Prepare generator** | `generator.prepare()` | Reduce haptic latency |
+| **Core Haptics engine** | `CHHapticEngine` | Advanced custom haptics |
+| **Transient event** | `.hapticTransient` | Short, immediate tap |
+| **Continuous event** | `.hapticContinuous` | Sustained vibration |
+| **Intensity parameter** | `.hapticIntensity` | Control vibration strength (0–1) |
+| **Sharpness parameter** | `.hapticSharpness` | Control feel: soft (0) to sharp (1) |
+| **Parameter curves** | `CHHapticParameterCurve` | Dynamic intensity/sharpness over time |
+| **AHAP files** | `.ahap` JSON format | Designer-friendly haptic patterns |
+| **SwiftUI sensory** | `.sensoryFeedback()` (iOS 17+) | Built-in SwiftUI haptic modifier |
+
+## Official Resources
+
+- [Apple Documentation: Core Haptics](https://developer.apple.com/documentation/corehaptics)
+- [Apple Documentation: UIFeedbackGenerator](https://developer.apple.com/documentation/uikit/uifeedbackgenerator)
+- [Apple: Human Interface Guidelines — Playing Haptics](https://developer.apple.com/design/human-interface-guidelines/playing-haptics)
+- [Apple Documentation: AHAP File Format](https://developer.apple.com/documentation/corehaptics/representing-haptic-patterns-in-ahap-files)
+- [WWDC 2019: Designing Audio-Haptic Experiences](https://developer.apple.com/videos/play/wwdc2019/810/)

@@ -1,0 +1,237 @@
+---
+title: "Constants & Variables"
+description: "Working with let, var, type annotations"
+sectionId: "1.2-the-basics"
+sectionTitle: "The Basics"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Constants & Variables in Swift
+
+In Swift, you store data using **constants** (`let`) and **variables** (`var`). This fundamental distinction shapes how Swift enforces safety and immutability at compile time. Understanding when to use each—and how Swift's type system interacts with them—is essential for writing idiomatic Swift code.
+
+## Why Constants and Variables Matter
+
+Unlike languages where everything is mutable by default, Swift encourages immutability through `let`. This design choice prevents accidental modifications, makes code easier to reason about, and enables compiler optimizations. The Swift compiler will actually warn you if you use `var` when the value never changes.
+
+## Declaring Constants with `let`
+
+A constant's value cannot be changed after it's set. Use `let` whenever possible.
+
+```swift
+let maximumLoginAttempts = 3
+let welcomeMessage = "Hello, Swift"
+let pi = 3.14159
+
+// This will cause a compile-time error:
+// maximumLoginAttempts = 5  // ❌ Cannot assign to value: 'maximumLoginAttempts' is a 'let' constant
+```
+
+**Important**: A constant doesn't have to be known at compile time, but it can only be assigned once:
+
+```swift
+let userInput = readLine() // Determined at runtime
+let currentTimestamp = Date() // Different each time the code runs
+```
+
+## Declaring Variables with `var`
+
+Variables can be modified after their initial assignment:
+
+```swift
+var currentLoginAttempt = 0
+currentLoginAttempt = 1
+currentLoginAttempt = 2 // ✅ This is fine
+
+var greeting = "Hello"
+greeting = "Bonjour" // ✅ Can change the value
+```
+
+## Type Inference vs Type Annotations
+
+Swift uses **type inference** to deduce types automatically:
+
+```swift
+let implicitInteger = 42 // Swift infers Int
+let implicitDouble = 3.14 // Swift infers Double
+let implicitString = "Hello" // Swift infers String
+let implicitBool = true // Swift infers Bool
+```
+
+Use **type annotations** when you need explicit control:
+
+```swift
+let explicitDouble: Double = 70 // Stored as Double, not Int
+let explicitFloat: Float = 3.14 // Float instead of Double
+var welcomeMessage: String // Declared but not initialized yet
+
+welcomeMessage = "Hello" // Initialized later
+```
+
+### When Type Annotations Are Required
+
+1. **Declaring without initializing:**
+
+```swift
+var userName: String
+// userName = cannot be used until assigned
+userName = "Alice"
+```
+
+2. **When inference would choose the wrong type:**
+
+```swift
+let percentage: Double = 80 // Without annotation, would be Int
+let largeNumber: UInt64 = 1000 // Specific integer type needed
+```
+
+3. **For clarity in complex expressions:**
+
+```swift
+let json: [String: Any] = ["name": "John", "age": 30]
+```
+
+## Multiple Declarations
+
+You can declare multiple constants or variables on one line:
+
+```swift
+var x = 0.0, y = 0.0, z = 0.0
+let width = 100, height = 200
+```
+
+With type annotations:
+
+```swift
+var red, green, blue: Double
+let minValue, maxValue: Int = 0, 100
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Using `var` When `let` Would Suffice
+
+```swift
+// ❌ Suboptimal
+var apiEndpoint = "https://api.example.com"
+// If this never changes, use let instead
+
+// ✅ Better
+let apiEndpoint = "https://api.example.com"
+```
+
+The compiler will warn: "Variable 'apiEndpoint' was never mutated; consider changing to 'let' constant"
+
+### Mistake 2: Confusing Immutable Bindings with Immutable Objects
+
+A `let` constant means the **binding** is immutable, not necessarily the object:
+
+```swift
+class Person {
+    var name: String
+    init(name: String) { self.name = name }
+}
+
+let person = Person(name: "Alice")
+person.name = "Bob" // ✅ This works! The object is mutable
+// person = Person(name: "Charlie") // ❌ Cannot reassign the binding
+```
+
+For value types like structs, `let` makes the entire value immutable:
+
+```swift
+struct Point {
+    var x: Int
+    var y: Int
+}
+
+let point = Point(x: 0, y: 0)
+// point.x = 5 // ❌ Cannot modify a constant struct's properties
+```
+
+### Mistake 3: Type Mismatch
+
+```swift
+let age: Int = 25
+// age = 25.5 // ❌ Cannot assign Double to Int
+
+var price: Double = 19.99
+// price = "19.99" // ❌ Cannot assign String to Double
+```
+
+### Edge Case: Lazy Properties
+
+Sometimes you need mutable storage for lazy initialization patterns:
+
+```swift
+class DataManager {
+    // Must use var because lazy properties are mutated on first access
+    lazy var expensiveResource: [String] = {
+        // Computed on first access
+        return loadDataFromDisk()
+    }()
+    
+    func loadDataFromDisk() -> [String] {
+        return ["data1", "data2"]
+    }
+}
+```
+
+## Type Safety and Swift's Philosophy
+
+Swift is a **type-safe** language. Once a constant or variable is declared with a type, it cannot store values of a different type:
+
+```swift
+var message = "Hello"
+// message = 42 // ❌ Error: Cannot assign value of type 'Int' to type 'String'
+```
+
+This catches errors at compile time rather than runtime, making Swift code more predictable and safer.
+
+## Best Practices
+
+1. **Default to `let`**: Start with `let` and only change to `var` if you need mutability
+2. **Be explicit when needed**: Use type annotations for clarity, especially in public APIs
+3. **Name meaningfully**: Swift naming conventions use `camelCase` for constants and variables
+4. **Scope appropriately**: Declare constants and variables in the narrowest scope possible
+
+```swift
+// ✅ Good
+func calculateDiscount(price: Double) -> Double {
+    let discountRate = 0.15 // Only used in this scope
+    return price * (1 - discountRate)
+}
+
+// ❌ Less ideal
+let discountRate = 0.15 // Global when it doesn't need to be
+func calculateDiscount(price: Double) -> Double {
+    return price * (1 - discountRate)
+}
+```
+
+## Summary Table
+
+| Feature | `let` (Constant) | `var` (Variable) |
+|---------|------------------|------------------|
+| **Mutability** | Immutable binding | Mutable |
+| **Reassignment** | ❌ Cannot reassign | ✅ Can reassign |
+| **When to use** | Default choice; use when value won't change | Only when you need to modify the value |
+| **Performance** | Compiler can optimize; thread-safe if immutable type | May require runtime checks |
+| **Type annotation** | Optional (if inferred) | Optional (if inferred) |
+| **Must initialize** | Before first use | Before first use |
+| **Reference types** | Reference cannot change, but object properties can (if mutable) | Both reference and object properties can change |
+| **Value types** | Entire value is immutable | Entire value is mutable |
+| **Compiler warnings** | Warns if you use `var` unnecessarily | None |
+
+## Additional Resources
+
+- [The Swift Programming Language - Constants and Variables](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/#Constants-and-Variables)
+- [Swift API Design Guidelines](https://swift.org/documentation/api-design-guidelines/)
+- [Type Safety and Type Inference](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/#Type-Safety-and-Type-Inference)
+
+---
+
+Understanding constants and variables is the foundation of Swift programming. By embracing immutability with `let` and using type annotations strategically, you'll write safer, more maintainable code that aligns with Swift's design philosophy.

@@ -1,0 +1,436 @@
+---
+title: "Custom Environment Values"
+description: "Creating and using custom environment keys"
+sectionId: "3.4-advanced-patterns"
+sectionTitle: "Advanced Patterns"
+order: 9
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Custom Environment Values
+
+Environment values in SwiftUI provide a way to pass data down through your view hierarchy without explicitly passing it through every view's initializer. While SwiftUI provides many built-in environment values (like `colorScheme`, `locale`, and `dismiss`), you'll often need to create custom environment values to pass your own data throughout your app.
+
+## What Are Custom Environment Values?
+
+Custom environment values let you define your own keys that can be read by any child view in the hierarchy. Think of the environment as a dictionary that flows down the view tree—parent views can write values, and child views can read them, without needing to know about intermediate views.
+
+This is particularly useful for:
+- App-wide settings and configuration
+- Theme data
+- Feature flags
+- Dependency injection
+- Avoiding prop drilling (passing data through multiple view layers)
+
+## Creating a Custom Environment Value
+
+To create a custom environment value, you need three components:
+
+1. An `EnvironmentKey` conforming struct
+2. An extension on `EnvironmentValues`
+3. A way to read and write the value in your views
+
+Here's a complete example for a custom theme color:
+
+```swift
+import SwiftUI
+
+// 1. Define the environment key
+private struct ThemeColorKey: EnvironmentKey {
+    static let defaultValue: Color = .blue
+}
+
+// 2. Extend EnvironmentValues to add your custom key
+extension EnvironmentValues {
+    var themeColor: Color {
+        get { self[ThemeColorKey.self] }
+        set { self[ThemeColorKey.self] = newValue }
+    }
+}
+```
+
+Now you can use this custom environment value in your views:
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        VStack {
+            ThemedButton(title: "Press Me")
+            ThemedButton(title: "Another Button")
+        }
+        .environment(\.themeColor, .purple)
+    }
+}
+
+struct ThemedButton: View {
+    let title: String
+    @Environment(\.themeColor) private var themeColor
+    
+    var body: some View {
+        Button(title) {
+            print("Tapped")
+        }
+        .foregroundColor(.white)
+        .padding()
+        .background(themeColor)
+        .cornerRadius(8)
+    }
+}
+```
+
+## Working with Complex Types
+
+Environment values aren't limited to simple types. You can use any type that's appropriate for your needs:
+
+```swift
+// Define a settings object
+struct AppSettings {
+    var apiEndpoint: String
+    var enableAnalytics: Bool
+    var maxRetries: Int
+}
+
+private struct AppSettingsKey: EnvironmentKey {
+    static let defaultValue = AppSettings(
+        apiEndpoint: "https://api.example.com",
+        enableAnalytics: true,
+        maxRetries: 3
+    )
+}
+
+extension EnvironmentValues {
+    var appSettings: AppSettings {
+        get { self[AppSettingsKey.self] }
+        set { self[AppSettingsKey.self] = newValue }
+    }
+}
+```
+
+Using it in a view:
+
+```swift
+struct NetworkView: View {
+    @Environment(\.appSettings) private var settings
+    
+    var body: some View {
+        VStack {
+            Text("API: \(settings.apiEndpoint)")
+            Text("Max Retries: \(settings.maxRetries)")
+        }
+    }
+}
+
+struct ParentView: View {
+    var body: some View {
+        NetworkView()
+            .environment(\.appSettings, AppSettings(
+                apiEndpoint: "https://staging.example.com",
+                enableAnalytics: false,
+                maxRetries: 5
+            ))
+    }
+}
+```
+
+## Environment Values vs Environment Objects
+
+It's important to understand the difference between `@Environment` and `@EnvironmentObject`:
+
+```swift
+// Environment Value - value type, scoped, requires explicit setting
+@Environment(\.themeColor) private var themeColor
+
+// Environment Object - reference type, observable, for shared state
+@EnvironmentObject private var userSession: UserSession
+```
+
+Use **environment values** when:
+- You have simple configuration data
+- You want value semantics (copies)
+- You need a default value
+- You're passing data that doesn't need observation
+
+Use **environment objects** when:
+- You need to observe changes with `@Published`
+- You're working with reference types
+- You need shared mutable state across views
+
+## Practical Example: Feature Flags
+
+Here's a real-world example using environment values for feature flags:
+
+```swift
+struct FeatureFlags {
+    var newCheckoutEnabled: Bool = false
+    var experimentalUIEnabled: Bool = false
+    var debugModeEnabled: Bool = false
+}
+
+private struct FeatureFlagsKey: EnvironmentKey {
+    static let defaultValue = FeatureFlags()
+}
+
+extension EnvironmentValues {
+    var featureFlags: FeatureFlags {
+        get { self[FeatureFlagsKey.self] }
+        set { self[FeatureFlagsKey.self] = newValue }
+    }
+}
+
+// Usage in app
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(\.featureFlags, FeatureFlags(
+                    newCheckoutEnabled: true,
+                    experimentalUIEnabled: false,
+                    debugModeEnabled: true
+                ))
+        }
+    }
+}
+
+// Reading in views
+struct CheckoutView: View {
+    @Environment(\.featureFlags) private var features
+    
+    var body: some View {
+        if features.newCheckoutEnabled {
+            NewCheckoutView()
+        } else {
+            LegacyCheckoutView()
+        }
+    }
+}
+```
+
+## Environment Values with Optionals
+
+When you need optional environment values, set the default to `nil`:
+
+```swift
+private struct UserIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var userID: String? {
+        get { self[UserIDKey.self] }
+        set { self[UserIDKey.self] = newValue }
+    }
+}
+
+struct ProfileView: View {
+    @Environment(\.userID) private var userID
+    
+    var body: some View {
+        if let userID = userID {
+            Text("User ID: \(userID)")
+        } else {
+            Text("Not logged in")
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Making the EnvironmentKey Public
+
+The `EnvironmentKey` struct should typically be private—you expose functionality through the `EnvironmentValues` extension:
+
+```swift
+// ❌ Don't do this
+public struct ThemeColorKey: EnvironmentKey {
+    static let defaultValue: Color = .blue
+}
+
+// ✅ Do this
+private struct ThemeColorKey: EnvironmentKey {
+    static let defaultValue: Color = .blue
+}
+
+extension EnvironmentValues {
+    var themeColor: Color {
+        get { self[ThemeColorKey.self] }
+        set { self[ThemeColorKey.self] = newValue }
+    }
+}
+```
+
+### Mistake 2: Using Reference Types Without Considering Value Semantics
+
+Environment values use value semantics. If you use a class, understand that you're passing a reference:
+
+```swift
+// This class will be shared (reference semantics)
+class UserPreferences {
+    var theme: String = "light"
+}
+
+private struct UserPreferencesKey: EnvironmentKey {
+    static let defaultValue = UserPreferences()
+}
+
+extension EnvironmentValues {
+    var userPreferences: UserPreferences {
+        get { self[UserPreferencesKey.self] }
+        set { self[UserPreferencesKey.self] = newValue }
+    }
+}
+```
+
+For value semantics, use a struct instead:
+
+```swift
+// ✅ This struct uses value semantics
+struct UserPreferences {
+    var theme: String = "light"
+}
+```
+
+### Mistake 3: Forgetting to Set Values Before Reading
+
+If you don't set a value, the default is used. This can lead to confusion:
+
+```swift
+struct ChildView: View {
+    @Environment(\.themeColor) private var themeColor
+    
+    var body: some View {
+        // Will use the defaultValue (.blue) if not set by parent
+        Text("Hello")
+            .foregroundColor(themeColor)
+    }
+}
+```
+
+### Edge Case: Overriding Environment Values at Multiple Levels
+
+Environment values can be overridden at any level:
+
+```swift
+struct RootView: View {
+    var body: some View {
+        VStack {
+            ThemedText(text: "Root level")  // Uses red
+            
+            VStack {
+                ThemedText(text: "Nested level")  // Uses green
+            }
+            .environment(\.themeColor, .green)
+            
+            ThemedText(text: "Back to root")  // Uses red
+        }
+        .environment(\.themeColor, .red)
+    }
+}
+
+struct ThemedText: View {
+    let text: String
+    @Environment(\.themeColor) private var themeColor
+    
+    var body: some View {
+        Text(text).foregroundColor(themeColor)
+    }
+}
+```
+
+## Performance Considerations
+
+Environment values are efficient because SwiftUI only updates views when relevant environment values change. However, be mindful:
+
+```swift
+// ❌ Avoid large, frequently-changing structs
+struct HugeConfig {
+    var field1: String
+    var field2: String
+    // ... 50 more fields
+}
+
+// ✅ Split into smaller, focused values
+struct NetworkConfig {
+    var endpoint: String
+    var timeout: Int
+}
+
+struct UIConfig {
+    var primaryColor: Color
+    var fontSize: CGFloat
+}
+```
+
+## Testing Views with Custom Environment Values
+
+When writing tests, you can inject environment values easily:
+
+```swift
+import XCTest
+import SwiftUI
+@testable import YourApp
+
+class ViewTests: XCTestCase {
+    func testThemedButton() {
+        let view = ThemedButton(title: "Test")
+            .environment(\.themeColor, .red)
+        
+        // Test the view with the custom environment
+    }
+}
+```
+
+## Integration with Previews
+
+Custom environment values work great with SwiftUI previews:
+
+```swift
+struct ThemedButton_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            ThemedButton(title: "Blue Theme")
+                .environment(\.themeColor, .blue)
+                .previewDisplayName("Blue")
+            
+            ThemedButton(title: "Purple Theme")
+                .environment(\.themeColor, .purple)
+                .previewDisplayName("Purple")
+            
+            ThemedButton(title: "Default Theme")
+                .previewDisplayName("Default")
+        }
+        .previewLayout(.sizeThatFits)
+        .padding()
+    }
+}
+```
+
+## Official Documentation References
+
+For more information, refer to Apple's official documentation:
+
+- [EnvironmentKey Protocol](https://developer.apple.com/documentation/swiftui/environmentkey)
+- [EnvironmentValues Structure](https://developer.apple.com/documentation/swiftui/environmentvalues)
+- [Environment Property Wrapper](https://developer.apple.com/documentation/swiftui/environment)
+
+## Summary Table
+
+| Aspect | Details |
+|--------|---------|
+| **Purpose** | Pass data down the view hierarchy without explicit prop passing |
+| **Components** | 1. `EnvironmentKey` struct, 2. `EnvironmentValues` extension, 3. `@Environment` property wrapper to read |
+| **Key Visibility** | Keep `EnvironmentKey` `private`, expose through `EnvironmentValues` |
+| **Default Values** | Required via `defaultValue` static property |
+| **Semantics** | Value semantics (copies) by default |
+| **Best For** | Configuration, settings, theming, feature flags, dependency injection |
+| **Not Best For** | Observable shared state (use `@EnvironmentObject` instead) |
+| **Scope** | Set with `.environment()` modifier, affects all child views |
+| **Override** | Can be overridden at any level in the hierarchy |
+| **Performance** | Efficient—views only update when relevant values change |
+| **Testing** | Easy to inject values in tests and previews |
+| **Common Mistakes** | Public keys, forgetting defaults, using when `@EnvironmentObject` is better |
+
+Custom environment values are a powerful tool for managing configuration and dependencies in SwiftUI apps. They provide a clean, type-safe way to pass data through your view hierarchy while keeping your code maintainable and testable.

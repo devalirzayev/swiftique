@@ -1,0 +1,641 @@
+---
+title: "Search & Toolbars"
+description: "Searchable modifier, toolbar, and toolbar items"
+sectionId: "3.4-advanced-patterns"
+sectionTitle: "Advanced Patterns"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Search & Toolbars in SwiftUI
+
+Search and toolbars are essential UI components in modern iOS applications. The searchable modifier allows users to filter content efficiently, while toolbars provide quick access to key actions. Understanding how to implement these components is crucial for creating intuitive, iOS-native interfaces.
+
+In this guide, you'll learn how to add search functionality to your views, customize toolbar placement and items, and handle common edge cases that trip up beginners.
+
+## Why Search and Toolbars Matter
+
+Before diving into code, consider why these components are important:
+
+- **Search** enables users to quickly find content in lists, databases, or any filterable data
+- **Toolbars** provide contextual actions without cluttering the main interface
+- Both components follow iOS design patterns that users already understand
+- They adapt automatically to different device sizes and orientations
+
+## Basic Search Implementation
+
+The `.searchable()` modifier adds a search field to your view. At minimum, you need a binding to a string that holds the search text.
+
+```swift
+import SwiftUI
+
+struct BasicSearchView: View {
+    @State private var searchText = ""
+    
+    let fruits = ["Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape"]
+    
+    var filteredFruits: [String] {
+        if searchText.isEmpty {
+            return fruits
+        } else {
+            return fruits.filter { $0.localizedCaseInsensitiveContains(searchText) }
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List(filteredFruits, id: \.self) { fruit in
+                Text(fruit)
+            }
+            .navigationTitle("Fruits")
+            .searchable(text: $searchText)
+        }
+    }
+}
+```
+
+**Key points:**
+
+- Search must be inside a `NavigationStack` or `NavigationView` (deprecated in iOS 16+)
+- Use computed properties to filter data based on `searchText`
+- `localizedCaseInsensitiveContains()` provides user-friendly search behavior
+- The search field appears automatically in the navigation bar
+
+## Customizing Search Behavior
+
+### Search Placement
+
+Control where the search field appears using the `placement` parameter:
+
+```swift
+struct SearchPlacementView: View {
+    @State private var searchText = ""
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Text("Content here")
+            }
+            .navigationTitle("Custom Placement")
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always)
+            )
+        }
+    }
+}
+```
+
+Available placements:
+- `.automatic` - System decides (default)
+- `.navigationBarDrawer` - Collapsible drawer under navigation bar
+- `.sidebar` - In the sidebar (iPad split view)
+- `.toolbar` - Directly in the toolbar
+
+### Search Prompts and Suggestions
+
+Add a placeholder prompt and search suggestions:
+
+```swift
+struct SearchWithSuggestionsView: View {
+    @State private var searchText = ""
+    
+    let categories = ["Fruits", "Vegetables", "Grains", "Proteins", "Dairy"]
+    let allItems = [
+        "Apple", "Banana", "Carrot", "Broccoli", 
+        "Rice", "Quinoa", "Chicken", "Tofu", "Milk", "Cheese"
+    ]
+    
+    var filteredItems: [String] {
+        if searchText.isEmpty {
+            return allItems
+        }
+        return allItems.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List(filteredItems, id: \.self) { item in
+                Text(item)
+            }
+            .navigationTitle("Food Items")
+            .searchable(
+                text: $searchText,
+                prompt: "Search for food items"
+            ) {
+                // Search suggestions appear when search is focused
+                ForEach(categories, id: \.self) { category in
+                    Text("Category: \(category)")
+                        .searchCompletion(category)
+                }
+            }
+        }
+    }
+}
+```
+
+The `.searchCompletion()` modifier makes suggestions tappable, filling in the search field when selected.
+
+## Handling Search Actions
+
+React to search submission and other search-related events:
+
+```swift
+struct SearchActionsView: View {
+    @State private var searchText = ""
+    @State private var searchHistory: [String] = []
+    @State private var isSearching = false
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Recent Searches") {
+                    ForEach(searchHistory, id: \.self) { term in
+                        Text(term)
+                    }
+                }
+            }
+            .navigationTitle("Search Actions")
+            .searchable(
+                text: $searchText,
+                isPresented: $isSearching,
+                prompt: "Search"
+            )
+            .onSubmit(of: .search) {
+                // Called when user taps "Search" on keyboard
+                if !searchText.isEmpty && !searchHistory.contains(searchText) {
+                    searchHistory.insert(searchText, at: 0)
+                }
+            }
+            .onChange(of: isSearching) { oldValue, newValue in
+                if !newValue && !searchText.isEmpty {
+                    // Search was dismissed
+                    print("Search dismissed with text: \(searchText)")
+                }
+            }
+        }
+    }
+}
+```
+
+## Basic Toolbar Implementation
+
+Toolbars provide quick access to actions. They can appear in multiple locations on screen.
+
+```swift
+struct BasicToolbarView: View {
+    @State private var favoriteCount = 0
+    
+    var body: some View {
+        NavigationStack {
+            Text("Toolbar content")
+                .navigationTitle("Basic Toolbar")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            favoriteCount += 1
+                        } label: {
+                            Label("Favorite", systemImage: "heart")
+                        }
+                    }
+                    
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Reset") {
+                            favoriteCount = 0
+                        }
+                    }
+                }
+        }
+    }
+}
+```
+
+## Toolbar Placements
+
+Different placements position toolbar items strategically:
+
+```swift
+struct ToolbarPlacementsView: View {
+    @State private var text = ""
+    
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .navigationTitle("Toolbar Placements")
+                .toolbar {
+                    // Top leading (iOS: left side of nav bar)
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") { }
+                    }
+                    
+                    // Top trailing (iOS: right side of nav bar)
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Save") { }
+                    }
+                    
+                    // Bottom toolbar
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("Action") { }
+                    }
+                    
+                    // Confirmation action (contextual placement)
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { }
+                    }
+                    
+                    // Cancellation action (contextual placement)
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { }
+                    }
+                    
+                    // Primary action (prominent placement)
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Add") { }
+                    }
+                }
+        }
+    }
+}
+```
+
+Common placements:
+- `.navigationBarLeading` - Left side of navigation bar
+- `.navigationBarTrailing` - Right side of navigation bar
+- `.bottomBar` - Bottom of screen
+- `.primaryAction` - Platform determines prominent location
+- `.confirmationAction` - Contextual "done" location
+- `.cancellationAction` - Contextual "cancel" location
+- `.automatic` - System decides
+
+## Multiple Toolbar Items
+
+Group multiple items together or use `ToolbarItemGroup`:
+
+```swift
+struct MultipleToolbarItemsView: View {
+    var body: some View {
+        NavigationStack {
+            Text("Content")
+                .navigationTitle("Multiple Items")
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        Button {
+                            print("Share")
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        
+                        Button {
+                            print("Edit")
+                        } label: {
+                            Image(systemName: "pencil")
+                        }
+                        
+                        Button {
+                            print("Delete")
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+        }
+    }
+}
+```
+
+## Conditional Toolbar Items
+
+Show or hide toolbar items based on state:
+
+```swift
+struct ConditionalToolbarView: View {
+    @State private var isEditMode = false
+    @State private var selectedItems: Set<String> = []
+    
+    let items = ["Item 1", "Item 2", "Item 3"]
+    
+    var body: some View {
+        NavigationStack {
+            List(items, id: \.self, selection: $selectedItems) { item in
+                Text(item)
+            }
+            .navigationTitle("Conditional Toolbar")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(isEditMode ? "Done" : "Edit") {
+                        isEditMode.toggle()
+                        if !isEditMode {
+                            selectedItems.removeAll()
+                        }
+                    }
+                }
+                
+                if isEditMode {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button("Delete Selected") {
+                            // Delete action
+                        }
+                        .disabled(selectedItems.isEmpty)
+                        
+                        Spacer()
+                        
+                        Text("\(selectedItems.count) selected")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(isEditMode ? .active : .inactive))
+        }
+    }
+}
+```
+
+## Combining Search and Toolbars
+
+A common pattern is using both search and toolbar together:
+
+```swift
+struct SearchAndToolbarView: View {
+    @State private var searchText = ""
+    @State private var items = ["Apple", "Banana", "Cherry", "Date"]
+    @State private var showingAddItem = false
+    
+    var filteredItems: [String] {
+        if searchText.isEmpty {
+            return items
+        }
+        return items.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(filteredItems, id: \.self) { item in
+                    Text(item)
+                }
+                .onDelete { indexSet in
+                    items.remove(atOffsets: indexSet)
+                }
+            }
+            .navigationTitle("Items")
+            .searchable(text: $searchText, prompt: "Search items")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingAddItem = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarLeading) {
+                    EditButton()
+                }
+            }
+            .alert("Add Item", isPresented: $showingAddItem) {
+                TextField("Item name", text: $searchText)
+                Button("Add") {
+                    if !searchText.isEmpty {
+                        items.append(searchText)
+                        searchText = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+        }
+    }
+}
+```
+
+## Custom Toolbar Content
+
+Create more complex toolbar items with custom views:
+
+```swift
+struct CustomToolbarContentView: View {
+    @State private var selectedFilter = "All"
+    let filters = ["All", "Active", "Completed"]
+    
+    var body: some View {
+        NavigationStack {
+            Text("Content filtered by: \(selectedFilter)")
+                .navigationTitle("Custom Toolbar")
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        // Principal placement is center of nav bar
+                        Picker("Filter", selection: $selectedFilter) {
+                            ForEach(filters, id: \.self) { filter in
+                                Text(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+        }
+    }
+}
+```
+
+The `.principal` placement puts content in the center of the navigation bar, replacing the title.
+
+## Toolbar Visibility
+
+Control toolbar visibility programmatically:
+
+```swift
+struct ToolbarVisibilityView: View {
+    @State private var hideToolbar = false
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                Toggle("Hide Toolbar", isOn: $hideToolbar)
+                    .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Toolbar Visibility")
+            .toolbar(hideToolbar ? .hidden : .visible)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Action") {
+                        print("Action tapped")
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+You can also control visibility for specific toolbar groups:
+
+```swift
+struct ToolbarGroupVisibilityView: View {
+    @State private var showEditActions = true
+    
+    var body: some View {
+        NavigationStack {
+            Text("Content")
+                .navigationTitle("Group Visibility")
+                .toolbar(id: "editing") {
+                    ToolbarItemGroup(
+                        id: "editActions",
+                        placement: .navigationBarTrailing
+                    ) {
+                        Button("Cut") { }
+                        Button("Copy") { }
+                        Button("Paste") { }
+                    }
+                }
+                .toolbarRole(.editor)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Toggle Edit Tools") {
+                            showEditActions.toggle()
+                        }
+                    }
+                }
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting NavigationStack
+
+Search won't appear without a navigation container:
+
+```swift
+// ❌ Won't work - no navigation container
+struct BrokenSearchView: View {
+    @State private var searchText = ""
+    
+    var body: some View {
+        List {
+            Text("Item")
+        }
+        .searchable(text: $searchText) // This will not display
+    }
+}
+
+// ✅ Correct - wrapped in NavigationStack
+struct WorkingSearchView: View {
+    @State private var searchText = ""
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Text("Item")
+            }
+            .searchable(text: $searchText)
+        }
+    }
+}
+```
+
+### Mistake 2: Not Handling Empty Search
+
+Always provide the full list when search is empty:
+
+```swift
+// ❌ Poor UX - returns empty array when search is empty
+var poorFilteredItems: [String] {
+    return items.filter { $0.contains(searchText) }
+}
+
+// ✅ Better - shows all items when search is empty
+var goodFilteredItems: [String] {
+    guard !searchText.isEmpty else { return items }
+    return items.filter { $0.localizedCaseInsensitiveContains(searchText) }
+}
+```
+
+### Mistake 3: Case-Sensitive Search
+
+Use case-insensitive, localized search for better UX:
+
+```swift
+// ❌ Case-sensitive, not localized
+items.filter { $0.contains(searchText) }
+
+// ✅ Case-insensitive and localized
+items.filter { $0.localizedCaseInsensitiveContains(searchText) }
+
+// ✅ Even better - localized standard contains
+items.filter { $0.localizedStandardContains(searchText) }
+```
+
+### Mistake 4: Too Many Toolbar Items
+
+Overcrowding the toolbar confuses users. Stick to 2-3 items maximum per placement:
+
+```swift
+// ❌ Too many items
+.toolbar {
+    ToolbarItem(placement: .navigationBarTrailing) { Button("A") { } }
+    ToolbarItem(placement: .navigationBarTrailing) { Button("B") { } }
+    ToolbarItem(placement: .navigationBarTrailing) { Button("C") { } }
+    ToolbarItem(placement: .navigationBarTrailing) { Button("D") { } }
+    ToolbarItem(placement: .navigationBarTrailing) { Button("E") { } }
+}
+
+// ✅ Use a Menu for many actions
+.toolbar {
+    ToolbarItem(placement: .navigationBarTrailing) {
+        Menu {
+            Button("Action A") { }
+            Button("Action B") { }
+            Button("Action C") { }
+            Button("Action D") { }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+    }
+}
+```
+
+### Mistake 5: Searchable on Wrong View Level
+
+The `.searchable()` modifier must be applied to a view inside the `NavigationStack`, not on the `NavigationStack` itself:
+
+```swift
+// ❌ Wrong placement
+NavigationStack {
+    List { }
+}
+.searchable(text: $searchText) // Won't work
+
+// ✅ Correct placement
+NavigationStack {
+    List { }
+        .searchable(text: $searchText)
+}
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **Basic search** | `.searchable(text:)` | Add a search field to navigation |
+| **Search prompt** | `.searchable(text:prompt:)` | Custom placeholder text |
+| **Search suggestions** | `.searchCompletion()` | Tappable search suggestions |
+| **Search submit** | `.onSubmit(of: .search)` | Handle search keyboard submit |
+| **Search placement** | `.searchable(placement:)` | Control search field position |
+| **Toolbar item** | `ToolbarItem(placement:)` | Add action to toolbar |
+| **Toolbar group** | `ToolbarItemGroup(placement:)` | Group multiple toolbar items |
+| **Toolbar visibility** | `.toolbar(.hidden)` | Show/hide toolbar |
+| **Principal placement** | `.principal` | Center of navigation bar |
+| **Bottom bar** | `.bottomBar` | Bottom toolbar area |
+
+## Official Resources
+
+- [Apple Documentation: searchable](https://developer.apple.com/documentation/swiftui/view/searchable(text:placement:prompt:))
+- [Apple Documentation: Toolbar](https://developer.apple.com/documentation/swiftui/view/toolbar(content:)-5w0tj)
+- [Apple Documentation: ToolbarItem](https://developer.apple.com/documentation/swiftui/toolbaritem)
+- [Apple Documentation: ToolbarItemPlacement](https://developer.apple.com/documentation/swiftui/toolbaritemplacement)
+- [Human Interface Guidelines: Search](https://developer.apple.com/design/human-interface-guidelines/search-fields)
+- [Human Interface Guidelines: Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)

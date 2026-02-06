@@ -1,0 +1,574 @@
+---
+title: "URLSession Basics"
+description: "Making HTTP requests, GET/POST, and URLRequest configuration"
+sectionId: "4.1-networking"
+sectionTitle: "Networking"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# URLSession Basics: Making HTTP Requests in Swift
+
+URLSession is Apple's modern API for making network requests in iOS and macOS applications. Whether you're fetching JSON data from a REST API, uploading images to a server, or downloading files, URLSession is the tool you'll use. It replaces the older NSURLConnection API and provides a cleaner, more powerful interface for all your networking needs.
+
+Understanding URLSession is essential because virtually every iOS app communicates with web services. This article covers the fundamentals: making GET and POST requests, configuring URLRequest objects, and handling responses properly.
+
+## What is URLSession?
+
+URLSession is a class that manages HTTP/HTTPS requests and responses. Think of it as your app's networking engine. It handles the complexity of network communication including:
+
+- Connection pooling and reuse
+- Authentication challenges
+- Background downloads/uploads
+- Caching
+- Cookie management
+
+The basic pattern involves three components:
+1. **URLSession** - The session object that coordinates requests
+2. **URLRequest** - The request configuration (URL, HTTP method, headers, body)
+3. **URLSessionTask** - The actual task that executes the request (data task, download task, upload task)
+
+## Making Your First GET Request
+
+Let's start with the simplest example: fetching data from a URL.
+
+```swift
+import Foundation
+
+func fetchUserData() {
+    // 1. Create a URL
+    guard let url = URL(string: "https://jsonplaceholder.typicode.com/users/1") else {
+        print("Invalid URL")
+        return
+    }
+    
+    // 2. Create a URLSession (using the shared singleton)
+    let session = URLSession.shared
+    
+    // 3. Create a data task
+    let task = session.dataTask(with: url) { data, response, error in
+        // 4. Handle the response
+        if let error = error {
+            print("Error: \(error.localizedDescription)")
+            return
+        }
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("Invalid response")
+            return
+        }
+        
+        print("Status code: \(httpResponse.statusCode)")
+        
+        guard let data = data else {
+            print("No data received")
+            return
+        }
+        
+        // 5. Process the data
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("Received: \(jsonString)")
+        }
+    }
+    
+    // 6. Start the task
+    task.resume()
+}
+
+fetchUserData()
+```
+
+**Important:** URLSession tasks don't start automatically. You must call `resume()` to begin execution.
+
+## Using URLRequest for More Control
+
+When you need to customize headers, HTTP methods, or request bodies, use URLRequest:
+
+```swift
+func fetchWithCustomHeaders() {
+    guard let url = URL(string: "https://api.example.com/data") else { return }
+    
+    // Create a URLRequest
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("Bearer YOUR_TOKEN_HERE", forHTTPHeaderField: "Authorization")
+    request.timeoutInterval = 30 // 30 seconds timeout
+    
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        // Handle response
+        if let error = error {
+            print("Error: \(error)")
+            return
+        }
+        
+        if let data = data {
+            print("Data received: \(data.count) bytes")
+        }
+    }
+    
+    task.resume()
+}
+```
+
+## Making POST Requests
+
+POST requests send data to a server. You'll need to configure the HTTP method and body:
+
+```swift
+struct User: Codable {
+    let name: String
+    let email: String
+    let age: Int
+}
+
+func createUser() {
+    guard let url = URL(string: "https://api.example.com/users") else { return }
+    
+    // Create the user object
+    let newUser = User(name: "John Doe", email: "john@example.com", age: 30)
+    
+    // Encode to JSON
+    guard let jsonData = try? JSONEncoder().encode(newUser) else {
+        print("Failed to encode user")
+        return
+    }
+    
+    // Configure the request
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = jsonData
+    
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error = error {
+            print("Error: \(error)")
+            return
+        }
+        
+        guard let httpResponse = response as? HTTPURLResponse else { return }
+        
+        if (200...299).contains(httpResponse.statusCode) {
+            print("Success! Status code: \(httpResponse.statusCode)")
+            
+            if let data = data,
+               let responseUser = try? JSONDecoder().decode(User.self, from: data) {
+                print("Created user: \(responseUser.name)")
+            }
+        } else {
+            print("Server returned error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    task.resume()
+}
+```
+
+## Decoding JSON Responses Properly
+
+Here's a more complete example with proper error handling and JSON decoding:
+
+```swift
+struct Post: Codable {
+    let userId: Int
+    let id: Int
+    let title: String
+    let body: String
+}
+
+enum NetworkError: Error {
+    case invalidURL
+    case noData
+    case decodingError
+    case httpError(Int)
+}
+
+func fetchPosts(completion: @escaping (Result<[Post], NetworkError>) -> Void) {
+    guard let url = URL(string: "https://jsonplaceholder.typicode.com/posts") else {
+        completion(.failure(.invalidURL))
+        return
+    }
+    
+    URLSession.shared.dataTask(with: url) { data, response, error in
+        if let _ = error {
+            completion(.failure(.noData))
+            return
+        }
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            completion(.failure(.noData))
+            return
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            completion(.failure(.httpError(httpResponse.statusCode)))
+            return
+        }
+        
+        guard let data = data else {
+            completion(.failure(.noData))
+            return
+        }
+        
+        do {
+            let posts = try JSONDecoder().decode([Post].self, from: data)
+            completion(.success(posts))
+        } catch {
+            completion(.failure(.decodingError))
+        }
+    }.resume()
+}
+
+// Usage
+fetchPosts { result in
+    switch result {
+    case .success(let posts):
+        print("Fetched \(posts.count) posts")
+        posts.prefix(3).forEach { print($0.title) }
+    case .failure(let error):
+        print("Error: \(error)")
+    }
+}
+```
+
+## URLSession Configuration
+
+URLSession can be customized using URLSessionConfiguration. There are three types:
+
+```swift
+// 1. Default configuration (with caching, cookies, credentials)
+let defaultConfig = URLSessionConfiguration.default
+let defaultSession = URLSession(configuration: defaultConfig)
+
+// 2. Ephemeral configuration (no persistent storage)
+let ephemeralConfig = URLSessionConfiguration.ephemeral
+ephemeralConfig.urlCache = nil // No cache
+let ephemeralSession = URLSession(configuration: ephemeralConfig)
+
+// 3. Background configuration (for long-running transfers)
+let backgroundConfig = URLSessionConfiguration.background(withIdentifier: "com.example.app.background")
+let backgroundSession = URLSession(configuration: backgroundConfig)
+```
+
+### Customizing Configuration
+
+```swift
+func createCustomSession() -> URLSession {
+    let config = URLSessionConfiguration.default
+    
+    // Timeout settings
+    config.timeoutIntervalForRequest = 30 // 30 seconds
+    config.timeoutIntervalForResource = 300 // 5 minutes
+    
+    // Connection settings
+    config.httpMaximumConnectionsPerHost = 5
+    config.allowsCellularAccess = true
+    config.waitsForConnectivity = true // Wait for network if unavailable
+    
+    // Headers that apply to all requests
+    config.httpAdditionalHeaders = [
+        "User-Agent": "MyApp/1.0",
+        "Accept-Language": "en-US"
+    ]
+    
+    // Cache policy
+    config.requestCachePolicy = .returnCacheDataElseLoad
+    
+    return URLSession(configuration: config)
+}
+```
+
+## Common Patterns and Best Practices
+
+### Using async/await (iOS 15+)
+
+Modern Swift supports async/await, making network code much cleaner:
+
+```swift
+func fetchPostsAsync() async throws -> [Post] {
+    guard let url = URL(string: "https://jsonplaceholder.typicode.com/posts") else {
+        throw NetworkError.invalidURL
+    }
+    
+    let (data, response) = try await URLSession.shared.data(from: url)
+    
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        throw NetworkError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+    
+    let posts = try JSONDecoder().decode([Post].self, from: data)
+    return posts
+}
+
+// Usage in an async context
+Task {
+    do {
+        let posts = try await fetchPostsAsync()
+        print("Fetched \(posts.count) posts")
+    } catch {
+        print("Error: \(error)")
+    }
+}
+```
+
+### Handling Query Parameters
+
+Building URLs with parameters safely:
+
+```swift
+func buildURLWithParameters(baseURL: String, parameters: [String: String]) -> URL? {
+    guard var components = URLComponents(string: baseURL) else { return nil }
+    
+    components.queryItems = parameters.map { key, value in
+        URLQueryItem(name: key, value: value)
+    }
+    
+    return components.url
+}
+
+// Usage
+let params = ["userId": "1", "limit": "10"]
+if let url = buildURLWithParameters(
+    baseURL: "https://api.example.com/posts",
+    parameters: params
+) {
+    print(url) // https://api.example.com/posts?userId=1&limit=10
+}
+```
+
+### Canceling Requests
+
+URLSessionTask objects can be canceled:
+
+```swift
+class DataFetcher {
+    private var currentTask: URLSessionDataTask?
+    
+    func fetchData(from url: URL) {
+        // Cancel any existing task
+        currentTask?.cancel()
+        
+        currentTask = URLSession.shared.dataTask(with: url) { data, response, error in
+            // Handle response
+            if let error = error as NSError?, error.code == NSURLErrorCancelled {
+                print("Request was cancelled")
+                return
+            }
+            
+            // Process data
+        }
+        
+        currentTask?.resume()
+    }
+    
+    func cancelCurrentRequest() {
+        currentTask?.cancel()
+        currentTask = nil
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting to Call resume()
+
+```swift
+// ❌ Wrong - task never starts
+let task = URLSession.shared.dataTask(with: url) { data, response, error in
+    // Handle response
+}
+// Missing task.resume()
+
+// ✅ Correct
+let task = URLSession.shared.dataTask(with: url) { data, response, error in
+    // Handle response
+}
+task.resume()
+```
+
+### Mistake 2: Not Checking HTTP Status Codes
+
+```swift
+// ❌ Wrong - assumes any response is success
+URLSession.shared.dataTask(with: url) { data, response, error in
+    guard let data = data else { return }
+    // Process data even if status was 404 or 500
+}.resume()
+
+// ✅ Correct
+URLSession.shared.dataTask(with: url) { data, response, error in
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        print("Invalid response or error status")
+        return
+    }
+    
+    guard let data = data else { return }
+    // Process data
+}.resume()
+```
+
+### Mistake 3: UI Updates on Background Thread
+
+```swift
+// ❌ Wrong - updating UI on background thread
+URLSession.shared.dataTask(with: url) { data, response, error in
+    guard let data = data else { return }
+    // This closure runs on a background thread
+    self.label.text = "Downloaded!" // UI update on background thread!
+}.resume()
+
+// ✅ Correct
+URLSession.shared.dataTask(with: url) { data, response, error in
+    guard let data = data else { return }
+    
+    DispatchQueue.main.async {
+        self.label.text = "Downloaded!" // UI update on main thread
+    }
+}.resume()
+```
+
+### Edge Case: Handling Large Responses
+
+For large files, use download tasks instead of data tasks:
+
+```swift
+func downloadLargeFile(from url: URL) {
+    let task = URLSession.shared.downloadTask(with: url) { localURL, response, error in
+        guard let localURL = localURL else {
+            print("Download failed: \(error?.localizedDescription ?? "Unknown error")")
+            return
+        }
+        
+        // File is saved to temporary location
+        // Move it to permanent location
+        do {
+            let documentsURL = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+            let destinationURL = documentsURL.appendingPathComponent("download.zip")
+            
+            // Remove existing file if present
+            try? FileManager.default.removeItem(at: destinationURL)
+            
+            try FileManager.default.moveItem(at: localURL, to: destinationURL)
+            print("File saved to: \(destinationURL)")
+        } catch {
+            print("File move error: \(error)")
+        }
+    }
+    
+    task.resume()
+}
+```
+
+### Edge Case: Network Reachability
+
+Handle situations where network isn't available:
+
+```swift
+func fetchDataWithReachability() {
+    let config = URLSessionConfiguration.default
+    config.waitsForConnectivity = true
+    config.timeoutIntervalForResource = 300 // 5 minutes
+    
+    let session = URLSession(configuration: config)
+    
+    guard let url = URL(string: "https://api.example.com/data") else { return }
+    
+    let task = session.dataTask(with: url) { data, response, error in
+        if let error = error as NSError? {
+            if error.domain == NSURLErrorDomain {
+                switch error.code {
+                case NSURLErrorNotConnectedToInternet:
+                    print("No internet connection")
+                case NSURLErrorTimedOut:
+                    print("Request timed out")
+                case NSURLErrorNetworkConnectionLost:
+                    print("Network connection lost")
+                default:
+                    print("Network error: \(error.localizedDescription)")
+                }
+            }
+            return
+        }
+        
+        // Handle success
+    }
+    
+    task.resume()
+}
+```
+
+## Working with Multipart Form Data
+
+Uploading files requires multipart/form-data encoding:
+
+```swift
+func uploadImage(image: UIImage, to url: URL) {
+    guard let imageData = image.jpegData(compressionQuality: 0.8) else { return }
+    
+    let boundary = "Boundary-\(UUID().uuidString)"
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+    
+    var body = Data()
+    
+    // Add image data
+    body.append("--\(boundary)\r\n".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"image\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+    body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+    body.append(imageData)
+    body.append("\r\n".data(using: .utf8)!)
+
+    // Close boundary
+    body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+    request.httpBody = body
+
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error = error {
+            print("Upload error: \(error)")
+            return
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            print("Upload failed")
+            return
+        }
+
+        print("Upload successful!")
+    }
+
+    task.resume()
+}
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **URLSession.shared** | `URLSession.shared` | Default singleton session |
+| **GET request** | `session.dataTask(with: url)` | Fetch data from a URL |
+| **POST request** | `request.httpMethod = "POST"` | Send data to a server |
+| **URLRequest** | `URLRequest(url:)` | Configure HTTP method, headers, body |
+| **Headers** | `request.setValue(_:forHTTPHeaderField:)` | Set custom HTTP headers |
+| **async/await** | `try await URLSession.shared.data(from:)` | Modern async networking (iOS 15+) |
+| **URLSessionConfiguration** | `.default`, `.ephemeral`, `.background` | Customize session behavior |
+| **Download task** | `session.downloadTask(with:)` | Download large files to disk |
+| **Query parameters** | `URLComponents` + `URLQueryItem` | Build URLs with parameters safely |
+| **Cancel** | `task.cancel()` | Cancel an in-flight request |
+| **Multipart upload** | `multipart/form-data` boundary | Upload files with form data |
+
+## Official Resources
+
+- [Apple Documentation: URLSession](https://developer.apple.com/documentation/foundation/urlsession)
+- [Apple Documentation: URLRequest](https://developer.apple.com/documentation/foundation/urlrequest)
+- [Apple Documentation: URLSessionConfiguration](https://developer.apple.com/documentation/foundation/urlsessionconfiguration)
+- [Apple Documentation: Fetching Website Data](https://developer.apple.com/documentation/foundation/url_loading_system/fetching_website_data_into_memory)

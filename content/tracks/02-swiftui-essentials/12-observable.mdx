@@ -1,0 +1,735 @@
+---
+title: "@Observable & @Environment"
+description: "Observable macro, environment values, and shared state"
+sectionId: "2.4-state-management"
+sectionTitle: "State Management"
+order: 12
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# @Observable & @Environment in SwiftUI
+
+The `@Observable` macro and `@Environment` property wrapper are foundational tools for managing state in SwiftUI applications. They solve a critical problem: how to share data between views efficiently without manually passing it through every level of your view hierarchy.
+
+Before iOS 17, you'd use `ObservableObject` with `@Published` properties. The new `@Observable` macro (introduced in Swift 5.9 / iOS 17) provides a cleaner, more performant approach with less boilerplate. When combined with `@Environment`, you can inject shared state throughout your app elegantly.
+
+## Why This Matters
+
+In a typical app, you need to share data like user preferences, authentication state, or theme settings across multiple views. Without a state management system, you'd need to pass this data through every intermediate view—even views that don't use it. This creates tightly coupled, difficult-to-maintain code.
+
+`@Observable` and `@Environment` solve this by:
+- Creating observable objects that automatically notify views when data changes
+- Injecting these objects into the view hierarchy where any descendant view can access them
+- Ensuring SwiftUI only re-renders views that actually use the changed data
+
+## The @Observable Macro
+
+The `@Observable` macro marks a class so SwiftUI can track changes to its properties automatically.
+
+```swift
+import SwiftUI
+import Observation
+
+@Observable
+class AppSettings {
+    var username: String = "Guest"
+    var isDarkMode: Bool = false
+    var fontSize: Double = 16.0
+}
+```
+
+When you mark a class with `@Observable`, Swift automatically generates the necessary code to track property changes. Any SwiftUI view that reads these properties will update when they change.
+
+### Using Observable Objects in Views
+
+You can use observable objects directly in views:
+
+```swift
+struct ContentView: View {
+    var settings = AppSettings()
+    
+    var body: some View {
+        VStack {
+            Text("Hello, \(settings.username)")
+                .font(.system(size: settings.fontSize))
+            
+            Toggle("Dark Mode", isOn: $settings.isDarkMode)
+            
+            Button("Change Name") {
+                settings.username = "Alice"
+            }
+        }
+    }
+}
+```
+
+The view automatically updates when `username`, `isDarkMode`, or `fontSize` changes. No `@Published` or `@StateObject` required.
+
+### Observable vs ObservableObject (Pre-iOS 17)
+
+For comparison, here's the old approach:
+
+```swift
+// Old way (iOS 13-16)
+class AppSettings: ObservableObject {
+    @Published var username: String = "Guest"
+    @Published var isDarkMode: Bool = false
+    @Published var fontSize: Double = 16.0
+}
+
+struct ContentView: View {
+    @StateObject private var settings = AppSettings()
+    // ... rest of view
+}
+```
+
+The `@Observable` approach is cleaner and more performant because:
+- No need to mark each property with `@Published`
+- No need for `@StateObject` or `@ObservedObject` wrappers
+- Finer-grained change tracking (only properties actually read by a view trigger updates)
+
+## The @Environment Property Wrapper
+
+`@Environment` allows you to inject observable objects (and other values) into the view hierarchy, making them accessible to any descendant view without explicit passing.
+
+### Basic Environment Usage
+
+```swift
+@Observable
+class UserSession {
+    var isLoggedIn: Bool = false
+    var userName: String = ""
+    
+    func login(name: String) {
+        userName = name
+        isLoggedIn = true
+    }
+    
+    func logout() {
+        userName = ""
+        isLoggedIn = false
+    }
+}
+
+@main
+struct MyApp: App {
+    @State private var session = UserSession()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(session)
+        }
+    }
+}
+```
+
+Now any view in your hierarchy can access the `UserSession`:
+
+```swift
+struct ContentView: View {
+    @Environment(UserSession.self) private var session
+    
+    var body: some View {
+        Group {
+            if session.isLoggedIn {
+                WelcomeView()
+            } else {
+                LoginView()
+            }
+        }
+    }
+}
+
+struct WelcomeView: View {
+    @Environment(UserSession.self) private var session
+    
+    var body: some View {
+        VStack {
+            Text("Welcome, \(session.userName)!")
+            Button("Logout") {
+                session.logout()
+            }
+        }
+    }
+}
+
+struct LoginView: View {
+    @Environment(UserSession.self) private var session
+    @State private var name: String = ""
+    
+    var body: some View {
+        VStack {
+            TextField("Name", text: $name)
+            Button("Login") {
+                session.login(name: name)
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Deep Hierarchies
+
+The real power shows when you have deeply nested views:
+
+```swift
+struct RootView: View {
+    @State private var settings = AppSettings()
+    
+    var body: some View {
+        NavigationStack {
+            LevelOneView()
+                .environment(settings)
+        }
+    }
+}
+
+struct LevelOneView: View {
+    var body: some View {
+        LevelTwoView()
+        // Doesn't need to know about settings
+    }
+}
+
+struct LevelTwoView: View {
+    var body: some View {
+        LevelThreeView()
+        // Still doesn't need to know about settings
+    }
+}
+
+struct LevelThreeView: View {
+    @Environment(AppSettings.self) private var settings
+    
+    var body: some View {
+        Text("Font size: \(settings.fontSize)")
+        // Can access settings directly!
+    }
+}
+```
+
+## Built-in Environment Values
+
+SwiftUI provides many built-in environment values. These use a different syntax with key paths:
+
+```swift
+struct ThemedView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    
+    var body: some View {
+        VStack {
+            Text("Current theme: \(colorScheme == .dark ? "Dark" : "Light")")
+            
+            Button("Close") {
+                dismiss()
+            }
+            
+            Button("Open Safari") {
+                openURL(URL(string: "https://apple.com")!)
+            }
+        }
+    }
+}
+```
+
+### Custom Environment Keys
+
+You can create custom environment keys for non-observable values:
+
+```swift
+private struct APIKeyEnvironmentKey: EnvironmentKey {
+    static let defaultValue: String = ""
+}
+
+extension EnvironmentValues {
+    var apiKey: String {
+        get { self[APIKeyEnvironmentKey.self] }
+        set { self[APIKeyEnvironmentKey.self] = newValue }
+    }
+}
+
+// Usage
+struct RootView: View {
+    var body: some View {
+        ContentView()
+            .environment(\.apiKey, "sk-1234567890")
+    }
+}
+
+struct ContentView: View {
+    @Environment(\.apiKey) private var apiKey
+    
+    var body: some View {
+        Text("API Key: \(apiKey)")
+    }
+}
+```
+
+## Practical Example: Shopping Cart
+
+Here's a complete example demonstrating real-world usage:
+
+```swift
+@Observable
+class ShoppingCart {
+    var items: [CartItem] = []
+    
+    var totalPrice: Double {
+        items.reduce(0) { $0 + ($1.price * Double($1.quantity)) }
+    }
+    
+    func addItem(_ item: CartItem) {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index].quantity += 1
+        } else {
+            items.append(item)
+        }
+    }
+    
+    func removeItem(_ item: CartItem) {
+        items.removeAll { $0.id == item.id }
+    }
+    
+    func updateQuantity(for item: CartItem, quantity: Int) {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            if quantity <= 0 {
+                items.remove(at: index)
+            } else {
+                items[index].quantity = quantity
+            }
+        }
+    }
+}
+
+struct CartItem: Identifiable, Equatable {
+    let id = UUID()
+    var name: String
+    var price: Double
+    var quantity: Int = 1
+}
+
+@main
+struct ShoppingApp: App {
+    @State private var cart = ShoppingCart()
+    
+    var body: some Scene {
+        WindowGroup {
+            TabView {
+                ProductListView()
+                    .tabItem { Label("Shop", systemImage: "bag") }
+                
+                CartView()
+                    .tabItem { Label("Cart", systemImage: "cart") }
+            }
+            .environment(cart)
+        }
+    }
+}
+
+struct ProductListView: View {
+    @Environment(ShoppingCart.self) private var cart
+    
+    let products = [
+        CartItem(name: "Coffee", price: 4.99),
+        CartItem(name: "Tea", price: 3.99),
+        CartItem(name: "Sandwich", price: 7.99)
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            List(products) { product in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(product.name)
+                        Text("$\(product.price, specifier: "%.2f")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button("Add to Cart") {
+                        cart.addItem(product)
+                    }
+                }
+            }
+            .navigationTitle("Products")
+        }
+    }
+}
+
+struct CartView: View {
+    @Environment(ShoppingCart.self) private var cart
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(cart.items) { item in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(item.name)
+                            Text("$\(item.price, specifier: "%.2f")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Stepper("\(item.quantity)", 
+                                value: Binding(
+                                    get: { item.quantity },
+                                    set: { cart.updateQuantity(for: item, quantity: $0) }
+                                ),
+                                in: 0...99)
+                        
+                        Button(role: .destructive) {
+                            cart.removeItem(item)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Cart")
+            .safeAreaInset(edge: .bottom) {
+                if !cart.items.isEmpty {
+                    TotalView()
+                }
+            }
+        }
+    }
+}
+
+struct TotalView: View {
+    @Environment(ShoppingCart.self) private var cart
+    
+    var body: some View {
+        HStack {
+            Text("Total:")
+                .font(.headline)
+            Spacer()
+            Text("$\(cart.totalPrice, specifier: "%.2f")")
+                .font(.headline)
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+    }
+}
+```
+
+## Modifying Environment Objects
+
+When you need to modify an observable object in the environment, you might need to bind to its properties:
+
+```swift
+@Observable
+class FormData {
+    var name: String = ""
+    var email: String = ""
+    var age: Int = 18
+}
+
+struct FormView: View {
+    @Environment(FormData.self) private var formData
+    
+    var body: some View {
+        // Direct binding using @Bindable
+        @Bindable var formData = formData
+        
+        Form {
+            TextField("Name", text: $formData.name)
+            TextField("Email", text: $formData.email)
+            Stepper("Age: \(formData.age)", value: $formData.age, in: 18...100)
+        }
+    }
+}
+```
+
+The `@Bindable` property wrapper enables two-way binding (`$`) with observable objects from the environment.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting to Add Object to Environment
+
+```swift
+// ❌ Wrong - UserSession not in environment
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+            // Missing .environment(session)
+        }
+    }
+}
+
+struct ContentView: View {
+    @Environment(UserSession.self) private var session
+    
+    var body: some View {
+        Text(session.userName) // Runtime error!
+    }
+}
+```
+
+**Fix:** Always inject the object:
+
+```swift
+// ✅ Correct
+@main
+struct MyApp: App {
+    @State private var session = UserSession()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(session)
+        }
+    }
+}
+```
+
+### Mistake 2: Using @State Instead of @Environment
+
+```swift
+// ❌ Wrong - Creates new instance instead of using shared one
+struct ChildView: View {
+    @State private var cart = ShoppingCart()
+    
+    var body: some View {
+        Text("\(cart.items.count) items")
+    }
+}
+```
+
+**Fix:** Use `@Environment` to access the shared instance:
+
+```swift
+// ✅ Correct
+struct ChildView: View {
+    @Environment(ShoppingCart.self) private var cart
+    
+    var body: some View {
+        Text("\(cart.items.count) items")
+    }
+}
+```
+
+### Mistake 3: Trying to Make Structs Observable
+
+```swift
+// ❌ Wrong - @Observable only works with classes
+@Observable
+struct Settings { // Compiler error!
+    var theme: String = "Light"
+}
+```
+
+**Fix:** Use a class:
+
+```swift
+// ✅ Correct
+@Observable
+class Settings {
+    var theme: String = "Light"
+}
+```
+
+### Edge Case: Multiple Instances
+
+Sometimes you need multiple instances of the same type in different parts of your app:
+
+```swift
+@Observable
+class ThemeSettings {
+    var primaryColor: Color = .blue
+    var secondaryColor: Color = .green
+}
+
+struct MultiThemeApp: View {
+    @State private var mainTheme = ThemeSettings()
+    @State private var adminTheme = ThemeSettings()
+    
+    init() {
+        adminTheme.primaryColor = .red
+    }
+    
+    var body: some View {
+        TabView {
+            MainArea()
+                .environment(mainTheme)
+                .tabItem { Label("Main", systemImage: "house") }
+            
+            AdminArea()
+                .environment(adminTheme)
+                .tabItem { Label("Admin", systemImage: "gear") }
+        }
+    }
+}
+```
+
+Each tab gets its own theme instance. The nearest environment value wins.
+
+### Edge Case: Testing
+
+When testing, you can inject mock objects:
+
+```swift
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        let mockCart = ShoppingCart()
+        mockCart.addItem(CartItem(name: "Test Item", price: 9.99))
+        
+        return CartView()
+            .environment(mockCart)
+    }
+}
+
+#Preview("Empty Cart") {
+    CartView()
+        .environment(ShoppingCart())
+}
+
+#Preview("Full Cart") {
+    let cart = ShoppingCart()
+    cart.addItem(CartItem(name: "Coffee", price: 4.99))
+    cart.addItem(CartItem(name: "Tea", price: 3.99))
+    
+    return CartView()
+        .environment(cart)
+}
+```
+
+## Performance Considerations
+
+### Fine-Grained Updates
+
+`@Observable` only triggers view updates for properties actually read by a view:
+
+```swift
+@Observable
+class AppData {
+    var counter: Int = 0
+    var userName: String = "Guest"
+}
+
+struct CounterView: View {
+    @Environment(AppData.self) private var data
+    
+    var body: some View {
+        // Only updates when counter changes, not when userName changes
+        Text("Count: \(data.counter)")
+    }
+}
+
+struct UserNameView: View {
+    @Environment(AppData.self) private var data
+
+    var body: some View {
+        // Only updates when userName changes, not when counter changes
+        Text("Hello, \(data.userName)")
+    }
+}
+```
+
+This is a significant advantage over `ObservableObject`, where any `@Published` property change triggers updates in *all* observing views, regardless of which property they use.
+
+### Avoiding Unnecessary Recomputations
+
+Keep computed properties lightweight since they're evaluated during view updates:
+
+```swift
+@Observable
+class SearchViewModel {
+    var searchText: String = ""
+    var allItems: [Item] = []
+
+    // ✅ Simple filtering is fine
+    var filteredItems: [Item] {
+        if searchText.isEmpty {
+            return allItems
+        }
+        return allItems.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+}
+```
+
+For expensive computations, cache the result manually:
+
+```swift
+@Observable
+class ExpensiveViewModel {
+    var rawData: [DataPoint] = [] {
+        didSet {
+            _cachedAnalysis = nil
+        }
+    }
+
+    private var _cachedAnalysis: Analysis?
+
+    var analysis: Analysis {
+        if let cached = _cachedAnalysis {
+            return cached
+        }
+        let result = performExpensiveAnalysis(rawData)
+        _cachedAnalysis = result
+        return result
+    }
+}
+```
+
+### When NOT to Use @Observable
+
+`@Observable` is designed for reference types (classes). For simple, view-local state, continue using `@State` with value types:
+
+```swift
+struct CounterView: View {
+    // ✅ Simple local state - use @State with value types
+    @State private var count = 0
+
+    var body: some View {
+        Button("Count: \(count)") {
+            count += 1
+        }
+    }
+}
+```
+
+## Migration from ObservableObject
+
+If you're updating existing code from `ObservableObject` to `@Observable`:
+
+| ObservableObject | @Observable |
+|------------------|-------------|
+| `class MyModel: ObservableObject` | `@Observable class MyModel` |
+| `@Published var name` | `var name` (no wrapper needed) |
+| `@StateObject private var model` | `@State private var model` |
+| `@ObservedObject var model` | Pass directly or use `@Bindable` |
+| `@EnvironmentObject var model` | `@Environment(MyModel.self) var model` |
+| `.environmentObject(model)` | `.environment(model)` |
+
+## Summary Table
+
+| Feature | @Observable | ObservableObject |
+|---------|------------|-----------------|
+| **Minimum iOS** | iOS 17+ | iOS 13+ |
+| **Import** | `import Observation` | `import Combine` |
+| **Property tracking** | Automatic, per-property | All `@Published` changes notify all observers |
+| **View updates** | Only views reading changed properties | All observing views |
+| **Property wrapper** | None needed for properties | `@Published` required |
+| **View ownership** | `@State` | `@StateObject` |
+| **View reference** | Direct or `@Bindable` | `@ObservedObject` |
+| **Environment** | `@Environment(Type.self)` | `@EnvironmentObject` |
+| **Performance** | Better (fine-grained) | Can cause unnecessary updates |
+
+## Official Resources
+
+- [Apple Documentation: Observation](https://developer.apple.com/documentation/observation)
+- [WWDC 2023: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)
+- [Swift Evolution: Observation Macros](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md)

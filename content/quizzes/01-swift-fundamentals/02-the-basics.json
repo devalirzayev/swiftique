@@ -1,0 +1,50 @@
+{
+  "articleSlug": "02-the-basics",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What keyword declares a constant in Swift?",
+      "options": ["var", "let", "const", "final"],
+      "correctAnswer": 1,
+      "explanation": "`let` declares a constant whose value cannot be changed after it's set."
+    },
+    {
+      "id": "q2",
+      "question": "What type does Swift infer for `let pi = 3.14159`?",
+      "options": ["Float", "Double", "Decimal", "Int"],
+      "correctAnswer": 1,
+      "explanation": "Swift defaults to `Double` when inferring floating-point types."
+    },
+    {
+      "id": "q3",
+      "question": "What does `var name: String?` mean?",
+      "options": [
+        "name is a String that cannot be nil",
+        "name is a String or nil",
+        "name has a default value",
+        "name is a constant"
+      ],
+      "correctAnswer": 1,
+      "explanation": "The `?` makes it an optional — it can hold a String value or nil."
+    },
+    {
+      "id": "q4",
+      "question": "What is the result of `let x = 42; let y = Double(x) + 0.5`?",
+      "options": ["Compile error", "42.5", "42", "43"],
+      "correctAnswer": 1,
+      "explanation": "`Double(x)` converts the Int to Double, then adds 0.5 to get 42.5."
+    },
+    {
+      "id": "q5",
+      "question": "What does the nil-coalescing operator `??` do?",
+      "options": [
+        "Compares two optionals",
+        "Force-unwraps an optional",
+        "Provides a default value if the optional is nil",
+        "Checks if a value is nil"
+      ],
+      "correctAnswer": 2,
+      "explanation": "`a ?? b` unwraps `a` if it has a value, or returns `b` if `a` is nil."
+    }
+  ]
+}

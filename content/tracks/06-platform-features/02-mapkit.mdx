@@ -1,0 +1,652 @@
+---
+title: "MapKit & Location"
+description: "Maps, annotations, CoreLocation, and geofencing"
+sectionId: "6.1-system-frameworks"
+sectionTitle: "System Frameworks"
+order: 2
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# MapKit & Location: Building Location-Aware iOS Apps
+
+MapKit and CoreLocation are two essential frameworks for building location-aware iOS applications. **CoreLocation** handles everything related to determining a device's geographic location, while **MapKit** provides map display capabilities, annotations, and geographic data visualization. Together, they enable you to create apps with features like displaying maps, showing user location, placing pins, calculating distances, and setting up geofences.
+
+Why does this matter? Location-based features are fundamental to many successful iOS apps—from ride-sharing and food delivery to fitness tracking and social networking. Understanding these frameworks is crucial for any iOS developer.
+
+## CoreLocation Basics
+
+CoreLocation is your gateway to accessing location data. It handles GPS, Wi-Fi, and cellular positioning to determine where the device is located.
+
+### Setting Up Location Services
+
+First, you need to configure your app's `Info.plist` with usage descriptions. Without these, iOS will reject your location requests:
+
+- `NSLocationWhenInUseUsageDescription`: For location access while app is in use
+- `NSLocationAlwaysAndWhenInUseUsageDescription`: For background location access
+
+```swift
+import CoreLocation
+
+class LocationManager: NSObject, ObservableObject {
+    private let locationManager = CLLocationManager()
+    @Published var userLocation: CLLocation?
+    @Published var authorizationStatus: CLAuthorizationStatus?
+    
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+    
+    func requestLocationPermission() {
+        locationManager.requestWhenInUseAuthorization()
+    }
+    
+    func startUpdatingLocation() {
+        locationManager.startUpdatingLocation()
+    }
+    
+    func stopUpdatingLocation() {
+        locationManager.stopUpdatingLocation()
+    }
+}
+
+extension LocationManager: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, 
+                        didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        userLocation = location
+        print("Latitude: \(location.coordinate.latitude), Longitude: \(location.coordinate.longitude)")
+    }
+    
+    func locationManager(_ manager: CLLocationManager, 
+                        didFailWithError error: Error) {
+        print("Location error: \(error.localizedDescription)")
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            startUpdatingLocation()
+        case .denied, .restricted:
+            print("Location access denied")
+        case .notDetermined:
+            requestLocationPermission()
+        @unknown default:
+            break
+        }
+    }
+}
+```
+
+**Common Mistake**: Forgetting to set the delegate before requesting authorization. Always set `locationManager.delegate = self` in your initializer.
+
+**Edge Case**: On iOS 14+, the authorization callback is `locationManagerDidChangeAuthorization(_:)`, not the older `didChangeAuthorization` method. Always use the newer method.
+
+### Location Accuracy and Battery Life
+
+Different accuracy levels have different battery impacts:
+
+```swift
+// Best accuracy - highest battery drain
+locationManager.desiredAccuracy = kCLLocationAccuracyBest
+
+// Good for navigation
+locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+
+// Good for weather apps
+locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+
+// Lowest battery impact
+locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+```
+
+**Best Practice**: Use the least accurate setting that meets your needs. For example, a weather app doesn't need GPS-level precision.
+
+### One-Time Location Requests
+
+If you only need the location once, use `requestLocation()` instead of continuous updates:
+
+```swift
+func requestSingleLocation() {
+    locationManager.requestLocation()
+}
+
+// Still implement didUpdateLocations, but it will be called only once
+func locationManager(_ manager: CLLocationManager, 
+                    didUpdateLocations locations: [CLLocation]) {
+    guard let location = locations.last else { return }
+    userLocation = location
+    // No need to call stopUpdatingLocation()
+}
+```
+
+## Displaying Maps with MapKit
+
+MapKit provides the `MKMapView` component for UIKit and the `Map` view for SwiftUI.
+
+### SwiftUI Map Implementation
+
+```swift
+import SwiftUI
+import MapKit
+
+struct MapViewExample: View {
+    @StateObject private var locationManager = LocationManager()
+    @State private var region = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+    )
+    
+    var body: some View {
+        Map(coordinateRegion: $region, 
+            showsUserLocation: true,
+            userTrackingMode: .constant(.follow))
+            .onAppear {
+                locationManager.requestLocationPermission()
+            }
+            .onChange(of: locationManager.userLocation) { newLocation in
+                if let location = newLocation {
+                    region.center = location.coordinate
+                }
+            }
+    }
+}
+```
+
+### UIKit Map Implementation
+
+```swift
+import UIKit
+import MapKit
+
+class MapViewController: UIViewController {
+    private let mapView = MKMapView()
+    private let locationManager = LocationManager()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupMapView()
+        locationManager.requestLocationPermission()
+    }
+    
+    private func setupMapView() {
+        mapView.frame = view.bounds
+        mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        mapView.showsUserLocation = true
+        mapView.delegate = self
+        view.addSubview(mapView)
+        
+        // Set initial region (San Francisco)
+        let coordinate = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+        let region = MKCoordinateRegion(center: coordinate, 
+                                       latitudinalMeters: 5000, 
+                                       longitudinalMeters: 5000)
+        mapView.setRegion(region, animated: true)
+    }
+}
+
+extension MapViewController: MKMapViewDelegate {
+    func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+        let region = MKCoordinateRegion(center: userLocation.coordinate,
+                                       latitudinalMeters: 1000,
+                                       longitudinalMeters: 1000)
+        mapView.setRegion(region, animated: true)
+    }
+}
+```
+
+## Working with Annotations
+
+Annotations are markers placed on the map to indicate points of interest. Think of them as "pins" on the map.
+
+### Creating Custom Annotations
+
+```swift
+import MapKit
+
+class CustomAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let title: String?
+    let subtitle: String?
+    let type: LocationType
+    
+    enum LocationType {
+        case restaurant
+        case hotel
+        case attraction
+    }
+    
+    init(coordinate: CLLocationCoordinate2D, 
+         title: String, 
+         subtitle: String? = nil,
+         type: LocationType = .attraction) {
+        self.coordinate = coordinate
+        self.title = title
+        self.subtitle = subtitle
+        self.type = type
+    }
+}
+```
+
+### Adding Annotations to a Map (SwiftUI)
+
+```swift
+struct MapWithAnnotations: View {
+    @State private var region = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+    )
+    
+    let locations = [
+        IdentifiablePlace(name: "Golden Gate Bridge", 
+                         coordinate: CLLocationCoordinate2D(latitude: 37.8199, longitude: -122.4783)),
+        IdentifiablePlace(name: "Alcatraz Island", 
+                         coordinate: CLLocationCoordinate2D(latitude: 37.8267, longitude: -122.4230))
+    ]
+    
+    var body: some View {
+        Map(coordinateRegion: $region, annotationItems: locations) { location in
+            MapAnnotation(coordinate: location.coordinate) {
+                VStack {
+                    Image(systemName: "mappin.circle.fill")
+                        .foregroundColor(.red)
+                        .font(.title)
+                    Text(location.name)
+                        .font(.caption)
+                        .padding(4)
+                        .background(Color.white)
+                        .cornerRadius(4)
+                }
+            }
+        }
+    }
+}
+
+struct IdentifiablePlace: Identifiable {
+    let id = UUID()
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+}
+```
+
+### Custom Annotation Views (UIKit)
+
+```swift
+class CustomAnnotationView: MKAnnotationView {
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        setupView()
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupView() {
+        canShowCallout = true
+        
+        // Custom pin image
+        image = UIImage(systemName: "star.circle.fill")
+        tintColor = .systemYellow
+        
+        // Right callout accessory
+        let button = UIButton(type: .detailDisclosure)
+        rightCalloutAccessoryView = button
+    }
+}
+
+// In your MKMapViewDelegate
+extension MapViewController {
+    func mapView(_ mapView: MKMapView, 
+                 viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        // Don't replace user location annotation
+        guard !annotation.is(MKUserLocation.self) else {
+            return nil
+        }
+        
+        let identifier = "CustomPin"
+        var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+        
+        if annotationView == nil {
+            annotationView = CustomAnnotationView(annotation: annotation, 
+                                                  reuseIdentifier: identifier)
+        } else {
+            annotationView?.annotation = annotation
+        }
+        
+        return annotationView
+    }
+    
+    func mapView(_ mapView: MKMapView, 
+                 annotationView view: MKAnnotationView, 
+                 calloutAccessoryControlTapped control: UIControl) {
+        guard let annotation = view.annotation else { return }
+        print("Tapped annotation: \(annotation.title ?? "Unknown")")
+    }
+}
+```
+
+**Common Mistake**: Not reusing annotation views. Always use `dequeueReusableAnnotationView` for better performance, especially with many annotations.
+
+## Calculating Distances
+
+CoreLocation provides methods to calculate distances between coordinates:
+
+```swift
+extension CLLocation {
+    func distanceInMiles(from location: CLLocation) -> Double {
+        let distanceInMeters = distance(from: location)
+        return distanceInMeters / 1609.344 // Convert to miles
+    }
+    
+    func distanceInKilometers(from location: CLLocation) -> Double {
+        let distanceInMeters = distance(from: location)
+        return distanceInMeters / 1000.0
+    }
+}
+
+// Usage
+let sanFrancisco = CLLocation(latitude: 37.7749, longitude: -122.4194)
+let losAngeles = CLLocation(latitude: 34.0522, longitude: -118.2437)
+
+let distanceInMeters = sanFrancisco.distance(from: losAngeles)
+let distanceInMiles = sanFrancisco.distanceInMiles(from: losAngeles)
+
+print("Distance: \(distanceInMiles) miles")
+```
+
+### Finding Nearest Locations
+
+```swift
+struct Location {
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+    
+    func distance(from userLocation: CLLocation) -> Double {
+        let location = CLLocation(latitude: coordinate.latitude, 
+                                 longitude: coordinate.longitude)
+        return userLocation.distance(from: location)
+    }
+}
+
+func findNearestLocations(to userLocation: CLLocation, 
+                         from locations: [Location], 
+                         limit: Int = 5) -> [Location] {
+    return locations
+        .sorted { $0.distance(from: userLocation) < $1.distance(from: userLocation) }
+        .prefix(limit)
+        .map { $0 }
+}
+```
+
+## Geocoding and Reverse Geocoding
+
+**Geocoding** converts addresses to coordinates. **Reverse geocoding** converts coordinates to addresses.
+
+```swift
+class GeocodingService {
+    private let geocoder = CLGeocoder()
+    
+    // Address to coordinates
+    func geocodeAddress(_ address: String, 
+                       completion: @escaping (CLLocationCoordinate2D?) -> Void) {
+        geocoder.geocodeAddressString(address) { placemarks, error in
+            if let error = error {
+                print("Geocoding error: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            guard let placemark = placemarks?.first,
+                  let location = placemark.location else {
+                completion(nil)
+                return
+            }
+            
+            completion(location.coordinate)
+        }
+    }
+    
+    // Coordinates to address
+    func reverseGeocode(coordinate: CLLocationCoordinate2D,
+                       completion: @escaping (String?) -> Void) {
+        let location = CLLocation(latitude: coordinate.latitude, 
+                                 longitude: coordinate.longitude)
+        
+        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+            if let error = error {
+                print("Reverse geocoding error: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            guard let placemark = placemarks?.first else {
+                completion(nil)
+                return
+            }
+            
+            let address = [
+                placemark.subThoroughfare,
+                placemark.thoroughfare,
+                placemark.locality,
+                placemark.administrativeArea,
+                placemark.postalCode
+            ]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+            
+            completion(address)
+        }
+    }
+}
+
+// Usage
+let geocoder = GeocodingService()
+
+geocoder.geocodeAddress("1 Apple Park Way, Cupertino, CA") { coordinate in
+    if let coordinate = coordinate {
+        print("Found: \(coordinate.latitude), \(coordinate.longitude)")
+    }
+}
+
+let appleCoordinate = CLLocationCoordinate2D(latitude: 37.3349, longitude: -122.0090)
+geocoder.reverseGeocode(coordinate: appleCoordinate) { address in
+    if let address = address {
+        print("Address: \(address)")
+    }
+}
+```
+
+**Edge Case**: CLGeocoder has rate limits. Apple recommends no more than one geocoding request per minute. For batch operations, add delays between requests.
+
+```swift
+func geocodeMultipleAddresses(_ addresses: [String], 
+                             completion: @escaping ([CLLocationCoordinate2D?]) -> Void) {
+    var results: [CLLocationCoordinate2D?] = []
+    var currentIndex = 0
+    
+    func geocodeNext() {
+        guard currentIndex < addresses.count else {
+            completion(results)
+            return
+        }
+        
+        geocodeAddress(addresses[currentIndex]) { coordinate in
+            results.append(coordinate)
+            currentIndex += 1
+            
+            // Wait 1 second before next request
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                geocodeNext()
+            }
+        }
+    }
+    
+    geocodeNext()
+}
+```
+
+## Geofencing
+
+Geofencing allows your app to be notified when the user enters or exits a defined geographic region. This is powerful for location-based reminders, proximity alerts, and targeted content delivery.
+
+### Setting Up a Geofence
+
+```swift
+import CoreLocation
+
+class GeofenceManager: NSObject, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.requestAlwaysAuthorization()
+    }
+
+    func startMonitoring(region: CLCircularRegion) {
+        // Check if the device supports geofencing
+        guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
+            print("Geofencing not supported on this device")
+            return
+        }
+
+        // Maximum 20 regions can be monitored simultaneously
+        if locationManager.monitoredRegions.count >= 20 {
+            print("Maximum regions reached — remove one first")
+            return
+        }
+
+        region.notifyOnEntry = true
+        region.notifyOnExit = true
+        locationManager.startMonitoring(for: region)
+    }
+
+    func stopMonitoring(region: CLCircularRegion) {
+        locationManager.stopMonitoring(for: region)
+    }
+
+    // MARK: - CLLocationManagerDelegate
+
+    func locationManager(_ manager: CLLocationManager,
+                        didEnterRegion region: CLRegion) {
+        print("Entered region: \(region.identifier)")
+        // Trigger notification, update UI, etc.
+    }
+
+    func locationManager(_ manager: CLLocationManager,
+                        didExitRegion region: CLRegion) {
+        print("Exited region: \(region.identifier)")
+    }
+
+    func locationManager(_ manager: CLLocationManager,
+                        monitoringDidFailFor region: CLRegion?,
+                        withError error: Error) {
+        print("Monitoring failed for region \(region?.identifier ?? "unknown"): \(error)")
+    }
+}
+
+// Usage
+let geofenceManager = GeofenceManager()
+
+let coffeeShopRegion = CLCircularRegion(
+    center: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+    radius: 100, // meters (minimum 100m for reliable detection)
+    identifier: "favorite-coffee-shop"
+)
+
+geofenceManager.startMonitoring(region: coffeeShopRegion)
+```
+
+**Important**: Geofencing requires "Always" location permission (`requestAlwaysAuthorization`). "When In Use" permission is not sufficient.
+
+**Edge Case**: The system limits you to 20 monitored regions per app. For apps that need more locations, dynamically swap regions based on the user's current location.
+
+### Significant Location Changes
+
+For apps that need location updates with minimal battery impact:
+
+```swift
+class SignificantLocationManager: NSObject, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+
+    func startMonitoring() {
+        locationManager.delegate = self
+        locationManager.startMonitoringSignificantLocationChanges()
+        // Wakes your app from the background when location changes significantly
+        // (~500 meters or more)
+    }
+
+    func locationManager(_ manager: CLLocationManager,
+                        didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        print("Significant change: \(location.coordinate)")
+        // Update geofence regions based on new location
+    }
+}
+```
+
+## Common Mistakes
+
+### Mistake 1: Not Handling Location Permission Changes
+
+```swift
+// ❌ Bad — assumes permission is always granted
+func showMap() {
+    locationManager.startUpdatingLocation() // May fail silently
+}
+
+// ✅ Good — check and respond to permission state
+func showMap() {
+    switch locationManager.authorizationStatus {
+    case .authorizedWhenInUse, .authorizedAlways:
+        locationManager.startUpdatingLocation()
+    case .denied:
+        showSettingsPrompt()
+    case .notDetermined:
+        locationManager.requestWhenInUseAuthorization()
+    default:
+        break
+    }
+}
+```
+
+### Mistake 2: Using Precise Location When Not Needed
+
+```swift
+// ❌ Bad — drains battery for a weather app
+locationManager.desiredAccuracy = kCLLocationAccuracyBest
+
+// ✅ Good — match accuracy to actual needs
+locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+```
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **CLLocationManager** | `startUpdatingLocation()` | Continuous location updates |
+| **One-time location** | `requestLocation()` | Single location fix |
+| **Permission** | `requestWhenInUseAuthorization()` | Request location access |
+| **Map (SwiftUI)** | `Map(coordinateRegion:)` | Display interactive map |
+| **Map (UIKit)** | `MKMapView` | Display interactive map |
+| **Annotations** | `MKAnnotation`, `MapAnnotation` | Place pins on map |
+| **Custom pins** | `MKAnnotationView` | Customized map markers |
+| **Distance** | `CLLocation.distance(from:)` | Calculate distance between points |
+| **Geocoding** | `CLGeocoder.geocodeAddressString()` | Address to coordinates |
+| **Reverse geocoding** | `CLGeocoder.reverseGeocodeLocation()` | Coordinates to address |
+| **Geofencing** | `CLCircularRegion` + `startMonitoring(for:)` | Enter/exit region alerts |
+| **Significant changes** | `startMonitoringSignificantLocationChanges()` | Low-power location tracking |
+
+## Official Resources
+
+- [Apple Documentation: MapKit](https://developer.apple.com/documentation/mapkit)
+- [Apple Documentation: CoreLocation](https://developer.apple.com/documentation/corelocation)
+- [Apple Documentation: CLLocationManager](https://developer.apple.com/documentation/corelocation/cllocationmanager)
+- [Apple Documentation: Monitoring Regions](https://developer.apple.com/documentation/corelocation/monitoring-the-user-s-proximity-to-geographic-regions)
+- [WWDC 2023: Meet MapKit for SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10043/)

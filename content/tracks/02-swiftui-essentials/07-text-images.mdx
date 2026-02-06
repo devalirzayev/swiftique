@@ -1,0 +1,626 @@
+---
+title: "Text & Images"
+description: "Text formatting, SF Symbols, Image views, and AsyncImage"
+sectionId: "2.3-common-views"
+sectionTitle: "Common Views & Controls"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Text & Images in SwiftUI
+
+Working with text and images is fundamental to building any iOS app. Whether you're displaying a simple label or loading images from a remote server, SwiftUI provides powerful, declarative APIs that make these tasks straightforward. This guide covers text formatting with the `Text` view, Apple's SF Symbols icon system, displaying images with `Image`, and loading remote images with `AsyncImage`.
+
+## Why Text and Images Matter
+
+Text and images are the primary ways users consume information in your app. Understanding how to properly format text, display system icons, and handle both local and remote images is essential for creating professional, performant iOS applications. SwiftUI's approach to these elements is both simple for basic use cases and powerful for advanced scenarios.
+
+## Text Views and Formatting
+
+The `Text` view is your primary way to display read-only text. It's highly optimized and supports extensive formatting options.
+
+### Basic Text Usage
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        Text("Hello, SwiftUI!")
+    }
+}
+```
+
+### Text Modifiers
+
+SwiftUI uses a modifier-based approach for styling. Modifiers return a new view, so you can chain them together:
+
+```swift
+Text("Welcome to iOS Development")
+    .font(.title)
+    .fontWeight(.bold)
+    .foregroundColor(.blue)
+    .multilineTextAlignment(.center)
+```
+
+### System Fonts and Dynamic Type
+
+iOS includes Dynamic Type, which respects user accessibility preferences for text size. Always use system fonts when possible:
+
+```swift
+VStack(alignment: .leading, spacing: 10) {
+    Text("Large Title").font(.largeTitle)
+    Text("Title").font(.title)
+    Text("Title 2").font(.title2)
+    Text("Title 3").font(.title3)
+    Text("Headline").font(.headline)
+    Text("Body").font(.body)
+    Text("Callout").font(.callout)
+    Text("Subheadline").font(.subheadline)
+    Text("Footnote").font(.footnote)
+    Text("Caption").font(.caption)
+    Text("Caption 2").font(.caption2)
+}
+```
+
+### Custom Fonts
+
+You can also use custom fonts, but be mindful of Dynamic Type:
+
+```swift
+// Fixed size (doesn't scale with accessibility settings)
+Text("Custom Font")
+    .font(.custom("Helvetica Neue", size: 18))
+
+// Relative to text style (scales with accessibility settings) - preferred
+Text("Custom Font with Dynamic Type")
+    .font(.custom("Helvetica Neue", size: 18, relativeTo: .body))
+```
+
+### Text Formatting and Styling
+
+```swift
+VStack(alignment: .leading, spacing: 15) {
+    // Bold and italic
+    Text("Bold Text").bold()
+    Text("Italic Text").italic()
+    Text("Bold and Italic").bold().italic()
+    
+    // Underline and strikethrough
+    Text("Underlined").underline()
+    Text("Strikethrough").strikethrough()
+    Text("Red Underline").underline(color: .red)
+    
+    // Kerning (letter spacing) and line spacing
+    Text("Spaced Letters").kerning(3)
+    Text("Multiple lines\nwith custom\nline spacing")
+        .lineSpacing(10)
+    
+    // Baseline offset
+    HStack {
+        Text("Normal")
+        Text("Raised").baselineOffset(10)
+        Text("Lowered").baselineOffset(-10)
+    }
+}
+```
+
+### Combining Text Views
+
+You can concatenate multiple `Text` views with different styles:
+
+```swift
+Text("Hello ")
+    .foregroundColor(.blue)
+    .fontWeight(.bold)
++ Text("World")
+    .foregroundColor(.red)
+    .italic()
+```
+
+Or use string interpolation with AttributedString for more complex formatting:
+
+```swift
+var body: some View {
+    let attributedString = try? AttributedString(
+        markdown: "This is **bold** and this is *italic*"
+    )
+    
+    return Text(attributedString ?? "")
+}
+```
+
+### String Interpolation in Text
+
+`Text` supports SwiftUI-specific string interpolation:
+
+```swift
+let username = "Alice"
+let score = 42
+
+Text("User \(username) scored \(score) points")
+
+// With formatting
+Text("Price: \(price, format: .currency(code: "USD"))")
+Text("Date: \(date, format: .dateTime)")
+```
+
+### Common Mistakes with Text
+
+**Mistake: Using too many modifiers inefficiently**
+
+```swift
+// Inefficient - each text has separate modifiers
+VStack {
+    Text("Line 1").font(.body).foregroundColor(.primary)
+    Text("Line 2").font(.body).foregroundColor(.primary)
+    Text("Line 3").font(.body).foregroundColor(.primary)
+}
+
+// Better - apply modifier to container
+VStack {
+    Text("Line 1")
+    Text("Line 2")
+    Text("Line 3")
+}
+.font(.body)
+.foregroundColor(.primary)
+```
+
+**Mistake: Not limiting line count or handling truncation**
+
+```swift
+// Could overflow or cause layout issues
+Text(userGeneratedContent)
+
+// Better - control the display
+Text(userGeneratedContent)
+    .lineLimit(3)
+    .truncationMode(.tail)
+```
+
+## SF Symbols
+
+SF Symbols is Apple's library of over 5,000 configurable symbols designed to integrate seamlessly with San Francisco, Apple's system font. They're vector-based, so they scale perfectly at any size.
+
+### Basic SF Symbol Usage
+
+```swift
+// Simple icon
+Image(systemName: "heart.fill")
+
+// With color and size
+Image(systemName: "star.fill")
+    .foregroundColor(.yellow)
+    .font(.system(size: 40))
+```
+
+### Symbol Rendering Modes
+
+SF Symbols support multiple rendering modes that affect how colors are applied:
+
+```swift
+VStack(spacing: 20) {
+    // Monochrome - single color (default)
+    Image(systemName: "cloud.sun.rain.fill")
+        .symbolRenderingMode(.monochrome)
+        .foregroundColor(.blue)
+        .font(.system(size: 44))
+    
+    // Hierarchical - multiple opacity levels of single color
+    Image(systemName: "cloud.sun.rain.fill")
+        .symbolRenderingMode(.hierarchical)
+        .foregroundColor(.blue)
+        .font(.system(size: 44))
+    
+    // Palette - multiple colors
+    Image(systemName: "cloud.sun.rain.fill")
+        .symbolRenderingMode(.palette)
+        .foregroundStyle(.blue, .yellow, .gray)
+        .font(.system(size: 44))
+    
+    // Multicolor - intrinsic colors designed by Apple
+    Image(systemName: "cloud.sun.rain.fill")
+        .symbolRenderingMode(.multicolor)
+        .font(.system(size: 44))
+}
+```
+
+### Symbol Variants
+
+Many symbols come with variants for different states:
+
+```swift
+HStack(spacing: 20) {
+    Image(systemName: "heart")
+    Image(systemName: "heart.fill")
+    Image(systemName: "heart.circle")
+    Image(systemName: "heart.circle.fill")
+    Image(systemName: "heart.square")
+    Image(systemName: "heart.square.fill")
+}
+.font(.system(size: 30))
+```
+
+### Symbol Scales and Weights
+
+Control symbol sizing with scales and weights:
+
+```swift
+VStack(spacing: 15) {
+    // Scales
+    HStack(spacing: 20) {
+        Image(systemName: "gear").imageScale(.small)
+        Image(systemName: "gear").imageScale(.medium)
+        Image(systemName: "gear").imageScale(.large)
+    }
+    
+    // Weights
+    HStack(spacing: 20) {
+        Image(systemName: "gear").fontWeight(.light)
+        Image(systemName: "gear").fontWeight(.regular)
+        Image(systemName: "gear").fontWeight(.bold)
+    }
+}
+.font(.system(size: 30))
+```
+
+### Variable Symbols
+
+Some symbols support variable values (iOS 16+):
+
+```swift
+// Shows a speaker with different volume levels (0.0 to 1.0)
+Image(systemName: "speaker.wave.3.fill", variableValue: 0.5)
+    .font(.system(size: 40))
+
+// Wi-Fi strength indicator
+Image(systemName: "wifi", variableValue: 0.7)
+    .font(.system(size: 40))
+```
+
+### Common SF Symbols Mistakes
+
+**Mistake: Using the wrong symbol name**
+
+```swift
+// Wrong - will show a question mark or crash
+Image(systemName: "hearth") // typo
+
+// Use the SF Symbols app to find exact names
+Image(systemName: "heart")
+```
+
+**Mistake: Not considering accessibility**
+
+```swift
+// Bad - image without label
+Button(action: { /* delete */ }) {
+    Image(systemName: "trash")
+}
+
+// Good - provides accessibility label
+Button(action: { /* delete */ }) {
+    Image(systemName: "trash")
+}
+.accessibilityLabel("Delete")
+```
+
+## Image Views
+
+The `Image` view displays local images from your asset catalog or bundle.
+
+### Adding Images to Assets
+
+Before you can use images, add them to your Assets.xcassets catalog:
+1. In Xcode, open Assets.xcassets
+2. Click the + button and select "Image Set"
+3. Drag your images (1x, 2x, 3x for different screen densities)
+
+### Basic Image Usage
+
+```swift
+// From asset catalog (most common)
+Image("myImageName")
+
+// With modifiers
+Image("landscape")
+    .resizable()
+    .aspectRatio(contentMode: .fit)
+    .frame(width: 300, height: 200)
+```
+
+### Resizing Modes
+
+By default, images display at their native size. Use `.resizable()` to enable scaling:
+
+```swift
+VStack(spacing: 20) {
+    // Original size (might be too large or small)
+    Image("photo")
+    
+    // Resizable with fit - maintains aspect ratio, fits within bounds
+    Image("photo")
+        .resizable()
+        .aspectRatio(contentMode: .fit)
+        .frame(width: 200, height: 200)
+        .border(Color.gray)
+    
+    // Resizable with fill - maintains aspect ratio, fills bounds
+    Image("photo")
+        .resizable()
+        .aspectRatio(contentMode: .fill)
+        .frame(width: 200, height: 200)
+        .clipped() // Clips overflow
+        .border(Color.gray)
+    
+    // Fixed aspect ratio
+    Image("photo")
+        .resizable()
+        .scaledToFit()
+        .aspectRatio(16/9, contentMode: .fit)
+}
+```
+
+### Image Modifiers and Effects
+
+```swift
+Image("profile")
+    .resizable()
+    .scaledToFill()
+    .frame(width: 100, height: 100)
+    .clipShape(Circle()) // Circular crop
+    .overlay(Circle().stroke(Color.white, lineWidth: 4))
+    .shadow(radius: 10)
+
+// Grayscale and other effects
+Image("photo")
+    .resizable()
+    .scaledToFit()
+    .grayscale(0.5)
+    .blur(radius: 2)
+    .opacity(0.8)
+```
+
+### Loading Images from Bundle
+
+```swift
+// From bundle (less common, use for resources not in asset catalog)
+if let uiImage = UIImage(named: "bundleImage") {
+    Image(uiImage: uiImage)
+        .resizable()
+        .scaledToFit()
+}
+```
+
+### Image Interpolation
+
+Control how images are rendered when scaled:
+
+```swift
+Image("pixelArt")
+    .resizable()
+    .interpolation(.none) // Sharp edges, good for pixel art
+    .frame(width: 200, height: 200)
+
+Image("photo")
+    .resizable()
+    .interpolation(.high) // Smooth, good for photos (default)
+    .frame(width: 200, height: 200)
+```
+
+## AsyncImage for Remote Images
+
+`AsyncImage` (iOS 15+) loads and displays images from a URL asynchronously. It handles the loading state, caching, and errors automatically.
+
+### Basic AsyncImage Usage
+
+```swift
+AsyncImage(url: URL(string: "https://example.com/image.jpg"))
+```
+
+### AsyncImage with Sizing
+
+```swift
+AsyncImage(url: URL(string: "https://example.com/image.jpg")) { image in
+    image
+        .resizable()
+        .aspectRatio(contentMode: .fit)
+} placeholder: {
+    ProgressView()
+}
+.frame(width: 300, height: 200)
+```
+
+### Handling Loading States
+
+The most flexible approach uses the `phase` parameter:
+
+```swift
+AsyncImage(url: URL(string: "https://example.com/image.jpg")) { phase in
+    switch phase {
+    case .empty:
+        // Loading state
+        ProgressView()
+    case .success(let image):
+        // Image loaded successfully
+        image
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+    case .failure:
+        // Error state
+        Image(systemName: "photo")
+            .foregroundColor(.gray)
+    @unknown default:
+        EmptyView()
+    }
+}
+.frame(width: 300, height: 200)
+```
+
+### Complete AsyncImage Example with Error Handling
+
+```swift
+struct RemoteImageView: View {
+    let urlString: String
+    
+    var body: some View {
+        AsyncImage(url: URL(string: urlString)) { phase in
+            switch phase {
+            case .empty:
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    ProgressView()
+                }
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            case .failure(let error):
+                ZStack {
+                    Color.gray.opacity(0.1)
+                    VStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.orange)
+                        Text("Failed to load image")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            @unknown default:
+                EmptyView()
+            }
+        }
+        .frame(width: 300, height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+```
+
+### AsyncImage with Custom Scale
+
+```swift
+// Specify scale for high-DPI displays
+AsyncImage(
+    url: URL(string: "https://example.com/image.jpg"),
+    scale: 2.0 // 2x retina
+) { image in
+    image.resizable().scaledToFit()
+} placeholder: {
+    ProgressView()
+}
+```
+
+### Common AsyncImage Mistakes
+
+**Mistake: Not handling nil URLs**
+
+```swift
+// Bad - will crash if string is invalid
+AsyncImage(url: URL(string: potentiallyInvalidString))
+
+// Good - safely unwrap
+if let url = URL(string: urlString) {
+    AsyncImage(url: url) { image in
+        image.resizable().scaledToFit()
+    } placeholder: {
+        ProgressView()
+    }
+} else {
+    Text("Invalid URL")
+}
+```
+
+**Mistake: Not constraining image size**
+
+```swift
+// Bad - image might be huge or tiny
+AsyncImage(url: url) { image in
+    image.resizable().scaledToFit()
+} placeholder: {
+    ProgressView()
+}
+
+// Good - define frame
+AsyncImage(url: url) { image in
+    image.resizable().scaledToFit()
+} placeholder: {
+    ProgressView()
+}
+.frame(width: 300, height: 200)
+```
+
+**Mistake: Not providing a placeholder**
+
+```swift
+// Acceptable but less polished
+AsyncImage(url: url)
+
+// Better user experience
+AsyncImage(url: url) { image in
+    image.resizable().scaledToFit()
+} placeholder: {
+    ProgressView()
+}
+```
+
+## Performance Considerations
+
+### Image Caching
+
+- `AsyncImage` automatically caches images using URLCache
+- For more control, consider using a third-party library like Kingfisher or SDWebImage
+- Asset catalog images are optimized and loaded efficiently by iOS
+
+### Image Size Optimization
+
+```swift
+// Always constrain image sizes to prevent layout issues
+Image("largePhoto")
+    .resizable()
+    .scaledToFit()
+    .frame(maxWidth: 300, maxHeight: 200) // Constrain dimensions
+
+// For lists with many images, use thumbnails
+struct ThumbnailView: View {
+    let imageName: String
+
+    var body: some View {
+        Image(imageName)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 60, height: 60)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+```
+
+### Tips for Better Performance
+
+- Use appropriately sized images in your asset catalog (1x, 2x, 3x)
+- Prefer SF Symbols over custom icons where possible—they're vector-based and always sharp
+- Use `AsyncImage` with placeholders to keep the UI responsive during loading
+- For large image-heavy lists, consider third-party caching libraries (Kingfisher, SDWebImage)
+
+## Summary Table
+
+| Component | Purpose | Key Modifiers |
+|-----------|---------|---------------|
+| **Text** | Display read-only text | `.font()`, `.foregroundColor()`, `.bold()`, `.lineLimit()` |
+| **SF Symbols** | System icon library | `.symbolRenderingMode()`, `.imageScale()`, `.fontWeight()` |
+| **Image** | Display local images | `.resizable()`, `.scaledToFit()`, `.clipShape()` |
+| **AsyncImage** | Load remote images | Phase handling (`.empty`, `.success`, `.failure`) |
+| **Text + Text** | Concatenated styled text | Use `+` operator between `Text` views |
+| **AttributedString** | Rich text with markdown | `try? AttributedString(markdown:)` |
+| **Variable Symbols** | Dynamic symbol values (iOS 16+) | `variableValue:` parameter |
+
+## Official Resources
+
+- [Apple Documentation: Text](https://developer.apple.com/documentation/swiftui/text)
+- [Apple Documentation: Image](https://developer.apple.com/documentation/swiftui/image)
+- [Apple Documentation: AsyncImage](https://developer.apple.com/documentation/swiftui/asyncimage)
+- [SF Symbols App](https://developer.apple.com/sf-symbols/)
+- [Human Interface Guidelines: Typography](https://developer.apple.com/design/human-interface-guidelines/typography)

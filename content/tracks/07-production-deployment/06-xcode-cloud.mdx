@@ -1,0 +1,681 @@
+---
+title: "Xcode Cloud"
+description: "Automated builds, testing, and deployment with Xcode Cloud"
+sectionId: "7.3-ci-cd"
+sectionTitle: "CI/CD & Automation"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Xcode Cloud: Automated Builds, Testing, and Deployment
+
+Xcode Cloud is Apple's continuous integration and continuous delivery (CI/CD) service built directly into Xcode. It automates building, testing, and distributing your iOS, macOS, watchOS, and tvOS apps in the cloud, freeing you from managing your own CI/CD infrastructure.
+
+If you've worked with GitHub Actions, CircleCI, or Jenkins before, Xcode Cloud serves the same purpose but is deeply integrated with Apple's ecosystem. It runs on Apple's servers, has native Xcode integration, and connects seamlessly with App Store Connect, TestFlight, and App Store distribution.
+
+## Why Xcode Cloud Matters
+
+Manual testing and deployment processes don't scale. As your app grows, you need:
+
+- **Automated testing** on every commit to catch bugs early
+- **Multiple device testing** without owning every iPhone and iPad model
+- **Consistent builds** that aren't dependent on "works on my machine"
+- **Automated TestFlight distribution** to beta testers
+- **Code quality checks** that run before merging pull requests
+
+Xcode Cloud handles all of this, letting you focus on writing code instead of managing infrastructure.
+
+## Getting Started with Xcode Cloud
+
+### Prerequisites
+
+Before using Xcode Cloud, ensure you have:
+
+1. Xcode 13 or later
+2. An Apple Developer Program membership ($99/year)
+3. A source code repository (GitHub, GitLab, Bitbucket, or App Store Connect Git)
+4. Admin access to your App Store Connect account
+
+### Setting Up Your First Workflow
+
+A **workflow** is a set of automated tasks that run when specific conditions are met (like pushing code or creating a pull request).
+
+1. Open your project in Xcode
+2. Go to **Product > Xcode Cloud > Create Workflow**
+3. Select your product (app, framework, etc.)
+4. Choose a starter workflow template
+
+Xcode will generate a workflow configuration that looks something like this in the Xcode Cloud interface:
+
+- **Start Condition**: Branch changes on `main`
+- **Environment**: macOS version, Xcode version
+- **Actions**: Build, Test, Archive
+- **Post-Actions**: Deploy to TestFlight, notify team
+
+## Writing Testable Code for Xcode Cloud
+
+To get the most value from automated testing, your code needs to be testable. Let's look at a practical example.
+
+### Example: A Networking Layer
+
+Here's a typical networking class that would be difficult to test:
+
+```swift
+// ❌ Hard to test - directly uses URLSession
+class UserService {
+    func fetchUser(id: String) async throws -> User {
+        let url = URL(string: "https://api.example.com/users/\(id)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(User.self, from: data)
+    }
+}
+```
+
+The problem: this directly depends on `URLSession.shared`, making it impossible to test without making real network calls.
+
+Here's a better approach using protocol-based dependency injection:
+
+```swift
+// ✅ Testable version with protocol abstraction
+protocol NetworkService {
+    func data(from url: URL) async throws -> (Data, URLResponse)
+}
+
+// Make URLSession conform to our protocol
+extension URLSession: NetworkService {
+    func data(from url: URL) async throws -> (Data, URLResponse) {
+        return try await data(from: url)
+    }
+}
+
+class UserService {
+    private let networkService: NetworkService
+    
+    init(networkService: NetworkService = URLSession.shared) {
+        self.networkService = networkService
+    }
+    
+    func fetchUser(id: String) async throws -> User {
+        let url = URL(string: "https://api.example.com/users/\(id)")!
+        let (data, _) = try await networkService.data(from: url)
+        return try JSONDecoder().decode(User.self, from: data)
+    }
+}
+```
+
+Now you can create a mock for testing:
+
+```swift
+// Mock for testing
+class MockNetworkService: NetworkService {
+    var mockData: Data?
+    var mockError: Error?
+    
+    func data(from url: URL) async throws -> (Data, URLResponse) {
+        if let error = mockError {
+            throw error
+        }
+        
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        
+        return (mockData ?? Data(), response)
+    }
+}
+
+// Unit test
+class UserServiceTests: XCTestCase {
+    func testFetchUserSuccess() async throws {
+        // Arrange
+        let mockNetwork = MockNetworkService()
+        let expectedUser = User(id: "123", name: "John Doe")
+        mockNetwork.mockData = try JSONEncoder().encode(expectedUser)
+        
+        let service = UserService(networkService: mockNetwork)
+        
+        // Act
+        let user = try await service.fetchUser(id: "123")
+        
+        // Assert
+        XCTAssertEqual(user.id, expectedUser.id)
+        XCTAssertEqual(user.name, expectedUser.name)
+    }
+    
+    func testFetchUserNetworkError() async {
+        // Arrange
+        let mockNetwork = MockNetworkService()
+        mockNetwork.mockError = URLError(.notConnectedToInternet)
+        
+        let service = UserService(networkService: mockNetwork)
+        
+        // Act & Assert
+        do {
+            _ = try await service.fetchUser(id: "123")
+            XCTFail("Expected error to be thrown")
+        } catch {
+            XCTAssertTrue(error is URLError)
+        }
+    }
+}
+```
+
+## Configuring Custom Build Scripts
+
+Xcode Cloud allows custom scripts at different stages of your workflow. These are stored in your repository at `ci_scripts/`.
+
+### Pre-Build Script Example
+
+Create `ci_scripts/ci_pre_xcodebuild.sh`:
+
+```bash
+#!/bin/sh
+
+# Install dependencies using Swift Package Manager
+# (usually automatic, but useful for custom setups)
+
+echo "Running pre-build script"
+
+# Check if we're in a CI environment
+if [ "$CI" = "TRUE" ]; then
+    echo "Running in Xcode Cloud"
+    
+    # Install CocoaPods if needed
+    if [ -f "Podfile" ]; then
+        echo "Installing CocoaPods dependencies"
+        pod install
+    fi
+    
+    # Generate configuration files
+    echo "Generating configuration"
+    cat > Sources/Config.swift << EOF
+struct Config {
+    static let apiBaseURL = "$API_BASE_URL"
+    static let analyticsKey = "$ANALYTICS_KEY"
+}
+EOF
+fi
+
+exit 0
+```
+
+Make it executable:
+
+```bash
+chmod +x ci_scripts/ci_pre_xcodebuild.sh
+```
+
+### Post-Build Script Example
+
+Create `ci_scripts/ci_post_xcodebuild.sh`:
+
+```bash
+#!/bin/sh
+
+echo "Running post-build script"
+
+# Send notification to Slack
+if [ "$CI_WORKFLOW_STATUS" = "SUCCEEDED" ]; then
+    curl -X POST -H 'Content-type: application/json' \
+        --data "{\"text\":\"Build $CI_BUILD_NUMBER succeeded!\"}" \
+        "$SLACK_WEBHOOK_URL"
+fi
+
+exit 0
+```
+
+## Environment Variables and Secrets
+
+Xcode Cloud lets you define environment variables for your workflows. These are accessible in both build scripts and your Swift code during builds.
+
+### Setting Environment Variables
+
+1. Open App Store Connect
+2. Go to your app → Xcode Cloud
+3. Select your workflow
+4. Add environment variables in the Environment section
+
+### Accessing in Build Scripts
+
+Environment variables are automatically available:
+
+```bash
+#!/bin/sh
+
+echo "API Base URL: $API_BASE_URL"
+echo "Build Number: $CI_BUILD_NUMBER"
+echo "Branch: $CI_BRANCH"
+```
+
+### Accessing in Swift Code (at Build Time)
+
+You can pass environment variables to your Swift code during compilation:
+
+In your build script:
+
+```bash
+#!/bin/sh
+
+# Write environment variables to a Swift file
+cat > Sources/Generated/Environment.swift << EOF
+enum Environment {
+    static let apiBaseURL = "$API_BASE_URL"
+    static let buildNumber = "$CI_BUILD_NUMBER"
+}
+EOF
+```
+
+Then use it in your app:
+
+```swift
+class APIClient {
+    private let baseURL: URL
+    
+    init() {
+        #if DEBUG
+        self.baseURL = URL(string: "http://localhost:8080")!
+        #else
+        self.baseURL = URL(string: Environment.apiBaseURL)!
+        #endif
+    }
+}
+```
+
+### Common Xcode Cloud Environment Variables
+
+```swift
+// Available in ci_scripts
+CI                      // "TRUE" when running in Xcode Cloud
+CI_WORKSPACE            // Workspace file path
+CI_XCODEBUILD_ACTION    // "build", "test", "archive"
+CI_BUILD_NUMBER         // Unique build number
+CI_BRANCH               // Git branch name
+CI_COMMIT               // Git commit hash
+CI_TAG                  // Git tag (if applicable)
+CI_WORKFLOW             // Workflow name
+CI_PRODUCT_PLATFORM     // "iOS", "macOS", etc.
+```
+
+## Testing Strategies for Xcode Cloud
+
+### Unit Tests
+
+Unit tests should be fast, isolated, and test individual components. These run on every commit.
+
+```swift
+import XCTest
+@testable import MyApp
+
+class CalculatorTests: XCTestCase {
+    var calculator: Calculator!
+    
+    override func setUp() {
+        super.setUp()
+        calculator = Calculator()
+    }
+    
+    override func tearDown() {
+        calculator = nil
+        super.tearDown()
+    }
+    
+    func testAddition() {
+        // Given
+        let a = 5
+        let b = 3
+        
+        // When
+        let result = calculator.add(a, b)
+        
+        // Then
+        XCTAssertEqual(result, 8)
+    }
+    
+    func testDivisionByZero() {
+        // Given
+        let a = 10
+        let b = 0
+        
+        // Then
+        XCTAssertThrowsError(try calculator.divide(a, by: b)) { error in
+            XCTAssertTrue(error is CalculatorError)
+            XCTAssertEqual(error as? CalculatorError, .divisionByZero)
+        }
+    }
+}
+```
+
+### UI Tests
+
+UI tests are slower but verify user-facing functionality:
+
+```swift
+import XCTest
+
+class LoginFlowUITests: XCTestCase {
+    var app: XCUIApplication!
+    
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["UITESTING"]
+        app.launch()
+    }
+    
+    func testLoginWithValidCredentials() {
+        // Arrange
+        let emailField = app.textFields["emailTextField"]
+        let passwordField = app.secureTextFields["passwordTextField"]
+        let loginButton = app.buttons["loginButton"]
+        
+        // Act
+        emailField.tap()
+        emailField.typeText("user@example.com")
+        
+        passwordField.tap()
+        passwordField.typeText("password123")
+        
+        loginButton.tap()
+        
+        // Assert
+        let homeTitle = app.navigationBars["Home"]
+        XCTAssertTrue(homeTitle.waitForExistence(timeout: 5))
+    }
+    
+    func testLoginWithInvalidCredentials() {
+        // Arrange
+        let emailField = app.textFields["emailTextField"]
+        let passwordField = app.secureTextFields["passwordTextField"]
+        let loginButton = app.buttons["loginButton"]
+        
+        // Act
+        emailField.tap()
+        emailField.typeText("invalid@example.com")
+        
+        passwordField.tap()
+        passwordField.typeText("wrong")
+        
+        loginButton.tap()
+        
+        // Assert
+        let errorAlert = app.alerts["Error"]
+        XCTAssertTrue(errorAlert.waitForExistence(timeout: 3))
+    }
+}
+```
+
+### Performance Tests
+
+Test performance-critical code to catch regressions:
+
+```swift
+class PerformanceTests: XCTestCase {
+    func testImageProcessingPerformance() {
+        let processor = ImageProcessor()
+        let testImage = UIImage(named: "test-image")!
+        
+        measure {
+            _ = processor.applyFilter(.blur, to: testImage)
+        }
+    }
+    
+    func testDataParsingPerformance() {
+        let parser = JSONParser()
+        let largeJSONData = loadLargeTestData()
+        
+        let options = XCTMeasureOptions()
+        options.iterationCount = 10
+        
+        measure(options: options) {
+            _ = try? parser.parse(largeJSONData)
+        }
+    }
+}
+```
+
+## Test Plans for Different Environments
+
+Test plans let you run different test configurations for different scenarios. Create a test plan by going to Product → Test Plan → New Test Plan.
+
+Here's how to structure test plans for Xcode Cloud:
+
+### Development Test Plan
+
+Fast tests that run on every commit:
+
+```swift
+// DevelopmentTests.xctestplan
+{
+  "configurations": [
+    {
+      "name": "Development",
+      "options": {
+        "codeCoverage": true,
+        "testExecutionTimeAllowance": 10
+      }
+    }
+  ],
+  "testTargets": [
+    {
+      "target": {
+        "name": "UnitTests"
+      },
+      "skippedTests": [
+        "IntegrationTests",
+        "SlowUITests"
+      ]
+    }
+  ]
+}
+```
+
+### Full Test Plan
+
+Comprehensive tests for release candidates:
+
+```swift
+// FullTests.xctestplan
+{
+  "configurations": [
+    {
+      "name": "iPhone 15",
+      "options": {
+        "codeCoverage": true
+      }
+    },
+    {
+      "name": "iPad Pro",
+      "options": {
+        "codeCoverage": true
+      }
+    }
+  ],
+  "testTargets": [
+    {
+      "target": {
+        "name": "UnitTests"
+      }
+    },
+    {
+      "target": {
+        "name": "IntegrationTests"
+      }
+    },
+    {
+      "target": {
+        "name": "UITests"
+      }
+    }
+  ]
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Not Handling CI Environment Differences
+
+Your local machine might have files or configurations that don't exist in Xcode Cloud.
+
+```swift
+// ❌ Assumes file exists locally
+let apiKey = try! String(contentsOfFile: "/Users/you/secrets.txt")
+
+// ✅ Handles missing configurations gracefully
+let apiKey: String = {
+    if let envKey = ProcessInfo.processInfo.environment["API_KEY"] {
+        return envKey
+    }
+    
+    #if DEBUG
+    return "development-key"
+    #else
+    fatalError("API_KEY must be set in production")
+    #endif
+}()
+```
+
+### Mistake 2: Tests Dependent on Execution Order
+
+Tests should be independent and able to run in any order.
+
+```swift
+// ❌ Bad - depends on previous test
+class BadTests: XCTestCase {
+    static var sharedData: [String] = []
+    
+    func testA_AddData() {
+        BadTests.sharedData.append("item")
+        XCTAssertEqual(BadTests.sharedData.count, 1)
+    }
+    
+    func testB_UseData() {
+        // Fails if testA doesn't run first
+        XCTAssertEqual(BadTests.sharedData.first, "item")
+    }
+}
+
+// ✅ Good - each test is independent
+class GoodTests: XCTestCase {
+    var testData: [String]!
+    
+    override func setUp() {
+        super.setUp()
+        testData = []
+    }
+    
+    func testAddData() {
+        testData.append("item")
+        XCTAssertEqual(testData.count, 1)
+    }
+    
+    func testUseData() {
+        testData.append("item")
+        XCTAssertEqual(testData.first, "item")
+    }
+}
+```
+
+### Mistake 3: Ignoring Test Timeouts
+
+Long-running tests can cause workflows to fail or become expensive.
+
+```swift
+// ❌ No timeout — tests can hang indefinitely
+func testSlowNetworkRequest() async throws {
+    let result = try await networkService.fetchData()
+    XCTAssertNotNil(result)
+}
+
+// ✅ Add explicit timeout
+func testSlowNetworkRequest() async throws {
+    let expectation = XCTestExpectation(description: "Network request")
+    expectation.assertForOverEnforcement = true
+
+    Task {
+        let result = try await networkService.fetchData()
+        XCTAssertNotNil(result)
+        expectation.fulfill()
+    }
+
+    await fulfillment(of: [expectation], timeout: 10.0)
+}
+```
+
+You can also set a default test timeout in your scheme's test plan settings to catch hanging tests early.
+
+### Mistake 4: Not Caching Dependencies
+
+Rebuilding Swift packages on every run wastes time and costs money.
+
+```swift
+/*
+ ci_post_clone.sh — cache Swift packages
+
+ Xcode Cloud caches derived data between builds automatically,
+ but if you use custom dependency managers, cache manually:
+*/
+
+#!/bin/sh
+
+# For SPM — Xcode Cloud handles this automatically
+# For CocoaPods:
+if [ -f "Podfile.lock" ]; then
+    pod install --repo-update
+fi
+
+# For Carthage:
+if [ -f "Cartfile.resolved" ]; then
+    carthage bootstrap --use-xcframeworks --cache-builds
+fi
+```
+
+### Mistake 5: Ignoring Build Number Management
+
+Manually managing build numbers leads to conflicts and rejected uploads.
+
+```swift
+/*
+ ci_post_clone.sh — auto-increment build number
+*/
+
+#!/bin/sh
+
+# Use Xcode Cloud build number
+BUILD_NUMBER=$(($CI_BUILD_NUMBER))
+
+# Update Info.plist
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" \
+    "$CI_WORKSPACE/YourApp/Info.plist"
+
+echo "Set build number to $BUILD_NUMBER"
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Workflows** | Build, Test, Archive, Analyze | Automate CI/CD stages |
+| **Start conditions** | Branch, tag, PR, schedule | Trigger workflows automatically |
+| **Custom scripts** | `ci_post_clone.sh`, `ci_pre_xcodebuild.sh` | Run setup before build |
+| **Environment variables** | `$CI_*` built-in vars | Access build metadata |
+| **Secrets** | Encrypted environment variables | Store API keys safely |
+| **TestFlight deploy** | Archive + post-action distribution | Automated beta releases |
+| **App Store deploy** | Archive + App Store Connect action | Automated production releases |
+| **Branch policies** | Protected branches + required workflows | Enforce code quality |
+| **Notifications** | Slack, email on build status | Team awareness |
+| **Dependency caching** | Automatic for SPM | Faster rebuilds |
+| **Build numbers** | `$CI_BUILD_NUMBER` | Unique build identification |
+
+## Official Resources
+
+- [Apple Documentation: Xcode Cloud](https://developer.apple.com/documentation/xcode/xcode-cloud)
+- [Apple Documentation: Configuring Xcode Cloud Workflows](https://developer.apple.com/documentation/xcode/configuring-xcode-cloud-workflows)
+- [Apple Documentation: Writing Custom Build Scripts](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts)
+- [Apple Documentation: Environment Variable Reference](https://developer.apple.com/documentation/xcode/environment-variable-reference)
+- [WWDC 2021: Meet Xcode Cloud](https://developer.apple.com/videos/play/wwdc2021/10267/)

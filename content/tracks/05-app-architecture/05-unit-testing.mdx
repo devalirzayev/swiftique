@@ -1,0 +1,670 @@
+---
+title: "Unit Testing"
+description: "XCTest basics, writing effective tests, and test organization"
+sectionId: "5.2-testing"
+sectionTitle: "Testing"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Unit Testing in Swift with XCTest
+
+Unit testing is the practice of writing code to verify that individual units of your application—typically functions, methods, or classes—work as expected. In Swift and iOS development, you use Apple's XCTest framework to create and run these tests. Unit tests help you catch bugs early, make refactoring safer, and serve as living documentation of how your code should behave.
+
+## Why Unit Testing Matters
+
+Without tests, you rely on manual verification every time you make changes. This becomes unsustainable as your codebase grows. Unit tests provide:
+
+- **Confidence**: Know your code works before shipping
+- **Regression prevention**: Catch when new changes break existing functionality
+- **Better design**: Testable code tends to be more modular and maintainable
+- **Documentation**: Tests show how your code is meant to be used
+
+## Setting Up XCTest
+
+When you create a new Xcode project, test targets are included by default. You'll see a separate folder ending in "Tests" alongside your main code.
+
+A basic test file looks like this:
+
+```swift
+import XCTest
+@testable import YourAppName
+
+final class CalculatorTests: XCTestCase {
+    
+    override func setUp() {
+        super.setUp()
+        // Code that runs before each test
+    }
+    
+    override func tearDown() {
+        // Code that runs after each test
+        super.tearDown()
+    }
+    
+    func testAddition() {
+        // Your test code here
+    }
+}
+```
+
+The `@testable import` allows you to access internal members of your app module, which is crucial for testing without making everything public.
+
+## Writing Your First Test
+
+Let's test a simple `Calculator` class:
+
+```swift
+// Calculator.swift (in your main app target)
+class Calculator {
+    func add(_ a: Int, _ b: Int) -> Int {
+        return a + b
+    }
+    
+    func divide(_ a: Double, _ b: Double) -> Double? {
+        guard b != 0 else { return nil }
+        return a / b
+    }
+}
+```
+
+Now the test:
+
+```swift
+// CalculatorTests.swift (in your test target)
+import XCTest
+@testable import YourAppName
+
+final class CalculatorTests: XCTestCase {
+    
+    var calculator: Calculator!
+    
+    override func setUp() {
+        super.setUp()
+        calculator = Calculator()
+    }
+    
+    override func tearDown() {
+        calculator = nil
+        super.tearDown()
+    }
+    
+    func testAddition() {
+        // Arrange
+        let a = 5
+        let b = 3
+        
+        // Act
+        let result = calculator.add(a, b)
+        
+        // Assert
+        XCTAssertEqual(result, 8)
+    }
+    
+    func testDivisionWithValidNumbers() {
+        let result = calculator.divide(10, 2)
+        XCTAssertEqual(result, 5.0)
+    }
+    
+    func testDivisionByZeroReturnsNil() {
+        let result = calculator.divide(10, 0)
+        XCTAssertNil(result)
+    }
+}
+```
+
+## The Arrange-Act-Assert Pattern
+
+Notice the structure in `testAddition()`. This is the AAA pattern:
+
+1. **Arrange**: Set up test data and preconditions
+2. **Act**: Execute the code being tested
+3. **Assert**: Verify the result matches expectations
+
+This pattern makes tests readable and maintainable.
+
+## XCTest Assertions
+
+XCTest provides numerous assertion functions. Here are the most common:
+
+```swift
+func testAssertions() {
+    // Equality
+    XCTAssertEqual(5, 5, "Values should be equal")
+    XCTAssertNotEqual(5, 3)
+    
+    // Boolean
+    XCTAssertTrue(5 > 3)
+    XCTAssertFalse(5 < 3)
+    
+    // Nil checking
+    let optionalValue: String? = nil
+    XCTAssertNil(optionalValue)
+    
+    let nonNilValue: String? = "Hello"
+    XCTAssertNotNil(nonNilValue)
+    
+    // Numeric comparison (with accuracy for floating point)
+    XCTAssertEqual(0.1 + 0.2, 0.3, accuracy: 0.0001)
+    
+    // Failure
+    // XCTFail("This test should not reach here")
+}
+```
+
+The last parameter in assertions is an optional message that displays when the test fails. Use it to explain what went wrong.
+
+## Testing Asynchronous Code
+
+Modern apps perform asynchronous operations constantly. XCTest handles this with expectations:
+
+```swift
+class NetworkService {
+    func fetchData(completion: @escaping (Result<String, Error>) -> Void) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+            completion(.success("Data loaded"))
+        }
+    }
+}
+
+class NetworkServiceTests: XCTestCase {
+    
+    func testFetchDataSuccess() {
+        // Arrange
+        let service = NetworkService()
+        let expectation = expectation(description: "Fetch data completes")
+        var receivedData: String?
+        
+        // Act
+        service.fetchData { result in
+            if case .success(let data) = result {
+                receivedData = data
+            }
+            expectation.fulfill()
+        }
+        
+        // Assert
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(receivedData, "Data loaded")
+    }
+}
+```
+
+For Swift's modern async/await syntax:
+
+```swift
+class ModernNetworkService {
+    func fetchData() async throws -> String {
+        try await Task.sleep(nanoseconds: 500_000_000)
+        return "Data loaded"
+    }
+}
+
+class ModernNetworkServiceTests: XCTestCase {
+    
+    func testFetchDataAsync() async throws {
+        // Arrange
+        let service = ModernNetworkService()
+        
+        // Act
+        let data = try await service.fetchData()
+        
+        // Assert
+        XCTAssertEqual(data, "Data loaded")
+    }
+}
+```
+
+## Testing Errors
+
+Proper error handling is crucial. Test both success and failure paths:
+
+```swift
+enum ValidationError: Error {
+    case tooShort
+    case tooLong
+    case invalidCharacters
+}
+
+class Validator {
+    func validate(username: String) throws -> Bool {
+        guard username.count >= 3 else {
+            throw ValidationError.tooShort
+        }
+        guard username.count <= 20 else {
+            throw ValidationError.tooLong
+        }
+        let allowedCharacters = CharacterSet.alphanumerics
+        guard username.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+            throw ValidationError.invalidCharacters
+        }
+        return true
+    }
+}
+
+class ValidatorTests: XCTestCase {
+    
+    var validator: Validator!
+    
+    override func setUp() {
+        super.setUp()
+        validator = Validator()
+    }
+    
+    func testValidUsername() throws {
+        let result = try validator.validate(username: "john123")
+        XCTAssertTrue(result)
+    }
+    
+    func testUsernameTooShort() {
+        XCTAssertThrowsError(try validator.validate(username: "ab")) { error in
+            XCTAssertEqual(error as? ValidationError, .tooShort)
+        }
+    }
+    
+    func testUsernameTooLong() {
+        let longUsername = String(repeating: "a", count: 21)
+        XCTAssertThrowsError(try validator.validate(username: longUsername)) { error in
+            XCTAssertEqual(error as? ValidationError, .tooLong)
+        }
+    }
+    
+    func testUsernameWithInvalidCharacters() {
+        XCTAssertThrowsError(try validator.validate(username: "john@123"))
+    }
+}
+```
+
+## Test Organization and Naming
+
+Good test organization makes your test suite maintainable:
+
+### Naming Conventions
+
+Test names should describe what they're testing:
+
+```swift
+// Good names
+func testAdditionWithPositiveNumbers()
+func testDivisionByZeroReturnsNil()
+func testUserLoginWithInvalidCredentialsThrowsError()
+
+// Poor names
+func testAddition() // Too vague if you have multiple addition scenarios
+func test1()        // Meaningless
+func testStuff()    // Unhelpful
+```
+
+Use the pattern: `test[UnitOfWork][StateUnderTest][ExpectedBehavior]`
+
+### Grouping Tests
+
+Use separate test classes for different components:
+
+```
+Tests/
+  ├── Models/
+  │   ├── UserTests.swift
+  │   └── ProductTests.swift
+  ├── ViewModels/
+  │   ├── LoginViewModelTests.swift
+  │   └── ProfileViewModelTests.swift
+  └── Services/
+      ├── NetworkServiceTests.swift
+      └── StorageServiceTests.swift
+```
+
+### Using Test Suites
+
+For larger projects, group related tests:
+
+```swift
+class UserTests: XCTestCase {
+    // Basic user tests
+}
+
+class UserValidationTests: XCTestCase {
+    // Validation-specific tests
+}
+
+class UserIntegrationTests: XCTestCase {
+    // Tests that involve multiple components
+}
+```
+
+## Mocking and Dependency Injection
+
+To test code in isolation, use protocols and dependency injection:
+
+```swift
+// Define a protocol for the dependency
+protocol DataStore {
+    func save(_ data: String) -> Bool
+    func load() -> String?
+}
+
+// Real implementation
+class UserDefaultsDataStore: DataStore {
+    func save(_ data: String) -> Bool {
+        UserDefaults.standard.set(data, forKey: "data")
+        return true
+    }
+    
+    func load() -> String? {
+        return UserDefaults.standard.string(forKey: "data")
+    }
+}
+
+// Code that depends on DataStore
+class UserManager {
+    private let dataStore: DataStore
+    
+    init(dataStore: DataStore) {
+        self.dataStore = dataStore
+    }
+    
+    func saveUserName(_ name: String) -> Bool {
+        return dataStore.save(name)
+    }
+    
+    func loadUserName() -> String? {
+        return dataStore.load()
+    }
+}
+
+// Mock for testing
+class MockDataStore: DataStore {
+    var savedData: String?
+    var shouldSucceed = true
+    var loadReturnValue: String?
+    
+    func save(_ data: String) -> Bool {
+        savedData = data
+        return shouldSucceed
+    }
+    
+    func load() -> String? {
+        return loadReturnValue
+    }
+}
+
+// Tests using the mock
+class UserManagerTests: XCTestCase {
+    
+    var mockDataStore: MockDataStore!
+    var userManager: UserManager!
+    
+    override func setUp() {
+        super.setUp()
+        mockDataStore = MockDataStore()
+        userManager = UserManager(dataStore: mockDataStore)
+    }
+    
+    func testSaveUserNameStoresInDataStore() {
+        // Act
+        let success = userManager.saveUserName("Alice")
+        
+        // Assert
+        XCTAssertTrue(success)
+        XCTAssertEqual(mockDataStore.savedData, "Alice")
+    }
+    
+    func testLoadUserNameRetrievesFromDataStore() {
+        // Arrange
+        mockDataStore.loadReturnValue = "Bob"
+        
+        // Act
+        let name = userManager.loadUserName()
+        
+        // Assert
+        XCTAssertEqual(name, "Bob")
+    }
+    
+    func testSaveUserNameHandlesFailure() {
+        // Arrange
+        mockDataStore.shouldSucceed = false
+        
+        // Act
+        let success = userManager.saveUserName("Charlie")
+        
+        // Assert
+        XCTAssertFalse(success)
+    }
+}
+```
+
+## Edge Cases and Common Mistakes
+
+### Edge Cases to Test
+
+Always consider boundary conditions:
+
+```swift
+class StringUtility {
+    func truncate(_ string: String, to length: Int) -> String {
+        guard length > 0 else { return "" }
+        guard string.count > length else { return string }
+        return String(string.prefix(length))
+    }
+}
+
+class StringUtilityTests: XCTestCase {
+    
+    var utility: StringUtility!
+    
+    override func setUp() {
+        super.setUp()
+        utility = StringUtility()
+    }
+    
+    func testTruncateWithEmptyString() {
+        XCTAssertEqual(utility.truncate("", to: 5), "")
+    }
+    
+    func testTruncateWithZeroLength() {
+        XCTAssertEqual(utility.truncate("Hello", to: 0), "")
+    }
+    
+    func testTruncateWithNegativeLength() {
+        XCTAssertEqual(utility.truncate("Hello", to: -1), "")
+    }
+    
+    func testTruncateWithLengthEqualToStringLength() {
+        XCTAssertEqual(utility.truncate("Hello", to: 5), "Hello")
+    }
+    
+    func testTruncateWithLengthLongerThanString() {
+        XCTAssertEqual(utility.truncate("Hello", to: 10), "Hello")
+    }
+    
+    func testTruncateNormalCase() {
+        XCTAssertEqual(utility.truncate("Hello World", to: 5), "Hello")
+    }
+}
+```
+
+### Common Mistakes
+
+**1. Testing implementation instead of behavior:**
+
+```swift
+// Bad: Testing internal implementation
+func testCalculatorUsesCorrectFormula() {
+    // Don't test HOW it works
+}
+
+// Good: Testing behavior
+func testCalculatorReturnsCorrectSum() {
+    let result = calculator.add(2, 3)
+    XCTAssertEqual(result, 5)
+}
+```
+
+**2. Dependent tests:**
+
+```swift
+// Bad: Tests that depend on execution order
+var sharedState: String?
+
+func testA() {
+    sharedState = "value"
+    XCTAssertNotNil(sharedState)
+}
+
+func testB() {
+    // Assumes testA ran first - WRONG!
+    XCTAssertEqual(sharedState, "value")
+}
+
+// Good: Each test is independent
+func testA() {
+    let state = "value"
+    XCTAssertNotNil(state)
+}
+
+func testB() {
+    let state = "value"
+    XCTAssertEqual(state, "value")
+}
+```
+
+**3. Not cleaning up after tests:**
+
+```swift
+// Bad: Leaving side effects
+func testUserDefaultsWrite() {
+    UserDefaults.standard.set("test", forKey: "key")
+    // No cleanup!
+}
+
+// Good: Clean up in tearDown
+override func tearDown() {
+    UserDefaults.standard.removeObject(forKey: "key")
+    super.tearDown()
+}
+```
+
+**4. Testing too much in one test:**
+
+```swift
+// Bad: One massive test
+func testEverything() {
+    // Tests 10 different things
+}
+
+// Good: Separate, focused tests
+func testUserCreation() { /* ... */ }
+func testUserValidation() { /* ... */ }
+func testUserDeletion() { /* ... */ }
+```
+
+**5. Using hardcoded delays instead of expectations:**
+
+```swift
+// Bad: Race conditions and slow tests
+func testAsync() {
+    service.fetchData { _ in }
+    sleep(2) // Fragile!
+}
+
+// Good: Use expectations
+func testAsync() {
+    let exp = expectation(description: "Fetch")
+    service.fetchData { _ in exp.fulfill() }
+    waitForExpectations(timeout: 2.0)
+}
+```
+
+## Test Coverage
+
+Xcode can show which parts of your code are covered by tests. Enable it in your scheme:
+
+1. Edit scheme → Test → Options → Code Coverage
+2. Run tests (⌘U)
+3. View coverage in Report Navigator (⌘9)
+
+Aim for high coverage on business logic, but don't obsess over 100%. Some code (like simple getters/setters or boilerplate) doesn't need tests.
+
+## Performance Testing
+
+XCTest can measure execution time:
+
+```swift
+class PerformanceTests: XCTestCase {
+
+    func testSortPerformance() {
+        var data = (0..<10_000).map { _ in Int.random(in: 0..<100_000) }
+
+        measure {
+            data.sort()
+        }
+    }
+
+    func testFilterPerformance() {
+        let data = (0..<100_000).map { $0 }
+
+        measure {
+            _ = data.filter { $0 % 2 == 0 }
+        }
+    }
+}
+```
+
+The `measure` block runs the code multiple times and reports average execution time. If performance degrades significantly between runs, the test can be configured to fail by setting a baseline in Xcode.
+
+## Swift Testing Framework (iOS 17+)
+
+Starting with Xcode 15, Apple introduced the Swift Testing framework as a modern alternative to XCTest:
+
+```swift
+import Testing
+
+@Test
+func addition() {
+    let calculator = Calculator()
+    #expect(calculator.add(2, 3) == 5)
+}
+
+@Test
+func divisionByZeroReturnsNil() {
+    let calculator = Calculator()
+    #expect(calculator.divide(10, 0) == nil)
+}
+
+@Test("Username validation rejects short names")
+func shortUsername() {
+    let validator = Validator()
+    #expect(throws: ValidationError.tooShort) {
+        try validator.validate(username: "ab")
+    }
+}
+```
+
+Swift Testing uses `#expect` instead of `XCTAssert` and `@Test` instead of method naming conventions. Both frameworks can coexist in the same project.
+
+## Summary Table
+
+| Concept | API/Pattern | Purpose | Example |
+|---------|------------|---------|---------|
+| **Test class** | `XCTestCase` subclass | Group related tests | `final class CalculatorTests: XCTestCase` |
+| **Setup/Teardown** | `setUp()` / `tearDown()` | Initialize/cleanup before each test | Create/nil out test objects |
+| **AAA Pattern** | Arrange-Act-Assert | Structure test logic | Set up, execute, verify |
+| **Equality** | `XCTAssertEqual` | Compare values | `XCTAssertEqual(result, 5)` |
+| **Boolean** | `XCTAssertTrue/False` | Check conditions | `XCTAssertTrue(isValid)` |
+| **Nil checking** | `XCTAssertNil/NotNil` | Check optionals | `XCTAssertNil(error)` |
+| **Error testing** | `XCTAssertThrowsError` | Verify errors thrown | Test specific error types |
+| **Async testing** | `async throws` test methods | Test async code | `func testFetch() async throws` |
+| **Expectations** | `expectation(description:)` | Test callback-based async | `waitForExpectations(timeout:)` |
+| **Mocking** | Protocol + mock class | Isolate dependencies | `MockDataStore: DataStore` |
+| **Performance** | `measure { }` | Benchmark execution time | Detect performance regressions |
+| **Swift Testing** | `@Test` + `#expect` | Modern test syntax (iOS 17+) | `#expect(result == 5)` |
+
+## Official Resources
+
+- [Apple Documentation: XCTest](https://developer.apple.com/documentation/xctest)
+- [Apple Documentation: Testing Your Apps in Xcode](https://developer.apple.com/documentation/xcode/testing-your-apps-in-xcode)
+- [Apple Documentation: Swift Testing](https://developer.apple.com/documentation/testing)
+- [WWDC23: Meet Swift Testing](https://developer.apple.com/videos/play/wwdc2023/10175/)
+- [WWDC21: Embrace Expected Failures in XCTest](https://developer.apple.com/videos/play/wwdc2021/10207/)

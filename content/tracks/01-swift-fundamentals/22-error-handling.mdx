@@ -1,0 +1,505 @@
+---
+title: "Error Handling"
+description: "Throwing, catching, do-try-catch, and Result type"
+sectionId: "1.9-error-handling-concurrency"
+sectionTitle: "Error Handling & Concurrency"
+order: 22
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Error Handling in Swift
+
+Error handling is Swift's way of managing and responding to failure conditions in your code. Unlike many languages that use exceptions, Swift requires you to be explicit about errors—you must mark functions that can fail, and you must handle those errors when calling them. This leads to more predictable, safer code and makes potential failure points immediately visible.
+
+## Why Error Handling Matters
+
+In real-world iOS development, many operations can fail: network requests timeout, files don't exist, JSON parsing fails, or user permissions are denied. Swift's error handling system forces you to acknowledge these possibilities upfront, preventing crashes and helping you build robust applications.
+
+## The Basics: Defining Errors
+
+Errors in Swift are values that conform to the `Error` protocol. The most common approach is using an enum:
+
+```swift
+enum NetworkError: Error {
+    case noConnection
+    case timeout
+    case invalidURL
+    case serverError(statusCode: Int)
+}
+```
+
+You can use any type that conforms to `Error`, but enums are ideal because they let you define specific failure cases with associated values.
+
+## Throwing Errors
+
+Functions that can fail are marked with the `throws` keyword. Use `throw` to actually throw an error:
+
+```swift
+func fetchUserData(from urlString: String) throws -> Data {
+    guard let url = URL(string: urlString) else {
+        throw NetworkError.invalidURL
+    }
+    
+    // Simulating a network failure
+    let isConnected = false
+    guard isConnected else {
+        throw NetworkError.noConnection
+    }
+    
+    // If we get here, return data
+    return Data()
+}
+```
+
+Important: Once a function throws an error, execution stops immediately. Code after the `throw` statement won't run.
+
+## Catching Errors: do-try-catch
+
+To call a throwing function, you must use `try` within a `do-catch` block:
+
+```swift
+do {
+    let data = try fetchUserData(from: "https://api.example.com")
+    print("Successfully fetched \(data.count) bytes")
+} catch NetworkError.invalidURL {
+    print("The URL was malformed")
+} catch NetworkError.noConnection {
+    print("No internet connection available")
+} catch NetworkError.serverError(let statusCode) {
+    print("Server returned error: \(statusCode)")
+} catch {
+    // This catches any error not matched above
+    print("An unexpected error occurred: \(error)")
+}
+```
+
+The final `catch` without a pattern acts as a catch-all. Within it, the error is available as the implicit `error` constant.
+
+## Propagating Errors
+
+Sometimes you don't want to handle an error—you want to let the caller deal with it. Simply mark your function as `throws` and use `try` without a `do-catch`:
+
+```swift
+func loadUserProfile() throws -> UserProfile {
+    let data = try fetchUserData(from: "https://api.example.com/user")
+    let profile = try decodeProfile(from: data)
+    return profile
+}
+```
+
+This is called "propagating" the error up the call stack.
+
+## try? and try!: Alternative Error Handling
+
+### try? - Converting Errors to Optionals
+
+`try?` converts the result to an optional, returning `nil` if an error occurs:
+
+```swift
+if let data = try? fetchUserData(from: "https://api.example.com") {
+    print("Got data: \(data)")
+} else {
+    print("Failed to fetch data")
+}
+```
+
+This is convenient when you don't care about the specific error, only whether the operation succeeded.
+
+**Common mistake**: Overusing `try?` loses valuable error information. Use it when failure details don't matter:
+
+```swift
+// Good use: optional feature that can gracefully fail
+let cachedImage = try? loadImageFromCache()
+
+// Bad use: you should know WHY authentication failed
+let user = try? authenticateUser() // Don't do this!
+```
+
+### try! - Forcing Success
+
+`try!` asserts the operation will succeed. If it throws, your app crashes:
+
+```swift
+// Only use when you're CERTAIN it can't fail
+let bundlePath = try! getBundleResourcePath() // Safe if resource exists
+```
+
+**Common mistake**: Using `try!` for operations that can actually fail:
+
+```swift
+// DANGEROUS - will crash if network fails
+let data = try! fetchUserData(from: someURL)
+```
+
+Only use `try!` when failure is truly impossible or indicates a programmer error that should crash during development.
+
+## The Result Type
+
+`Result<Success, Failure>` is an enum that represents either success or failure. It's especially useful for asynchronous operations:
+
+```swift
+enum DatabaseError: Error {
+    case notFound
+    case connectionFailed
+}
+
+func loadUser(id: Int, completion: (Result<User, DatabaseError>) -> Void) {
+    // Simulate async operation
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        if id == 1 {
+            let user = User(id: 1, name: "Alice")
+            completion(.success(user))
+        } else {
+            completion(.failure(.notFound))
+        }
+    }
+}
+```
+
+Handling a `Result`:
+
+```swift
+loadUser(id: 1) { result in
+    switch result {
+    case .success(let user):
+        print("Loaded user: \(user.name)")
+    case .failure(let error):
+        print("Failed: \(error)")
+    }
+}
+```
+
+### Converting Between Result and try
+
+`Result` has a `get()` method that throws:
+
+```swift
+loadUser(id: 1) { result in
+    do {
+        let user = try result.get()
+        print("User: \(user.name)")
+    } catch {
+        print("Error: \(error)")
+    }
+}
+```
+
+You can also create a `Result` from a throwing function:
+
+```swift
+let result = Result { try fetchUserData(from: urlString) }
+
+// Later, handle it:
+switch result {
+case .success(let data):
+    print("Got data")
+case .failure(let error):
+    print("Error: \(error)")
+}
+```
+
+## Rethrowing Functions
+
+Functions that take throwing closures can be marked `rethrows`, meaning they only throw if the closure throws:
+
+```swift
+func processItems<T>(_ items: [T], using processor: (T) throws -> Void) rethrows {
+    for item in items {
+        try processor(item)
+    }
+}
+
+// Doesn't require try because closure doesn't throw
+processItems([1, 2, 3]) { print($0) }
+
+// Requires try because closure throws
+try processItems([1, 2, 3]) { item in
+    guard item > 0 else {
+        throw ValidationError.invalidValue
+    }
+    print(item)
+}
+```
+
+This is used extensively in the standard library (e.g., `map`, `filter`, `forEach`).
+
+## defer: Cleanup Guaranteed
+
+`defer` executes code when the current scope exits, regardless of how it exits (normal return, error thrown, or early return):
+
+```swift
+func processFile(at path: String) throws {
+    let file = try openFile(at: path)
+    defer {
+        closeFile(file) // Always executed, even if error is thrown
+    }
+    
+    try performOperations(on: file)
+    // closeFile() called here automatically
+}
+```
+
+Multiple `defer` statements execute in reverse order (last declared, first executed):
+
+```swift
+func example() {
+    defer { print("First defer") }
+    defer { print("Second defer") }
+    defer { print("Third defer") }
+    print("Function body")
+}
+// Prints:
+// Function body
+// Third defer
+// Second defer
+// First defer
+```
+
+**Common mistake**: Using `defer` for operations that might fail. Code in `defer` blocks should be infallible cleanup:
+
+```swift
+// Wrong: saving might fail
+defer {
+    try? saveChanges() // Error handling lost!
+}
+
+// Better: handle save explicitly
+do {
+    try performWork()
+    try saveChanges()
+} catch {
+    handleError(error)
+}
+```
+
+## Custom Error Descriptions
+
+Make your errors more informative by conforming to `LocalizedError`:
+
+```swift
+enum FileError: Error {
+    case notFound(filename: String)
+    case permissionDenied(filename: String)
+    case corrupted
+}
+
+extension FileError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .notFound(let filename):
+            return "The file '\(filename)' could not be found."
+        case .permissionDenied(let filename):
+            return "Permission denied for file '\(filename)'."
+        case .corrupted:
+            return "The file is corrupted and cannot be read."
+        }
+    }
+}
+```
+
+Now when you print the error or display it to users, it's human-readable:
+
+```swift
+do {
+    try openFile("data.txt")
+} catch {
+    print(error.localizedDescription)
+    // "The file 'data.txt' could not be found."
+}
+```
+
+## Edge Cases and Common Mistakes
+
+### Mistake 1: Empty catch blocks
+
+```swift
+// Bad: silently swallowing errors
+do {
+    try riskyOperation()
+} catch {
+    // Nothing here - error disappears
+}
+
+// Better: at minimum, log it
+do {
+    try riskyOperation()
+} catch {
+    print("Operation failed: \(error)")
+}
+```
+
+### Mistake 2: Catching wrong error types
+
+```swift
+// If your function throws multiple error types (via Error),
+// you can't assume the type in catch:
+
+do {
+    try someOperation()
+} catch let error as NetworkError {
+    // Handle network errors
+} catch let error as DatabaseError {
+    // Handle database errors
+} catch {
+    // Handle anything else
+}
+```
+
+### Mistake 3: Forgetting that throwing stops execution
+
+```swift
+func processData() throws {
+    let data = try fetchData()
+    
+    throw DataError.invalid
+    
+    // This NEVER runs - unreachable code
+    cleanupResources() // Use defer instead!
+}
+```
+
+### Edge Case: Optional try with nil coalescing
+
+```swift
+// Provide default value if operation fails
+let data = (try? fetchData()) ?? defaultData
+
+// Chain optionals
+let result = try? fetchData()
+let parsed = result.flatMap { try? parseData($0) }
+```
+
+## Async/Await and Errors
+
+With Swift's modern concurrency, error handling works seamlessly with async functions:
+
+```swift
+func fetchUserData() async throws -> User {
+    let (data, response) = try await URLSession.shared.data(from: url)
+    
+    guard let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        throw NetworkError.serverError
+    }
+    
+    return try JSONDecoder().decode(User.self, from: data)
+}
+
+// Call it:
+Task {
+    do {
+        let user = try await fetchUserData()
+        print("User: \(user.name)")
+    } catch {
+        print("Failed: \(error)")
+    }
+}
+```
+
+## Real-World Example: Network Layer
+
+Here's how error handling looks in a typical iOS networking layer:
+
+```swift
+enum APIError: Error {
+    case invalidURL
+    case networkError(Error)
+    case invalidResponse
+    case decodingError(Error)
+    case serverError(statusCode: Int)
+}
+
+extension APIError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "The URL is invalid."
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        case .invalidResponse:
+            return "Invalid response from server."
+        case .decodingError(let error):
+            return "Failed to parse response: \(error.localizedDescription)"
+        case .serverError(let code):
+            return "Server error with status code: \(code)"
+        }
+    }
+}
+
+class APIClient {
+    func fetch<T: Decodable>(_ endpoint: String) async throws -> T {
+        guard let url = URL(string: endpoint) else {
+            throw APIError.invalidURL
+        }
+        
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(from: url)
+        } catch {
+            throw APIError.networkError(error)
+        }
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+}
+
+// Usage:
+let client = APIClient()
+
+Task {
+    do {
+        let user: User = try await client.fetch("https://api.example.com/user/1")
+        updateUI(with: user)
+    } catch APIError.serverError(let code) where code == 404 {
+        showNotFoundError()
+    } catch APIError.networkError {
+        showNetworkErrorAlert()
+    } catch {
+        showGenericError(error.localizedDescription)
+    }
+}
+```
+
+## Official Documentation
+
+For more details, see Apple's official documentation:
+- [The Swift Programming Language: Error Handling](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/)
+- [Swift Standard Library: Error Protocol](https://developer.apple.com/documentation/swift/error)
+- [Swift Standard Library: Result](https://developer.apple.com/documentation/swift/result)
+
+## Summary Table
+
+| Syntax | Purpose | When to Use | Returns |
+|--------|---------|-------------|---------|
+| `throws` | Marks function as throwing | Function can fail and caller should handle it | Declared return type or throws error |
+| `throw` | Throws an error | When error condition occurs | Never returns (exits function) |
+| `do-catch` | Handles errors | When you want to respond to specific errors | N/A (control flow) |
+| `try` | Calls throwing function | Inside do-catch or throwing function | Result or propagates error |
+| `try?` | Converts error to nil | When you don't need error details | Optional (nil on error) |
+| `try!` | Assumes success | When failure is impossible/programmer error | Unwrapped result or crash |
+| `Result<T, E>` | Wraps success or failure | Async operations, storing error state | Enum with .success or .failure |
+| `rethrows` | Conditionally throws | Function throws only if closure throws | Same as function return type |
+| `defer` | Cleanup code | Guaranteed cleanup regardless of exit path | Void (executes on scope exit) |
+| `async throws` | Async function that can fail | Async operations that might error | Async result or throws error |
+
+**Key Takeaways:**
+- Always use `do-catch` when you care about why an operation failed
+- Use `try?` for optional features where failure is acceptable
+- Never use `try!` for operations that can actually fail
+- `Result` is perfect for async callbacks and storing error states
+- Use `defer` for cleanup that must happen regardless of success or failure
+- Make errors descriptive with `LocalizedError` for better debugging and user experience

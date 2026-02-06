@@ -1,0 +1,470 @@
+---
+title: "Functions"
+description: "Defining, calling, parameter labels, return values, and variadic parameters"
+sectionId: "1.6-functions-closures"
+sectionTitle: "Functions & Closures"
+order: 14
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Functions in Swift
+
+Functions are self-contained blocks of code that perform a specific task. In Swift, functions are first-class citizens—meaning they can be assigned to variables, passed as arguments, and returned from other functions. Understanding Swift's function syntax is essential because it differs from many other languages, particularly in how it handles parameter labels and naming conventions.
+
+## Why Functions Matter in Swift and iOS Development
+
+Functions are the building blocks of Swift programs. In iOS development, you'll use functions constantly: handling button taps, processing data, communicating with APIs, and organizing your app's logic. Swift's function syntax is designed to make code read like natural language, which is why Apple emphasizes clear, descriptive function signatures.
+
+## Defining and Calling Basic Functions
+
+The simplest function in Swift looks like this:
+
+```swift
+func sayHello() {
+    print("Hello, World!")
+}
+
+// Calling the function
+sayHello()
+// Output: Hello, World!
+```
+
+The `func` keyword declares a function, followed by the function name, parentheses for parameters (empty here), and a body enclosed in curly braces.
+
+## Functions with Parameters
+
+Parameters make functions flexible by allowing you to pass data into them:
+
+```swift
+func greet(name: String) {
+    print("Hello, \(name)!")
+}
+
+greet(name: "Alice")
+// Output: Hello, Alice!
+```
+
+Notice that when calling the function, you must include the parameter name `name:`. This is called an **argument label**, and it's a distinctive feature of Swift.
+
+### Multiple Parameters
+
+Functions can accept multiple parameters separated by commas:
+
+```swift
+func calculateArea(width: Double, height: Double) {
+    let area = width * height
+    print("The area is \(area)")
+}
+
+calculateArea(width: 10.0, height: 5.0)
+// Output: The area is 50.0
+```
+
+## Parameter Labels: Internal vs External Names
+
+Swift allows you to specify two names for parameters: an **external name** (argument label) used when calling the function, and an **internal name** used within the function body.
+
+```swift
+func greet(person name: String, from hometown: String) {
+    print("Hello, \(name)! I see you're from \(hometown).")
+}
+
+greet(person: "Bob", from: "San Francisco")
+// Output: Hello, Bob! I see you're from San Francisco.
+```
+
+Here, `person` and `from` are external names (what callers see), while `name` and `hometown` are internal names (what you use inside the function).
+
+### Omitting Argument Labels
+
+Use an underscore (`_`) to omit the argument label, making the call site cleaner:
+
+```swift
+func add(_ a: Int, _ b: Int) {
+    print(a + b)
+}
+
+add(5, 3)
+// Output: 8
+```
+
+**Common mistake:** Omitting labels everywhere makes code less readable. Swift's design philosophy favors clarity at the call site. Use `_` sparingly, typically for the first parameter when the function name provides sufficient context.
+
+### When Internal and External Names Are the Same
+
+If you don't specify an external name, Swift uses the internal name as both:
+
+```swift
+func greet(name: String) {
+    // 'name' is both external and internal
+}
+
+greet(name: "Charlie")
+```
+
+## Return Values
+
+Functions can return values using the `->` syntax:
+
+```swift
+func multiply(a: Int, b: Int) -> Int {
+    return a * b
+}
+
+let result = multiply(a: 4, b: 5)
+print(result)
+// Output: 20
+```
+
+### Implicit Returns
+
+If a function body contains a single expression, you can omit the `return` keyword:
+
+```swift
+func square(_ number: Int) -> Int {
+    number * number
+}
+
+print(square(7))
+// Output: 49
+```
+
+This works for any single-expression function, making code more concise.
+
+### Returning Multiple Values with Tuples
+
+Swift functions can return tuples to return multiple values:
+
+```swift
+func minMax(array: [Int]) -> (min: Int, max: Int) {
+    var currentMin = array[0]
+    var currentMax = array[0]
+    
+    for value in array[1..<array.count] {
+        if value < currentMin {
+            currentMin = value
+        } else if value > currentMax {
+            currentMax = value
+        }
+    }
+    
+    return (currentMin, currentMax)
+}
+
+let bounds = minMax(array: [8, -6, 2, 109, 3, 71])
+print("Min: \(bounds.min), Max: \(bounds.max)")
+// Output: Min: -6, Max: 109
+```
+
+### Optional Return Types
+
+When a function might fail to return a value, use an optional return type:
+
+```swift
+func findIndex(of target: Int, in array: [Int]) -> Int? {
+    for (index, value) in array.enumerated() {
+        if value == target {
+            return index
+        }
+    }
+    return nil
+}
+
+if let index = findIndex(of: 5, in: [1, 3, 5, 7]) {
+    print("Found at index \(index)")
+} else {
+    print("Not found")
+}
+// Output: Found at index 2
+```
+
+**Common mistake:** The `minMax` function above will crash if given an empty array. Always validate input when assumptions could be violated:
+
+```swift
+func safeMinMax(array: [Int]) -> (min: Int, max: Int)? {
+    guard !array.isEmpty else {
+        return nil
+    }
+    
+    var currentMin = array[0]
+    var currentMax = array[0]
+    
+    for value in array[1..<array.count] {
+        if value < currentMin {
+            currentMin = value
+        } else if value > currentMax {
+            currentMax = value
+        }
+    }
+    
+    return (currentMin, currentMax)
+}
+```
+
+## Variadic Parameters
+
+Variadic parameters accept zero or more values of a specified type. Use three dots (`...`) after the type name:
+
+```swift
+func calculateAverage(_ numbers: Double...) -> Double {
+    guard !numbers.isEmpty else {
+        return 0.0
+    }
+    
+    let sum = numbers.reduce(0, +)
+    return sum / Double(numbers.count)
+}
+
+print(calculateAverage(1, 2, 3, 4, 5))
+// Output: 3.0
+
+print(calculateAverage(10.5, 20.3))
+// Output: 15.4
+
+print(calculateAverage())
+// Output: 0.0
+```
+
+Inside the function, the variadic parameter is available as an array. In this case, `numbers` is of type `[Double]`.
+
+### Variadic Parameter Rules
+
+**Important constraints:**
+
+1. A function can have at most **one** variadic parameter
+2. Parameters after a variadic parameter must have argument labels
+3. Variadic parameters cannot have default values
+
+```swift
+// Valid: parameter after variadic has label
+func format(_ values: String..., separator: String) -> String {
+    values.joined(separator: separator)
+}
+
+print(format("Apple", "Banana", "Cherry", separator: ", "))
+// Output: Apple, Banana, Cherry
+
+// Invalid: would cause ambiguity
+// func invalid(_ values: String..., _ separator: String) -> String { }
+```
+
+### Practical Variadic Example
+
+Here's a logging function that mimics print-style behavior:
+
+```swift
+func log(_ items: Any..., separator: String = " ") {
+    let timestamp = Date()
+    let message = items.map { "\($0)" }.joined(separator: separator)
+    print("[\(timestamp)] \(message)")
+}
+
+log("User logged in:", "user123")
+log("Error:", 404, "Not Found", separator: " - ")
+// Output: 
+// [2024-01-15 10:30:45] User logged in: user123
+// [2024-01-15 10:30:45] Error: - 404 - Not Found
+```
+
+## Default Parameter Values
+
+Swift allows you to define default values for parameters:
+
+```swift
+func greet(name: String, greeting: String = "Hello") {
+    print("\(greeting), \(name)!")
+}
+
+greet(name: "David")
+// Output: Hello, David!
+
+greet(name: "Emma", greeting: "Welcome")
+// Output: Welcome, Emma!
+```
+
+**Best practice:** Place parameters with default values at the end of the parameter list to maintain natural calling conventions.
+
+## In-Out Parameters
+
+By default, function parameters are constants—you cannot modify them. Use `inout` to allow a function to modify a parameter:
+
+```swift
+func swapValues(_ a: inout Int, _ b: inout Int) {
+    let temp = a
+    a = b
+    b = temp
+}
+
+var x = 10
+var y = 20
+swapValues(&x, &y)
+print("x: \(x), y: \(y)")
+// Output: x: 20, y: 10
+```
+
+The `&` symbol when calling indicates you're passing a reference that can be modified.
+
+**Common mistake:** Trying to pass constants or literals to `inout` parameters:
+
+```swift
+// Error: Cannot pass immutable value as inout argument
+let constant = 5
+swapValues(&constant, &y) // Compiler error
+
+// Error: Cannot pass literal as inout argument
+swapValues(&10, &20) // Compiler error
+```
+
+## Function Types
+
+Every function has a type consisting of its parameter types and return type. You can use function types like any other type:
+
+```swift
+func addIntegers(_ a: Int, _ b: Int) -> Int {
+    a + b
+}
+
+func multiplyIntegers(_ a: Int, _ b: Int) -> Int {
+    a * b
+}
+
+// Both functions have type: (Int, Int) -> Int
+var mathFunction: (Int, Int) -> Int = addIntegers
+
+print(mathFunction(2, 3))
+// Output: 5
+
+mathFunction = multiplyIntegers
+print(mathFunction(2, 3))
+// Output: 6
+```
+
+### Functions as Parameters
+
+Pass functions to other functions:
+
+```swift
+func performOperation(_ a: Int, _ b: Int, operation: (Int, Int) -> Int) -> Int {
+    operation(a, b)
+}
+
+let sum = performOperation(10, 5, operation: addIntegers)
+print(sum)
+// Output: 15
+
+let product = performOperation(10, 5, operation: multiplyIntegers)
+print(product)
+// Output: 50
+```
+
+This pattern is fundamental to Swift's functional programming capabilities.
+
+## Nested Functions
+
+Functions can be defined inside other functions, useful for encapsulating helper logic:
+
+```swift
+func processNumbers(_ numbers: [Int]) -> [Int] {
+    func isEven(_ number: Int) -> Bool {
+        number % 2 == 0
+    }
+    
+    func double(_ number: Int) -> Int {
+        number * 2
+    }
+    
+    return numbers
+        .filter(isEven)
+        .map(double)
+}
+
+print(processNumbers([1, 2, 3, 4, 5, 6]))
+// Output: [4, 8, 12]
+```
+
+Nested functions have access to variables from their enclosing function.
+
+## Common Mistakes and Edge Cases
+
+### 1. Forgetting Argument Labels
+
+```swift
+func greet(name: String) {
+    print("Hello, \(name)!")
+}
+
+// Error: Missing argument label
+greet("Alice") // Compiler error
+
+// Correct
+greet(name: "Alice")
+```
+
+### 2. Confusing Return Type Syntax
+
+```swift
+// Wrong: Trying to use => instead of ->
+// func add(a: Int, b: Int) => Int { } // Syntax error
+
+// Correct
+func add(a: Int, b: Int) -> Int {
+    a + b
+}
+```
+
+### 3. Not Handling Optional Returns
+
+```swift
+func divide(_ a: Int, by b: Int) -> Int? {
+    guard b != 0 else { return nil }
+    return a / b
+}
+
+// Dangerous: Force unwrapping could crash
+let result = divide(10, by: 0)!
+
+// Safe: Handle the optional properly
+if let result = divide(10, by: 2) {
+    print(result)
+}
+```
+
+### 4. Variadic Parameter Misuse
+
+```swift
+// Error: Can't have multiple variadic parameters
+// func invalid(_ values: Int..., _ more: String...) { } // Compiler error
+
+// Error: Parameter after variadic needs a label
+// func invalid(_ values: Int..., _ separator: String) { } // Compiler error
+```
+
+## Official Documentation References
+
+For more in-depth information, consult Apple's official Swift documentation:
+
+- [The Swift Programming Language - Functions](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/functions/)
+- [Swift API Design Guidelines](https://swift.org/documentation/api-design-guidelines/)
+
+The API Design Guidelines particularly emphasize making function calls read like English sentences, which explains Swift's argument label system.
+
+## Summary Table
+
+| Feature | Syntax | Example | Notes |
+|---------|--------|---------|-------|
+| Basic Function | `func name() { }` | `func hello() { print("Hi") }` | No parameters or return value |
+| Parameters | `func name(param: Type)` | `func greet(name: String)` | Requires argument label at call site |
+| Return Value | `func name() -> Type` | `func getAge() -> Int` | Use `->` before return type |
+| External & Internal Names | `func name(external internal: Type)` | `func greet(person name: String)` | First name for caller, second for function body |
+| Omit Argument Label | `func name(_ param: Type)` | `func add(_ a: Int, _ b: Int)` | Use underscore to omit label |
+| Multiple Returns | `func name() -> (Type, Type)` | `func coords() -> (x: Int, y: Int)` | Return tuples for multiple values |
+| Optional Return | `func name() -> Type?` | `func findUser() -> User?` | Can return nil |
+| Variadic Parameters | `func name(_ param: Type...)` | `func sum(_ numbers: Int...)` | Accepts zero or more values |
+| Default Values | `func name(param: Type = value)` | `func greet(name: String = "Guest")` | Parameter becomes optional at call site |
+| In-Out Parameters | `func name(_ param: inout Type)` | `func increment(_ value: inout Int)` | Can modify the passed variable |
+| Function Type | `(ParamTypes) -> ReturnType` | `let f: (Int, Int) -> Int` | Functions are first-class types |
+| Nested Functions | Function inside function | See nested functions section | Scoped to enclosing function |
+
+Functions are the foundation of organized, reusable code in Swift. Master their syntax—especially parameter labels and return values—and you'll write code that's both powerful and readable. The key to Swift functions is understanding that they're designed to be self-documenting through descriptive names and argument labels, making your code communicate its intent clearly.

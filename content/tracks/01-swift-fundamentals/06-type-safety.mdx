@@ -1,0 +1,348 @@
+---
+title: "Type Safety & Inference"
+description: "How Swift's type system keeps you safe"
+sectionId: "1.2-the-basics"
+sectionTitle: "The Basics"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Type Safety & Inference
+
+Swift is a **type-safe** language, meaning the compiler enforces that you work with values of the correct type. If your code expects a `String`, you can't accidentally pass it an `Int`. This prevents entire categories of runtime errors before your code ever runs.
+
+**Type inference** is Swift's ability to automatically deduce the type of a variable or expression based on context. You get safety without verbosity.
+
+## Why Type Safety Matters
+
+Type safety catches bugs at compile time rather than runtime. Consider this scenario:
+
+```swift
+// Without type safety (hypothetical)
+var userAge = "25"
+userAge = userAge + 1  // Runtime error: can't add number to string
+
+// With Swift's type safety
+var userAge: Int = 25
+userAge = userAge + 1  // ✓ Works perfectly
+// userAge = "26"      // ✗ Compile error: Cannot assign String to Int
+```
+
+The compiler prevents you from making mistakes that would crash your app or produce incorrect results.
+
+## Type Inference in Action
+
+Swift can infer types from the values you assign:
+
+```swift
+let message = "Hello"           // Inferred as String
+let count = 42                  // Inferred as Int
+let price = 19.99               // Inferred as Double
+let isActive = true             // Inferred as Bool
+let items = ["apple", "banana"] // Inferred as [String]
+```
+
+You don't need to write `let message: String = "Hello"` unless you want to be explicit.
+
+## When to Use Explicit Types
+
+While inference is convenient, explicit types are sometimes clearer or necessary:
+
+### Empty Collections
+
+```swift
+// Compiler can't infer the type from an empty array
+let names: [String] = []
+let scores: [String: Int] = [:]
+
+// This won't compile:
+// let items = []  // ✗ Error: Empty collection literal requires explicit type
+```
+
+### Choosing Numeric Types
+
+Swift infers `Int` for whole numbers and `Double` for decimals, but you might need something else:
+
+```swift
+let distance = 42.5           // Inferred as Double
+let speed: Float = 42.5       // Explicitly Float (uses less memory)
+let smallNumber: Int8 = 100   // Explicitly Int8 (smaller range)
+let bigNumber: UInt64 = 1000  // Explicitly UInt64 (no negative values)
+```
+
+### Protocol Types
+
+When working with protocols, explicit types are often required:
+
+```swift
+protocol Animal {
+    func makeSound()
+}
+
+struct Dog: Animal {
+    func makeSound() { print("Woof") }
+    func fetch() { print("Fetching") }
+}
+
+// Explicit type restricts to protocol methods only
+let pet: Animal = Dog()
+pet.makeSound()  // ✓ Works
+// pet.fetch()   // ✗ Error: Animal doesn't have fetch()
+
+// Inference keeps the full type
+let dog = Dog()
+dog.fetch()      // ✓ Works
+```
+
+## Type Checking and Conversion
+
+Swift is strict about mixing types, even when it seems logical:
+
+```swift
+let wholeNumber = 42
+let decimal = 3.14
+
+// This doesn't compile:
+// let result = wholeNumber + decimal  // ✗ Error: Cannot add Int and Double
+
+// You must explicitly convert:
+let result = Double(wholeNumber) + decimal  // ✓ Works: 45.14
+```
+
+### Safe Downcasting
+
+When working with class hierarchies, use type casting carefully:
+
+```swift
+class Vehicle {
+    var wheels: Int { return 0 }
+}
+
+class Car: Vehicle {
+    override var wheels: Int { return 4 }
+    func openTrunk() { print("Trunk opened") }
+}
+
+let vehicle: Vehicle = Car()
+
+// Conditional downcast (safe)
+if let car = vehicle as? Car {
+    car.openTrunk()  // ✓ Safe to call
+}
+
+// Forced downcast (dangerous)
+let car = vehicle as! Car  // Crashes if vehicle isn't actually a Car
+car.openTrunk()
+```
+
+## Type Aliases for Clarity
+
+Create custom names for existing types to make your code more readable:
+
+```swift
+typealias Coordinate = (x: Double, y: Double)
+typealias CompletionHandler = (Bool) -> Void
+typealias JSON = [String: Any]
+
+func animate(to position: Coordinate, completion: CompletionHandler) {
+    // Implementation
+    completion(true)
+}
+
+let point: Coordinate = (x: 100, y: 200)
+animate(to: point) { success in
+    print("Animation completed: \(success)")
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Assuming Implicit Conversion
+
+```swift
+let value: Int = 42
+
+// This doesn't work:
+// let doubled: Int = value * 2.0  // ✗ Error: Can't multiply Int by Double
+
+// Correct approaches:
+let doubled: Double = Double(value) * 2.0
+let doubledInt: Int = value * 2
+```
+
+### Mistake 2: Mixing Optional and Non-Optional Types
+
+```swift
+let userName: String? = "Alice"
+
+// Can't use optional directly where non-optional is expected:
+// let greeting = "Hello, " + userName  // ✗ Error
+
+// Must unwrap first:
+if let name = userName {
+    let greeting = "Hello, " + name  // ✓ Works
+}
+
+// Or provide default:
+let greeting = "Hello, " + (userName ?? "Guest")
+```
+
+### Mistake 3: Type Inference with Literals
+
+Be aware of default inferred types for numeric literals:
+
+```swift
+// Problem: loss of precision
+let value = 1 / 2           // Inferred as Int, result is 0
+let correct = 1.0 / 2.0     // Inferred as Double, result is 0.5
+
+// Or be explicit:
+let result: Double = 1 / 2  // Result is 0.5 (literals become Double)
+```
+
+### Edge Case: Any and AnyObject
+
+```swift
+// Any can hold any type
+var anything: Any = 42
+anything = "Now a string"
+anything = [1, 2, 3]
+
+// Must type-check before use:
+if let number = anything as? Int {
+    print("It's a number: \(number)")
+}
+
+// AnyObject is for class instances only
+var classInstance: AnyObject = NSString(string: "Hello")
+// classInstance = 42  // ✗ Error: Int is not a class type
+```
+
+## Type Safety with Collections
+
+Swift enforces homogeneous collections by default:
+
+```swift
+// All elements must be the same type
+let numbers: [Int] = [1, 2, 3, 4, 5]
+// let mixed = [1, "two", 3]  // ✗ Error: heterogeneous collection
+
+// Dictionaries enforce key and value types
+let scores: [String: Int] = ["Alice": 95, "Bob": 87]
+// scores["Charlie"] = "85"  // ✗ Error: String is not Int
+
+// Heterogeneous collections require Any
+let mixed: [Any] = [1, "two", 3.0, true]
+```
+
+## Generic Type Inference
+
+Swift infers generic types from context:
+
+```swift
+// Generic function
+func first<T>(in array: [T]) -> T? {
+    return array.first
+}
+
+let names = ["Alice", "Bob", "Charlie"]
+let firstName = first(in: names)  // Inferred as String?
+
+let numbers = [1, 2, 3]
+let firstNumber = first(in: numbers)  // Inferred as Int?
+```
+
+Generics give you type safety without sacrificing reusability.
+
+## Type Safety with Enums
+
+Enums provide type-safe alternatives to constants:
+
+```swift
+// Without enums (error-prone)
+let status = "pending"  // Could be typo: "pendng"
+
+// With enums (type-safe)
+enum OrderStatus {
+    case pending
+    case processing
+    case shipped
+    case delivered
+}
+
+let status: OrderStatus = .pending  // Compiler ensures validity
+```
+
+Associated values keep related data type-safe:
+
+```swift
+enum Result {
+    case success(data: String)
+    case failure(error: Error)
+}
+
+func process(_ result: Result) {
+    switch result {
+    case .success(let data):
+        print("Data: \(data)")
+    case .failure(let error):
+        print("Error: \(error)")
+    }
+}
+```
+
+## Checking Types at Runtime
+
+Use type checking operators when needed:
+
+```swift
+let items: [Any] = [42, "Hello", 3.14, true]
+
+for item in items {
+    // Check type with 'is'
+    if item is Int {
+        print("\(item) is an integer")
+    } else if item is String {
+        print("\(item) is a string")
+    }
+    
+    // Switch with type patterns
+    switch item {
+    case let number as Int:
+        print("Integer: \(number)")
+    case let text as String:
+        print("String: \(text)")
+    case let decimal as Double:
+        print("Double: \(decimal)")
+    default:
+        print("Other type")
+    }
+}
+```
+
+## Official Documentation References
+
+For deeper exploration:
+
+- [The Basics - Type Safety and Type Inference](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/#Type-Safety-and-Type-Inference)
+- [Type Casting](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/typecasting/)
+- [Types](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/)
+
+## Summary Table
+
+| Concept | Key Points | Example |
+|---------|-----------|---------|
+| **Type Safety** | Compiler prevents type mismatches; catches errors at compile time | `let age: Int = 25` <br/> `age = "26"  // ✗ Error` |
+| **Type Inference** | Swift automatically deduces types from values | `let name = "Alice"  // String inferred` |
+| **Explicit Types** | Required for empty collections, specific numeric types, protocols | `let names: [String] = []` |
+| **Type Conversion** | Must be explicit; no automatic conversion between types | `Double(42) + 3.14` |
+| **Type Casting** | Use `as?` for safe downcasting, avoid `as!` | `if let car = vehicle as? Car { }` |
+| **Numeric Literals** | Integers infer as `Int`, decimals as `Double` | `let x = 42  // Int` <br/> `let y = 3.14  // Double` |
+| **Any vs AnyObject** | `Any` = any type; `AnyObject` = class instances only | `let value: Any = 42` |
+| **Generic Inference** | Type parameters inferred from arguments | `func identity<T>(_ x: T) -> T` |
+| **Type Aliases** | Custom names for existing types | `typealias Point = (x: Int, y: Int)` |
+| **Type Checking** | Use `is` to check, `as?` to cast | `if item is String { }` |
+
+Type safety is one of Swift's greatest strengths. It eliminates entire categories of bugs while type inference keeps your code clean. Embrace explicit types when they add clarity, and trust inference everywhere else.

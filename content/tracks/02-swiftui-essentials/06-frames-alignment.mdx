@@ -1,0 +1,470 @@
+---
+title: "Frames & Alignment"
+description: "Frame modifiers, alignment guides, and GeometryReader"
+sectionId: "2.2-layout"
+sectionTitle: "Layout & Composition"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Frames & Alignment in SwiftUI
+
+When building iOS apps with SwiftUI, understanding how views position and size themselves is crucial. Unlike UIKit where you explicitly set frames, SwiftUI uses a declarative layout system where parent views propose sizes to children, children choose their size, and parents position them. This article covers how to control this behavior using frame modifiers, alignment guides, and GeometryReader.
+
+## Why Frames & Alignment Matter
+
+SwiftUI's layout system is elegant but can be surprising if you expect absolute positioning. A `Text` view naturally sizes itself to fit its content, but what if you need it larger? What if you want precise control over where elements align? Without understanding frames and alignment, you'll struggle with basic layouts and wonder why views don't appear where you expect.
+
+## The SwiftUI Layout Process
+
+Before diving into frames, understand SwiftUI's three-step layout process:
+
+1. **Parent proposes a size** to the child view
+2. **Child chooses its own size** (often ignoring the proposal)
+3. **Parent positions the child** within the parent's coordinate space
+
+This is fundamentally different from imperative layout systems where you directly set coordinates.
+
+## Frame Modifiers
+
+The `frame()` modifier is your primary tool for controlling view size. It comes in several variations.
+
+### Basic Frame with Fixed Dimensions
+
+```swift
+Text("Hello")
+    .frame(width: 200, height: 100)
+    .background(.blue)
+```
+
+This creates a frame exactly 200×100 points. The `Text` sizes itself normally, then SwiftUI centers it within this frame.
+
+**Important:** The frame modifier creates a new container view with the specified dimensions. The original view remains its natural size inside this container.
+
+```swift
+Text("Hello")
+    .background(.red)           // Hugs the text
+    .frame(width: 200, height: 100)
+    .background(.blue)          // Shows the frame size
+```
+
+In this example, you'll see red background tightly around the text, and blue background showing the 200×100 frame.
+
+### Flexible Frames with Min/Max
+
+```swift
+Text("This text can grow or shrink")
+    .frame(minWidth: 100, maxWidth: 300, minHeight: 50, maxHeight: 200)
+    .background(.green)
+```
+
+This tells SwiftUI: "I want to be between 100-300 points wide and 50-200 points tall." The actual size depends on:
+- The proposed size from the parent
+- The content's natural size
+- The constraints you specified
+
+### Ideal Size
+
+```swift
+Text("Hello")
+    .frame(width: 200, idealHeight: 100, maxHeight: 300)
+```
+
+The `ideal` parameter suggests a preferred size when the parent offers flexible space, but it's not guaranteed.
+
+### Infinite Frames (Expand to Fill)
+
+```swift
+Text("Expanded")
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(.purple)
+```
+
+Setting `maxWidth` or `maxHeight` to `.infinity` tells the view to accept all proposed space from its parent. This is commonly used to make views fill available space.
+
+**Common Mistake:** Using `.infinity` without a bounded parent will cause issues. Always ensure there's a parent that provides finite space.
+
+```swift
+// ❌ Problem: May not work as expected
+VStack {
+    Text("Item")
+        .frame(maxWidth: .infinity)  // No background, might not be visible
+}
+
+// ✅ Better: Add background to see the frame
+VStack {
+    Text("Item")
+        .frame(maxWidth: .infinity)
+        .background(.gray)
+}
+```
+
+## Alignment
+
+Alignment controls how views position themselves within their containers.
+
+### Frame Alignment
+
+```swift
+Text("Top Leading")
+    .frame(width: 200, height: 200, alignment: .topLeading)
+    .background(.orange)
+```
+
+The `alignment` parameter positions the content within the frame. Available alignments include:
+- `.topLeading`, `.top`, `.topTrailing`
+- `.leading`, `.center`, `.trailing`
+- `.bottomLeading`, `.bottom`, `.bottomTrailing`
+
+### Stack Alignment
+
+```swift
+VStack(alignment: .leading) {
+    Text("Short")
+    Text("Much longer text here")
+    Text("Mid")
+}
+```
+
+Stack alignment determines how children align perpendicular to the stack's axis:
+- `VStack`: aligns horizontally (`.leading`, `.center`, `.trailing`)
+- `HStack`: aligns vertically (`.top`, `.center`, `.bottom`)
+- `ZStack`: aligns both axes
+
+### Alignment with Multiple Stacks
+
+```swift
+HStack(alignment: .top) {
+    VStack(alignment: .leading) {
+        Text("Name:")
+        Text("Age:")
+    }
+    VStack(alignment: .leading) {
+        Text("John")
+        Text("30")
+    }
+}
+```
+
+Understanding how alignments interact across nested stacks is key to creating complex layouts.
+
+## Alignment Guides
+
+Alignment guides provide fine-grained control over how views align. They let you customize where a view's alignment points are calculated.
+
+### Built-in Alignment Guides
+
+```swift
+VStack(alignment: .leading) {
+    Text("Hello")
+        .alignmentGuide(.leading) { d in
+            d[.trailing]  // Use the trailing edge as the leading guide
+        }
+    Text("World")
+}
+```
+
+This closure receives a `ViewDimensions` object (represented as `d`) and returns an offset for the alignment guide.
+
+### Custom Alignment Guides
+
+Create custom alignments for complex layouts:
+
+```swift
+extension VerticalAlignment {
+    private enum MidAccountAndName: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat {
+            context[.top]
+        }
+    }
+    
+    static let midAccountAndName = VerticalAlignment(MidAccountAndName.self)
+}
+
+struct ContentView: View {
+    var body: some View {
+        HStack(alignment: .midAccountAndName) {
+            VStack {
+                Text("Account:")
+                    .alignmentGuide(.midAccountAndName) { d in d[VerticalAlignment.center] }
+                Text("Extra info")
+            }
+            
+            Text("John Doe")
+                .alignmentGuide(.midAccountAndName) { d in d[VerticalAlignment.center] }
+        }
+    }
+}
+```
+
+This aligns "Account:" and "John Doe" by their centers, even though they're in different stacks with different heights.
+
+**Key Points:**
+- Custom alignments must conform to `AlignmentID`
+- Implement `defaultValue(in:)` to provide a fallback
+- Extend `VerticalAlignment` or `HorizontalAlignment` appropriately
+
+## GeometryReader
+
+`GeometryReader` is a container view that gives you access to its parent's proposed size and coordinate space. It's powerful but often overused.
+
+### Basic GeometryReader
+
+```swift
+GeometryReader { geometry in
+    Text("Size: \(geometry.size.width) × \(geometry.size.height)")
+        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+}
+```
+
+The closure receives a `GeometryProxy` that provides:
+- `size`: The view's own size
+- `frame(in:)`: The frame in a specified coordinate space
+- `safeAreaInsets`: Safe area insets for the view
+
+### GeometryReader Behavior
+
+**Critical:** `GeometryReader` expands to fill all available space proposed by its parent. This surprises many beginners.
+
+```swift
+// ❌ This takes all vertical space
+VStack {
+    Text("Header")
+    GeometryReader { geometry in
+        Text("Content")
+    }
+    Text("Footer")  // Pushed to bottom
+}
+
+// ✅ Constrain with frame if needed
+VStack {
+    Text("Header")
+    GeometryReader { geometry in
+        Text("Content")
+    }
+    .frame(height: 100)
+    Text("Footer")
+}
+```
+
+### Practical Use: Adaptive Layouts
+
+```swift
+GeometryReader { geometry in
+    if geometry.size.width > 500 {
+        HStack {
+            SidebarView()
+            ContentView()
+        }
+    } else {
+        VStack {
+            ContentView()
+        }
+    }
+}
+```
+
+### Coordinate Spaces
+
+Use `frame(in:)` to get a view's position in different coordinate spaces:
+
+```swift
+GeometryReader { geometry in
+    VStack {
+        Text("Local: \(geometry.frame(in: .local).origin)")
+        Text("Global: \(geometry.frame(in: .global).origin)")
+    }
+}
+```
+
+**Coordinate space types:**
+- `.local`: Relative to the view's parent
+- `.global`: Relative to the screen
+- `.named("customName")`: Custom coordinate space (defined with `.coordinateSpace(name:)`)
+
+```swift
+VStack {
+    GeometryReader { geometry in
+        Text("Y: \(geometry.frame(in: .named("container")).minY)")
+    }
+}
+.coordinateSpace(name: "container")
+```
+
+### GeometryReader Edge Cases
+
+**1. Ignored safe area:** `GeometryReader` extends into safe areas by default. Use `.safeAreaInsets` to handle this:
+
+```swift
+GeometryReader { geometry in
+    VStack {
+        Text("Content")
+    }
+    .padding(.top, geometry.safeAreaInsets.top)
+}
+```
+
+**2. Greedy expansion:** As mentioned, it fills all space. Use sparingly and wrap with frames when needed.
+
+**3. Performance:** Don't use `GeometryReader` when simpler solutions exist (like `.frame(maxWidth: .infinity)`).
+
+## Common Patterns & Best Practices
+
+### Center Content in Available Space
+
+```swift
+// ✅ Simple approach
+Text("Centered")
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+// ✅ With explicit control
+GeometryReader { geometry in
+    Text("Centered")
+        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+}
+```
+
+### Fixed Aspect Ratio
+
+```swift
+GeometryReader { geometry in
+    Rectangle()
+        .fill(.blue)
+        .frame(width: geometry.size.width, height: geometry.size.width * 0.75)
+}
+.aspectRatio(4/3, contentMode: .fit)  // Or use built-in modifier
+```
+
+### Responsive Grid
+
+```swift
+GeometryReader { geometry in
+    let columns = Int(geometry.size.width / 150)
+    let gridItems = Array(repeating: GridItem(.flexible()), count: max(columns, 1))
+    
+    LazyVGrid(columns: gridItems) {
+        ForEach(0..<20) { i in
+            Rectangle()
+                .fill(.blue)
+                .frame(height: 100)
+        }
+    }
+}
+```
+
+## Common Mistakes
+
+### 1. Multiple Frames Confusion
+
+```swift
+// ❌ What size is this?
+Text("Hello")
+    .frame(width: 100, height: 100)
+    .frame(width: 200, height: 200)  // Creates a 200×200 container with 100×100 inside
+```
+
+Each `frame()` creates a new container. The outer frame sees the inner frame as its content.
+
+### 2. Alignment Without Visible Difference
+
+```swift
+// ❌ No visible effect
+Text("Hello")
+    .frame(alignment: .topLeading)  // No width/height specified
+```
+
+Without explicit dimensions, the frame shrinks to content size, making alignment irrelevant.
+
+### 3. Forgetting Fixed Frame Creates New Container
+
+```swift
+// ❌ Unexpected touch area
+Button("Tap") { }
+    .frame(width: 100, height: 100)
+// Only the text is tappable, not the full frame
+```
+
+```swift
+// ✅ Make entire frame tappable
+Button(action: {}) {
+    Text("Tap")
+        .frame(width: 100, height: 100)
+}
+```
+
+### 4. Overusing GeometryReader
+
+```swift
+// ❌ Overkill
+GeometryReader { geometry in
+    Text("Hello")
+        .frame(width: geometry.size.width)
+}
+
+// ✅ Simpler
+Text("Hello")
+    .frame(maxWidth: .infinity)
+```
+
+## Official Documentation References
+
+- [Layout Fundamentals](https://developer.apple.com/documentation/swiftui/layout-fundamentals) - Apple's guide to SwiftUI layout
+- [frame(width:height:alignment:)](https://developer.apple.com/documentation/swiftui/view/frame(width:height:alignment:)) - Frame modifier documentation
+- [GeometryReader](https://developer.apple.com/documentation/swiftui/geometryreader) - GeometryReader reference
+- [AlignmentID](https://developer.apple.com/documentation/swiftui/alignmentid) - Creating custom alignments
+- [WWDC: SwiftUI Layout System](https://developer.apple.com/videos/play/wwdc2019/237/) - Deep dive video
+
+## Summary Table
+
+| Concept | Purpose | When to Use | Common Pitfall |
+|---------|---------|-------------|----------------|
+| `.frame(width:height:)` | Set fixed dimensions | When you need exact sizes | Forgetting it creates a container, not resizing the view |
+| `.frame(maxWidth: .infinity)` | Expand to fill space | Making views take available space | Using without bounded parent |
+| `.frame(alignment:)` | Position content in frame | Aligning content within larger container | Using without specifying frame size |
+| Stack alignment | Align stack children | Aligning elements in VStack/HStack/ZStack | Confusing stack axis with alignment direction |
+| `.alignmentGuide()` | Customize alignment points | Fine-tuned multi-view alignment | Complexity when simpler solutions exist |
+| Custom AlignmentID | Create reusable alignments | Complex cross-stack alignments | Not implementing defaultValue |
+| `GeometryReader` | Access parent size/position | Adaptive layouts, coordinate-based positioning | Overusing it, forgetting greedy expansion |
+| `.coordinateSpace(name:)` | Define named coordinate space | Multi-level position calculations | Not matching names correctly |
+| `.position()` | Absolute positioning | Centering or explicit coordinates | Forgetting it uses center point, not top-leading |
+
+## Practice Exercise
+
+Try building this layout to test your understanding:
+
+```swift
+struct ProfileCard: View {
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(alignment: .leading) {
+                // Circular avatar (1/3 of width)
+                Circle()
+                    .fill(.blue)
+                    .frame(width: geometry.size.width / 3, 
+                           height: geometry.size.width / 3)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                
+                // Name and title aligned
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Jane Doe")
+                        .font(.title)
+                    Text("iOS Developer")
+                        .font(.subheadline)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                Spacer()
+            }
+        }
+        .frame(width: 300, height: 400)
+        .background(.white)
+        .cornerRadius(12)
+        .shadow(radius: 5)
+    }
+}
+```
+
+Experiment with different alignments, frame sizes, and GeometryReader usage to see how layout changes. Understanding frames and alignment is foundational to mastering SwiftUI layout.

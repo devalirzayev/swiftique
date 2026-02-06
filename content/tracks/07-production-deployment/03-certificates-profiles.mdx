@@ -1,0 +1,552 @@
+---
+title: "Certificates & Provisioning"
+description: "Code signing, certificates, provisioning profiles, and entitlements"
+sectionId: "7.1-app-store-prep"
+sectionTitle: "App Store Preparation"
+order: 3
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Certificates & Provisioning
+
+When you build an iOS app, you can't just install it on any device or distribute it to users without Apple's security infrastructure. This system exists to protect users from malicious software and ensure that apps come from verified developers. Understanding certificates, provisioning profiles, and code signing is essential for testing on physical devices, distributing beta builds, and publishing to the App Store.
+
+## What Is Code Signing?
+
+Code signing is Apple's way of verifying that an app comes from a trusted source and hasn't been tampered with. When you sign your app, you're cryptographically attaching your identity to the binary. iOS devices check this signature before allowing the app to run.
+
+The process involves several components:
+
+- **Certificates**: Prove your identity as a developer
+- **Provisioning Profiles**: Link your certificate, App ID, and devices together
+- **Entitlements**: Declare what capabilities your app needs (push notifications, iCloud, etc.)
+- **App IDs**: Unique identifiers for your application
+
+## Certificates: Your Digital Identity
+
+A certificate is a digital document issued by Apple that identifies you (or your organization) as a trusted developer. There are several types:
+
+### Development Certificates
+
+Used when building apps for testing on physical devices during development.
+
+```swift
+// Your code doesn't directly interact with certificates, but Xcode uses them
+// When you build and run on a device, Xcode signs the binary with your dev certificate
+
+// In your project settings under "Signing & Capabilities":
+// Team: Your Team Name
+// Signing Certificate: Apple Development
+```
+
+### Distribution Certificates
+
+Used for distributing apps outside of development:
+
+- **Apple Distribution**: For App Store submissions
+- **Ad Hoc/Enterprise**: For distributing to specific devices outside the App Store
+
+**Common Mistake**: Creating too many certificates. You only need one development certificate per developer and one distribution certificate per team. Creating duplicates causes confusion and "Revoked Certificate" errors.
+
+### How Certificates Work
+
+1. You generate a Certificate Signing Request (CSR) from Keychain Access on your Mac
+2. Upload the CSR to Apple Developer Portal
+3. Apple issues a certificate signed with their root CA
+4. You download and install it in your Keychain
+5. Xcode uses the private key in your Keychain to sign apps
+
+```swift
+// You can check signing information programmatically (though rarely needed):
+
+import Foundation
+
+func checkBundleSignature() {
+    guard let executableURL = Bundle.main.executableURL else { return }
+    
+    // Get code signing information
+    var staticCode: SecStaticCode?
+    var status = SecStaticCodeCreateWithPath(
+        executableURL as CFURL,
+        [],
+        &staticCode
+    )
+    
+    if status == errSecSuccess, let code = staticCode {
+        // Verify the signature
+        status = SecStaticCodeCheckValidity(
+            code,
+            [],
+            nil
+        )
+        
+        if status == errSecSuccess {
+            print("App signature is valid")
+        } else {
+            print("Invalid signature: \(status)")
+        }
+    }
+}
+```
+
+## Provisioning Profiles: The Glue
+
+A provisioning profile is an XML file that binds together:
+
+- Your certificate(s)
+- An App ID (bundle identifier)
+- Device identifiers (for development/ad hoc profiles)
+- Entitlements
+
+```swift
+// Your app's bundle identifier must match the provisioning profile
+// This is set in your Info.plist or project settings:
+
+// Example bundle identifier
+// com.yourcompany.yourapp
+
+// The provisioning profile embeds this information:
+/*
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ...>
+<plist version="1.0">
+<dict>
+    <key>AppIDName</key>
+    <string>Your App Name</string>
+    <key>ApplicationIdentifierPrefix</key>
+    <array>
+        <string>TEAM_ID_HERE</string>
+    </array>
+    <key>DeveloperCertificates</key>
+    <array>
+        <data>CERTIFICATE_DATA_HERE</data>
+    </array>
+    <key>Entitlements</key>
+    <dict>
+        <key>application-identifier</key>
+        <string>TEAM_ID.com.yourcompany.yourapp</string>
+    </dict>
+</dict>
+</plist>
+*/
+```
+
+### Types of Provisioning Profiles
+
+**Development Profile**: Allows installation on registered test devices (up to 100 devices per device type per year).
+
+**Ad Hoc Profile**: For distributing to specific devices outside of TestFlight (also limited to 100 devices).
+
+**App Store Profile**: For App Store distribution (no device limits).
+
+**Enterprise Profile**: For organizations with an Enterprise account to distribute internally.
+
+```swift
+// You can read provisioning profile information at runtime:
+
+import Foundation
+
+func getProvisioningProfile() -> [String: Any]? {
+    guard let profilePath = Bundle.main.path(
+        forResource: "embedded",
+        ofType: "mobileprovision"
+    ) else {
+        return nil
+    }
+    
+    guard let profileData = try? Data(contentsOf: URL(fileURLWithPath: profilePath)) else {
+        return nil
+    }
+    
+    // The provisioning profile is in a CMS wrapper
+    // Extract the plist portion (this is simplified):
+    let string = String(data: profileData, encoding: .ascii) ?? ""
+    
+    if let range = string.range(of: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>") {
+        let xmlString = String(string[range.lowerBound...])
+        if let endRange = xmlString.range(of: "</plist>") {
+            let plistString = String(xmlString[...endRange.upperBound])
+            if let plistData = plistString.data(using: .utf8),
+               let plist = try? PropertyListSerialization.propertyList(
+                from: plistData,
+                format: nil
+               ) as? [String: Any] {
+                return plist
+            }
+        }
+    }
+    
+    return nil
+}
+
+// Usage:
+if let profile = getProvisioningProfile() {
+    print("Team IDs: \(profile["TeamIdentifier"] ?? "None")")
+    print("Creation Date: \(profile["CreationDate"] ?? "Unknown")")
+    print("Expiration Date: \(profile["ExpirationDate"] ?? "Unknown")")
+}
+```
+
+**Edge Case**: Provisioning profiles expire. Development profiles last 1 year, and App Store profiles don't expire but need regeneration when certificates are renewed. Always check expiration dates when debugging signing issues.
+
+## App IDs and Bundle Identifiers
+
+Your App ID connects your app to Apple's ecosystem. It consists of:
+
+- **Team ID Prefix**: Assigned by Apple (e.g., `A1B2C3D4E5`)
+- **Bundle ID**: Your app's unique identifier (e.g., `com.yourcompany.yourapp`)
+
+```swift
+// In your Info.plist or project settings:
+// Bundle Identifier: com.yourcompany.yourapp
+
+// Access at runtime:
+let bundleID = Bundle.main.bundleIdentifier
+print("Bundle ID: \(bundleID ?? "Unknown")")
+
+// The full App ID is: TEAM_ID.BUNDLE_ID
+// Example: A1B2C3D4E5.com.yourcompany.yourapp
+```
+
+### Explicit vs Wildcard App IDs
+
+**Explicit App ID**: Matches one specific app (e.g., `com.yourcompany.myapp`)
+- Required for: Push notifications, In-App Purchase, iCloud, App Groups
+
+**Wildcard App ID**: Matches multiple apps (e.g., `com.yourcompany.*`)
+- Good for: Simple apps, prototypes, apps without special capabilities
+
+```swift
+// If you're using push notifications, you MUST use an explicit App ID:
+
+import UserNotifications
+
+func registerForPushNotifications() {
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        guard granted else { return }
+        
+        DispatchQueue.main.async {
+            // This will fail if your provisioning profile uses a wildcard App ID
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+}
+```
+
+**Common Mistake**: Using a wildcard App ID when your app requires push notifications or other capabilities that need explicit App IDs. You'll get cryptic runtime errors.
+
+## Entitlements: Declaring Capabilities
+
+Entitlements are key-value pairs that grant your app specific capabilities. They're embedded in both your provisioning profile and your app's code signature.
+
+```swift
+// Entitlements are configured in Xcode under "Signing & Capabilities"
+// They generate a .entitlements file in your project
+
+// Example MyApp.entitlements:
+/*
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ...>
+<plist version="1.0">
+<dict>
+    <key>aps-environment</key>
+    <string>development</string>
+    
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.yourcompany.yourapp</string>
+    </array>
+    
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.yourcompany.shared</string>
+    </array>
+    
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:yourwebsite.com</string>
+    </array>
+</dict>
+</plist>
+*/
+```
+
+### Common Entitlements
+
+```swift
+// Push Notifications
+// Entitlement key: aps-environment
+// Values: development, production
+
+// App Groups (for sharing data between apps/extensions)
+import Foundation
+
+func saveToAppGroup() {
+    let appGroupID = "group.com.yourcompany.shared"
+    
+    guard let containerURL = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: appGroupID
+    ) else {
+        print("App Group not configured correctly")
+        return
+    }
+    
+    let fileURL = containerURL.appendingPathComponent("shared.data")
+    try? "Hello from main app".write(to: fileURL, atomically: true, encoding: .utf8)
+}
+
+// iCloud Key-Value Storage
+import Foundation
+
+func useiCloudKeyValue() {
+    let store = NSUbiquitousKeyValueStore.default
+    store.set("value", forKey: "key")
+    store.synchronize()
+}
+
+// Associated Domains (for Universal Links)
+// Format in entitlements: applinks:yourdomain.com
+// This requires a valid apple-app-site-association file on your server
+```
+
+**Edge Case**: Entitlements must match between your App ID configuration in the Developer Portal and your Xcode project. Mismatches cause signing failures like "Provisioning profile doesn't include the entitlement."
+
+## Automatic vs Manual Signing
+
+### Automatic Signing
+
+Xcode manages certificates and profiles for you. Recommended for most developers.
+
+```swift
+// In Xcode, under "Signing & Capabilities":
+// ✓ Automatically manage signing
+// Team: Your Team Name
+
+// Xcode will:
+// 1. Create/download certificates as needed
+// 2. Register devices automatically
+// 3. Generate provisioning profiles
+// 4. Handle entitlements
+```
+
+**Pros**:
+- Simplest approach
+- Xcode handles complexity
+- Good for solo developers and small teams
+
+**Cons**:
+- Less control over profiles
+- Can cause issues in large teams with many developers
+- CI/CD requires additional setup
+
+### Manual Signing
+
+You create and manage certificates and profiles yourself.
+
+```swift
+// In Xcode, under "Signing & Capabilities":
+// ✗ Automatically manage signing
+// Provisioning Profile: [Select your profile]
+// Signing Certificate: [Select your certificate]
+
+// You must:
+// 1. Create certificates in Developer Portal
+// 2. Download and install them
+// 3. Create provisioning profiles
+// 4. Select them explicitly in Xcode
+```
+
+**When to use manual signing**:
+- Large teams with dedicated build systems
+- When you need specific profile configurations
+- CI/CD pipelines (though automatic signing can work with proper setup)
+- When troubleshooting automatic signing issues
+
+## Code Signing in Practice
+
+### Building for Device
+
+```swift
+// When you build for a device (not simulator), Xcode:
+// 1. Compiles your Swift code to binary
+// 2. Embeds your provisioning profile as "embedded.mobileprovision"
+// 3. Adds entitlements from your .entitlements file
+// 4. Signs the binary with your certificate's private key
+// 5. Creates a code signature that iOS verifies before running
+
+// You can verify signing from terminal:
+// codesign -dv --entitlements - YourApp.app
+
+// Example output:
+/*
+Executable=/path/to/YourApp.app/YourApp
+Identifier=com.yourcompany.yourapp
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=1234 flags=0x0(none) hashes=30+5 location=embedded
+Signature size=4321
+Authority=Apple Development: Your Name (TEAM_ID)
+Authority=Apple Worldwide Developer Relations Certification Authority
+Authority=Apple Root CA
+*/
+```
+
+### Debugging Signing Issues
+
+```swift
+// Common error: "Code signing is required for product type 'Application' in SDK 'iOS'"
+// Solution: Select a valid provisioning profile or enable automatic signing
+
+// Common error: "No profiles for 'com.yourcompany.yourapp' were found"
+// Solution: Create a provisioning profile in the Developer Portal that includes
+// your certificate and bundle ID
+
+// Common error: "Provisioning profile doesn't include signing certificate"
+// Solution: Regenerate the profile to include your current certificate
+
+// Check what's wrong programmatically:
+import Foundation
+
+func diagnoseSigningIssue() {
+    // Check if running on device or simulator
+    #if targetEnvironment(simulator)
+    print("Running on simulator - code signing not enforced")
+    #else
+    print("Running on device - code signing required")
+    
+    // Check bundle ID
+    if let bundleID = Bundle.main.bundleIdentifier {
+        print("Bundle ID: \(bundleID)")
+    } else {
+        print("ERROR: No bundle identifier found")
+    }
+    
+    // Check if provisioning profile exists
+    if let profilePath = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") {
+        print("Provisioning profile found at: \(profilePath)")
+    } else {
+        print("ERROR: No provisioning profile found")
+    }
+    
+    // Check entitlements
+    if let entitlements = Bundle.main.object(forInfoDictionaryKey: "Entitlements") {
+        print("Entitlements: \(entitlements)")
+    }
+    #endif
+}
+```
+
+## CI/CD and Code Signing
+
+For continuous integration, you need to handle code signing without manual Xcode interaction.
+
+```swift
+// Using fastlane (Ruby tool for iOS automation)
+// Install certificates and profiles on CI machine
+
+// Fastlane Matchfile example (conceptual, not Swift):
+/*
+git_url("https://github.com/yourcompany/certificates")
+storage_mode("git")
+type("appstore") # or "development", "adhoc"
+app_identifier(["com.yourcompany.yourapp"])
+username("your.apple.id@email.com")
+*/
+
+// In your Swift code, nothing changes - but your build script must:
+// 1. Download certificates and profiles
+// 2. Install them in the keychain
+// 3. Set the correct signing settings
+// 4. Build with xcodebuild or fastlane
+
+// Example build script (pseudocode):
+/*
+// 1. Unlock keychain
+security unlock-keychain -p password ~/Library/Keychains/login.keychain
+
+// 2. Import certificate
+security import certificate.p12 -k ~/Library/Keychains/login.keychain -P cert_password
+
+// 3. Install provisioning profile
+cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+// 4. Build
+xcodebuild -scheme YourApp \
+           -configuration Release \
+           -archivePath YourApp.xcarchive \
+           archive
+*/
+```
+
+**Common CI Mistake**: Forgetting to set `CODE_SIGN_IDENTITY` and `PROVISIONING_PROFILE_SPECIFIER` in build settings causes "No signing certificate" errors on CI. Always pass these explicitly:
+
+```bash
+xcodebuild -scheme YourApp \
+    -configuration Release \
+    CODE_SIGN_IDENTITY="Apple Distribution: Your Company (TEAMID)" \
+    PROVISIONING_PROFILE_SPECIFIER="YourApp_AppStore_Profile" \
+    -archivePath build/YourApp.xcarchive \
+    archive
+```
+
+### Mistake 4: Certificate Expiration
+
+Certificates expire after one year. Set calendar reminders and use Apple's automatic management when possible:
+
+```swift
+/*
+ Checking certificate expiration:
+
+ 1. Open Keychain Access
+ 2. Search for "Apple Distribution"
+ 3. Check "Expires" column
+
+ Or via command line:
+ security find-identity -v -p codesigning
+*/
+```
+
+### Edge Case: Multiple Teams and Certificates
+
+If you work across multiple Apple Developer teams, keep certificates organized:
+
+```swift
+/*
+ Best practices for multiple teams:
+
+ 1. Use separate keychains per team:
+    security create-keychain -p password TeamA.keychain
+    security create-keychain -p password TeamB.keychain
+
+ 2. In Xcode, select the correct team in:
+    Signing & Capabilities → Team dropdown
+
+ 3. In CI, specify the team ID explicitly:
+    xcodebuild ... DEVELOPMENT_TEAM=ABCDEF1234
+*/
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Development certificate** | Debug builds on device | Local development and testing |
+| **Distribution certificate** | App Store and Ad Hoc builds | Production signing |
+| **App ID** | Bundle identifier registration | Uniquely identify your app |
+| **Development profile** | Links dev cert + App ID + devices | Run on registered devices |
+| **Ad Hoc profile** | Links dist cert + App ID + devices | Beta testing outside TestFlight |
+| **App Store profile** | Links dist cert + App ID | App Store submission |
+| **Automatic signing** | Xcode manages everything | Simplest setup for most apps |
+| **Manual signing** | You manage certs and profiles | CI/CD and enterprise setups |
+| **Keychain** | Stores certificates and keys | Secure certificate storage |
+| **fastlane match** | Git-based cert sharing | Team certificate management |
+| **Certificate expiration** | 1 year validity | Must renew annually |
+
+## Official Resources
+
+- [Apple Documentation: Certificates](https://developer.apple.com/documentation/xcode/certificates)
+- [Apple Documentation: Provisioning Profiles](https://developer.apple.com/help/account/manage-provisioning-profiles/edit-download-or-delete-provisioning-profiles/)
+- [Apple: Code Signing Guide](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Introduction/Introduction.html)
+- [Apple Documentation: Distributing Your App](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+- [fastlane match Documentation](https://docs.fastlane.tools/actions/match/)

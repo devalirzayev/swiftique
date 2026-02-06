@@ -1,0 +1,25 @@
+{
+  "articleSlug": "02-the-basics",
+  "cards": [
+    {
+      "front": "How do you declare a constant vs a variable in Swift?",
+      "back": "`let` for constants, `var` for variables. Always prefer `let` unless the value needs to change."
+    },
+    {
+      "front": "What is an Optional in Swift?",
+      "back": "A type that can hold either a value or `nil`. Declared with `?` after the type: `var name: String?`"
+    },
+    {
+      "front": "What does the nil-coalescing operator `??` do?",
+      "back": "Provides a default value when an optional is nil: `let name = optionalName ?? \"Unknown\"`"
+    },
+    {
+      "front": "Why does Swift prevent adding an Int and Double directly?",
+      "back": "Swift is type-safe — no implicit type conversion. You must explicitly convert: `Double(myInt) + myDouble`"
+    },
+    {
+      "front": "What's the difference between `if let` and `guard let`?",
+      "back": "`if let` creates a scoped binding inside the if block. `guard let` creates a binding for the rest of the function and requires an early exit (return) if nil."
+    }
+  ]
+}

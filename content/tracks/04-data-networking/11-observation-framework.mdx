@@ -1,0 +1,631 @@
+---
+title: "Observation Framework"
+description: "@Observable macro, tracking changes, and migration from ObservableObject"
+sectionId: "4.4-combine-observation"
+sectionTitle: "Combine & Observation"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Observation Framework
+
+The Observation framework, introduced in iOS 17 and macOS 14, fundamentally changes how Swift tracks and responds to property changes in your app. Instead of manually marking properties with `@Published` and conforming to `ObservableObject`, you simply add the `@Observable` macro to your class, and Swift handles the change tracking automatically.
+
+This matters because it reduces boilerplate code, improves performance, and makes your data models cleaner and more intuitive to work with. If you're starting fresh with iOS 17+, you should use `@Observable`. If you're maintaining older code, understanding how to migrate from `ObservableObject` is essential.
+
+## Why the Observation Framework Exists
+
+Before the Observation framework, SwiftUI relied on the Combine framework for reactivity. This required:
+
+- Conforming classes to `ObservableObject`
+- Marking published properties with `@Published`
+- Using `@ObservedObject`, `@StateObject`, or `@EnvironmentObject` in views
+- Manually managing subscriptions and publishers
+
+The new Observation framework eliminates most of this ceremony while providing more granular and efficient change tracking.
+
+## The @Observable Macro
+
+The `@Observable` macro is the cornerstone of the new framework. It's applied to classes to automatically track property changes.
+
+```swift
+import Observation
+
+@Observable
+class UserProfile {
+    var username: String = ""
+    var email: String = ""
+    var age: Int = 0
+}
+```
+
+That's it. Every property in this class is now automatically observable. SwiftUI views that read these properties will update when they change.
+
+### Using @Observable in SwiftUI Views
+
+```swift
+import SwiftUI
+
+@Observable
+class CounterModel {
+    var count: Int = 0
+    
+    func increment() {
+        count += 1
+    }
+}
+
+struct ContentView: View {
+    var model = CounterModel()
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(model.count)")
+            Button("Increment") {
+                model.increment()
+            }
+        }
+    }
+}
+```
+
+Notice there's no `@StateObject` or `@ObservedObject` wrapper. You just declare the model as a regular property. SwiftUI automatically tracks which properties your view reads and only updates when those specific properties change.
+
+### When to Use @State with @Observable
+
+If you want the view to own and maintain the lifecycle of the observable object, use `@State`:
+
+```swift
+struct ContentView: View {
+    @State private var model = CounterModel()
+    
+    var body: some View {
+        VStack {
+            Text("Count: \(model.count)")
+            Button("Increment") {
+                model.increment()
+            }
+        }
+    }
+}
+```
+
+Use `@State` when:
+- The view creates and owns the model
+- The model should persist across view updates
+- The model should be part of the view's state
+
+Use a plain property when:
+- The model is passed in from a parent view
+- You're working with a shared instance
+- The model's lifecycle is managed elsewhere
+
+## Computed Properties and Methods
+
+The Observation framework automatically tracks computed properties that depend on observable properties:
+
+```swift
+@Observable
+class ShoppingCart {
+    var items: [Item] = []
+    var discountPercentage: Double = 0
+    
+    var subtotal: Double {
+        items.reduce(0) { $0 + $1.price }
+    }
+    
+    var discount: Double {
+        subtotal * (discountPercentage / 100)
+    }
+    
+    var total: Double {
+        subtotal - discount
+    }
+}
+
+struct CartView: View {
+    var cart: ShoppingCart
+    
+    var body: some View {
+        VStack {
+            Text("Subtotal: $\(cart.subtotal, specifier: "%.2f")")
+            Text("Discount: $\(cart.discount, specifier: "%.2f")")
+            Text("Total: $\(cart.total, specifier: "%.2f")")
+        }
+    }
+}
+```
+
+When `items` or `discountPercentage` changes, SwiftUI automatically knows that `subtotal`, `discount`, and `total` might change too, and updates the view accordingly.
+
+## Excluding Properties from Observation
+
+Sometimes you don't want a property to trigger view updates. Use `@ObservationIgnored` for this:
+
+```swift
+import Observation
+
+@Observable
+class DataManager {
+    var publicData: String = ""
+    
+    @ObservationIgnored
+    var cache: [String: Any] = [:]
+    
+    @ObservationIgnored
+    private var internalCounter: Int = 0
+}
+```
+
+This is useful for:
+- Cache data that shouldn't trigger UI updates
+- Internal state that's implementation detail
+- Large data structures that change frequently but don't affect the UI
+
+## Tracking Changes Manually
+
+While SwiftUI automatically tracks changes, you can also observe changes manually using `withObservationTracking`:
+
+```swift
+import Observation
+
+@Observable
+class Temperature {
+    var celsius: Double = 0
+}
+
+func monitorTemperature(_ temp: Temperature) {
+    withObservationTracking {
+        // This closure reads the observable properties
+        print("Current temperature: \(temp.celsius)°C")
+    } onChange: {
+        // This closure is called when tracked properties change
+        print("Temperature changed!")
+        // Re-register for the next change
+        monitorTemperature(temp)
+    }
+}
+
+let temp = Temperature()
+monitorTemperature(temp)
+
+temp.celsius = 25  // Prints "Temperature changed!"
+temp.celsius = 30  // Prints "Temperature changed!"
+```
+
+**Important**: `withObservationTracking` only tracks changes once. You must call it again in the `onChange` closure if you want continuous monitoring.
+
+## Migration from ObservableObject
+
+Here's a side-by-side comparison of the old and new approaches:
+
+### Old Approach (ObservableObject)
+
+```swift
+import Combine
+import SwiftUI
+
+class BookViewModel: ObservableObject {
+    @Published var title: String = ""
+    @Published var author: String = ""
+    @Published var pageCount: Int = 0
+    @Published var isReading: Bool = false
+    
+    var progress: Double {
+        // Computed properties don't automatically trigger updates
+        isReading ? 0.5 : 0.0
+    }
+}
+
+struct BookView: View {
+    @StateObject private var viewModel = BookViewModel()
+    
+    var body: some View {
+        VStack {
+            TextField("Title", text: $viewModel.title)
+            TextField("Author", text: $viewModel.author)
+            Toggle("Reading", isOn: $viewModel.isReading)
+        }
+    }
+}
+```
+
+### New Approach (@Observable)
+
+```swift
+import Observation
+import SwiftUI
+
+@Observable
+class BookViewModel {
+    var title: String = ""
+    var author: String = ""
+    var pageCount: Int = 0
+    var isReading: Bool = false
+    
+    var progress: Double {
+        // Computed properties automatically work
+        isReading ? 0.5 : 0.0
+    }
+}
+
+struct BookView: View {
+    @State private var viewModel = BookViewModel()
+    
+    var body: some View {
+        VStack {
+            TextField("Title", text: $viewModel.title)
+            TextField("Author", text: $viewModel.author)
+            Toggle("Reading", isOn: $viewModel.isReading)
+        }
+    }
+}
+```
+
+### Migration Checklist
+
+1. **Remove Combine import** (unless you use it for other purposes)
+2. **Replace `ObservableObject` conformance** with `@Observable` macro
+3. **Remove `@Published` wrappers** from all properties
+4. **Replace `@StateObject`** with `@State`
+5. **Replace `@ObservedObject`** with plain properties
+6. **Replace `@EnvironmentObject`** with `@Environment` (using the new syntax)
+7. **Test computed properties** — they now work automatically
+
+### Environment Objects Migration
+
+**Old:**
+
+```swift
+class AppSettings: ObservableObject {
+    @Published var isDarkMode: Bool = false
+}
+
+@main
+struct MyApp: App {
+    @StateObject private var settings = AppSettings()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(settings)
+        }
+    }
+}
+
+struct ContentView: View {
+    @EnvironmentObject var settings: AppSettings
+    
+    var body: some View {
+        Toggle("Dark Mode", isOn: $settings.isDarkMode)
+    }
+}
+```
+
+**New:**
+
+```swift
+@Observable
+class AppSettings {
+    var isDarkMode: Bool = false
+}
+
+@main
+struct MyApp: App {
+    @State private var settings = AppSettings()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(settings)
+        }
+    }
+}
+
+struct ContentView: View {
+    @Environment(AppSettings.self) var settings
+    
+    var body: some View {
+        @Bindable var settings = settings
+        Toggle("Dark Mode", isOn: $settings.isDarkMode)
+    }
+}
+```
+
+Note the use of `@Bindable` to create bindings from an `@Observable` object when you need two-way binding (like with `TextField` or `Toggle`).
+
+## The @Bindable Macro
+
+When you need to pass bindings to child views or use controls that require bindings, use `@Bindable`:
+
+```swift
+@Observable
+class FormData {
+    var name: String = ""
+    var email: String = ""
+}
+
+struct FormView: View {
+    @State private var formData = FormData()
+    
+    var body: some View {
+        Form {
+            FormFields(data: formData)
+        }
+    }
+}
+
+struct FormFields: View {
+    @Bindable var data: FormData
+    
+    var body: some View {
+        TextField("Name", text: $data.name)
+        TextField("Email", text: $data.email)
+    }
+}
+```
+
+`@Bindable` doesn't cause the view to update when properties change — it only provides binding access. The parent view (with `@State`) is responsible for updates.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Using @Observable with Structs
+
+```swift
+// ❌ Wrong - @Observable only works with classes
+@Observable
+struct UserProfile {
+    var name: String = ""
+}
+```
+
+**Why**: The Observation framework requires reference semantics to track changes across different parts of your app. Use classes, not structs.
+
+### Mistake 2: Forgetting @State for View-Owned Models
+
+```swift
+// ❌ Wrong - model will be recreated on every view update
+struct ContentView: View {
+    var model = CounterModel()
+    
+    var body: some View {
+        Text("Count: \(model.count)")
+    }
+}
+
+// ✅ Correct - model persists across view updates
+struct ContentView: View {
+    @State private var model = CounterModel()
+    
+    var body: some View {
+        Text("Count: \(model.count)")
+    }
+}
+```
+
+### Mistake 3: Over-Using @ObservationIgnored
+
+```swift
+// ❌ Wrong - defeating the purpose
+@Observable
+class ViewModel {
+    @ObservationIgnored var title: String = ""
+    @ObservationIgnored var subtitle: String = ""
+    var id: UUID = UUID()
+}
+```
+
+If most of your properties are ignored, you probably don't need `@Observable` at all.
+
+### Edge Case: Arrays and Collections
+
+Changes to collection properties are tracked, but changes *within* collection elements might not be:
+
+```swift
+@Observable
+class TodoList {
+    var items: [TodoItem] = []  // ✅ Adding/removing items is tracked
+}
+
+struct TodoItem {
+    var title: String
+    var isComplete: Bool
+}
+
+// When you modify an item:
+todoList.items[0].isComplete = true  // ❌ This change might not trigger updates
+```
+
+**Solution 1**: Make the collection's elements observable too:
+
+```swift
+@Observable
+class TodoItem {
+    var title: String
+    var isComplete: Bool
+    
+    init(title: String, isComplete: Bool = false) {
+        self.title = title
+        self.isComplete = isComplete
+    }
+}
+```
+
+**Solution 2**: Replace the entire array when an element changes:
+
+```swift
+@Observable
+class TodoList {
+    var items: [TodoItem] = []
+    
+    func toggleComplete(at index: Int) {
+        items[index].isComplete.toggle()
+        // Force observation by reassigning
+        items = items
+    }
+}
+```
+
+### Edge Case: Observation Across Threads
+
+Observable properties are not automatically thread-safe:
+
+```swift
+@Observable
+class DataFetcher {
+    var data: [String] = []
+    
+    func fetchData() {
+        Task {
+            let result = await networkCall()
+            // ✅ Update on main thread for UI updates
+            await MainActor.run {
+                self.data = result
+            }
+        }
+    }
+}
+```
+
+Always update observable properties used by UI on the main thread.
+
+### Edge Case: Observation in Previews
+
+SwiftUI previews work seamlessly with `@Observable`:
+
+```swift
+#Preview {
+    @State var model = CounterModel()
+    model.count = 10  // Set initial state
+    
+    return ContentView(model: model)
+}
+```
+
+However, remember that preview state is temporary and resets with each preview refresh.
+
+## Performance Characteristics
+
+The Observation framework is more efficient than the Combine-based approach:
+
+1. **Granular tracking**: Only properties actually read by a view are tracked
+2. **No unnecessary updates**: Views don't update when unrelated properties change
+3. **Less overhead**: No publisher/subscriber infrastructure
+
+Example demonstrating granular tracking:
+
+```swift
+@Observable
+class Dashboard {
+    var temperature: Double = 0
+    var humidity: Double = 0
+    var pressure: Double = 0
+}
+
+struct TemperatureView: View {
+    var dashboard: Dashboard
+    
+    var body: some View {
+        // Only updates when temperature changes
+        // Changes to humidity or pressure don't affect this view
+        Text("Temperature: \(dashboard.temperature)°F")
+    }
+}
+```
+
+## Testing Observable Objects
+
+Testing with `@Observable` is straightforward since it's just a regular class:
+
+```swift
+import Testing
+
+@Test
+func testCounterIncrement() {
+    let counter = CounterModel()
+    counter.increment()
+    #expect(counter.count == 1)
+}
+
+@Test
+func testComputedProperty() {
+    let cart = ShoppingCart()
+    cart.items = [Item(price: 10), Item(price: 20)]
+    #expect(cart.subtotal == 30)
+}
+```
+
+For tracking changes in tests:
+
+```swift
+@Test
+func testObservation() async {
+    let model = CounterModel()
+    var changedCount = 0
+    
+    func trackChanges() {
+        withObservationTracking {
+            _ = model.count
+        } onChange: {
+            changedCount += 1
+            trackChanges()  // Continue tracking
+        }
+    }
+    
+    trackChanges()
+    model.count = 1
+    model.count = 2
+    
+    // Give the observation system time to process
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(changedCount == 2)
+}
+```
+
+## When to Use ObservableObject vs @Observable
+
+Use `@Observable` when:
+- Targeting iOS 17+ / macOS 14+
+- Starting a new project
+- You want cleaner, simpler code
+
+Use `ObservableObject` when:
+- Supporting iOS 16 or earlier
+- Working with existing large codebases (until you can migrate)
+- Using libraries that depend on Combine
+
+You can mix both in the same project during migration, but aim to standardize on `@Observable` for new code.
+
+## Reference Documentation
+
+- [Apple's Observation Framework Documentation](https://developer.apple.com/documentation/observation)
+- [@Observable Macro](https://developer.apple.com/documentation/observation/observable())
+- [WWDC23: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)
+
+## Summary Table
+
+| Aspect | ObservableObject (Old) | @Observable (New) |
+|--------|----------------------|------------------|
+| **Minimum OS** | iOS 13+ | iOS 17+ |
+| **Framework** | Combine | Observation |
+| **Declaration** | `class MyModel: ObservableObject` | `@Observable class MyModel` |
+| **Property wrapper** | `@Published var property` | Just `var property` |
+| **View ownership** | `@StateObject` | `@State` |
+| **Passed model** | `@ObservedObject` | Plain property |
+| **Environment** | `@EnvironmentObject` + `.environmentObject()` | `@Environment(Type.self)` + `.environment()` |
+| **Bindings** | `$object.property` (automatic) | `@Bindable var object` then `$object.property` |
+| **Computed properties** | Not tracked (need manual `objectWillChange`) | Automatically tracked |
+| **Granularity** | Whole object invalidation | Per-property tracking |
+| **Exclude property** | Don't add `@Published` | `@ObservationIgnored` |
+| **Manual tracking** | Combine publishers | `withObservationTracking` |
+| **Testing** | Requires Combine subscription | Direct property access |
+
+## Official Resources
+
+- [Apple Documentation: Observation Framework](https://developer.apple.com/documentation/observation)
+- [Apple Documentation: Observable Macro](https://developer.apple.com/documentation/observation/observable())
+- [Apple Documentation: Bindable](https://developer.apple.com/documentation/swiftui/bindable)
+- [WWDC23: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)
+- [WWDC23: Write Swift Macros](https://developer.apple.com/videos/play/wwdc2023/10166/)

@@ -1,0 +1,617 @@
+---
+title: "Xcode Debugger"
+description: "Breakpoints, LLDB commands, view debugging, and memory graph"
+sectionId: "5.3-debugging-profiling"
+sectionTitle: "Debugging & Profiling"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Xcode Debugger: A Complete Guide for Swift Developers
+
+The Xcode Debugger is your most powerful tool for understanding what your code is actually doing at runtime. Instead of littering your code with `print()` statements and guessing where things go wrong, the debugger lets you pause execution, inspect variables, step through code line-by-line, and diagnose memory issues. Mastering the debugger will dramatically reduce your debugging time and help you understand iOS development at a deeper level.
+
+## What Is the Xcode Debugger?
+
+The Xcode Debugger is built on LLDB (Low Level Debugger), Apple's debugging platform. It provides four main capabilities:
+
+1. **Breakpoints**: Pause execution at specific points in your code
+2. **LLDB commands**: Inspect and manipulate program state via command line
+3. **View Debugging**: Visualize and inspect your UI hierarchy in 3D
+4. **Memory Graph**: Detect memory leaks and analyze object relationships
+
+Let's explore each in detail.
+
+## Breakpoints: Controlling Execution Flow
+
+Breakpoints are markers that tell the debugger to pause your app at specific points. This is far more efficient than adding temporary print statements.
+
+### Basic Breakpoints
+
+To add a breakpoint, click the line number gutter in Xcode. A blue indicator appears:
+
+```swift
+class UserManager {
+    var users: [User] = []
+    
+    func addUser(_ user: User) {
+        // Click line number here to add breakpoint
+        users.append(user)
+        print("User added: \(user.name)")
+    }
+    
+    func findUser(byId id: String) -> User? {
+        // Another useful breakpoint location
+        return users.first { $0.id == id }
+    }
+}
+```
+
+When execution hits the breakpoint, Xcode pauses and shows you:
+- Current variable values in the Variables View (bottom left)
+- The call stack (how you got to this point)
+- The Debug Navigator (threads and queue information)
+
+### Conditional Breakpoints
+
+Regular breakpoints pause every time. Conditional breakpoints only pause when a condition is true:
+
+```swift
+func processOrders(_ orders: [Order]) {
+    for order in orders {
+        // Right-click breakpoint → Edit Breakpoint
+        // Condition: order.amount > 1000
+        validateOrder(order)
+        processPayment(for: order)
+    }
+}
+```
+
+Right-click a breakpoint and select "Edit Breakpoint" to add a condition like `order.amount > 1000`. Now it only pauses for large orders.
+
+**Common mistake**: Using string comparisons in conditions. Write `order.status == "pending"` not `order.status == pending` (unless `pending` is a variable).
+
+### Action Breakpoints
+
+Sometimes you want to log information without stopping execution:
+
+```swift
+func downloadImage(from url: URL, completion: @escaping (UIImage?) -> Void) {
+    // Right-click breakpoint → Edit Breakpoint
+    // Add Action: Log Message → "Downloading from @url@"
+    // Enable "Automatically continue after evaluating actions"
+    
+    URLSession.shared.dataTask(with: url) { data, response, error in
+        guard let data = data, let image = UIImage(data: data) else {
+            completion(nil)
+            return
+        }
+        completion(image)
+    }.resume()
+}
+```
+
+The `@url@` syntax in log messages prints the variable value. This creates a "non-breaking breakpoint" that logs without pausing.
+
+### Symbolic Breakpoints
+
+These pause when a specific method is called anywhere in your app:
+
+1. Click the `+` button in the Breakpoint Navigator (⌘8)
+2. Choose "Symbolic Breakpoint"
+3. Enter method name like `UIViewController.viewDidLoad` or `NSException`
+
+```swift
+// This symbolic breakpoint: UIViewController.viewDidLoad
+// Will pause whenever ANY view controller loads
+
+class ProfileViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Pauses here
+    }
+}
+
+class SettingsViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // And here
+    }
+}
+```
+
+**Pro tip**: Create a symbolic breakpoint on `NSException` to catch all Objective-C exceptions before they crash your app.
+
+### Exception Breakpoints
+
+Add an Exception Breakpoint to pause when exceptions are thrown:
+
+1. Click `+` in Breakpoint Navigator
+2. Choose "Exception Breakpoint"
+3. Set to break on "All" exceptions
+
+```swift
+func parseJSON(_ data: Data) -> [String: Any]? {
+    do {
+        // Exception breakpoint will catch issues here
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    } catch {
+        print("Failed to parse: \(error)")
+        return nil
+    }
+}
+```
+
+This catches exceptions even in framework code where you can't set regular breakpoints.
+
+## LLDB Commands: Powerful Runtime Inspection
+
+When paused at a breakpoint, the LLDB console (bottom panel) lets you inspect and modify your program's state.
+
+### Essential LLDB Commands
+
+#### `po` - Print Object Description
+
+```swift
+class User {
+    let id: String
+    let name: String
+    var followers: [User] = []
+    
+    init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+func analyzeUser(_ user: User) {
+    // Pause here with breakpoint
+    let followerCount = user.followers.count
+    print("Analyzing \(user.name)")
+}
+```
+
+In the LLDB console:
+```
+(lldb) po user
+▿ User
+  - id: "user_123"
+  - name: "Alice"
+  ▿ followers: 2 elements
+    - User (id: "user_456")
+    - User (id: "user_789")
+
+(lldb) po user.name
+"Alice"
+
+(lldb) po user.followers.count
+2
+```
+
+**Common mistake**: Using `po` on non-object types can be unreliable. Use `p` instead for primitives.
+
+#### `p` - Print Variable Value
+
+```swift
+func calculateDiscount(price: Double, discountPercent: Int) -> Double {
+    let discount = price * Double(discountPercent) / 100
+    // Breakpoint here
+    return price - discount
+}
+```
+
+```
+(lldb) p price
+(Double) $R0 = 99.99
+
+(lldb) p discountPercent
+(Int) $R1 = 20
+
+(lldb) p discount
+(Double) $R2 = 19.998
+```
+
+#### `v` - Print Variable with Type Information
+
+```
+(lldb) v discount
+(Double) discount = 19.998
+```
+
+#### `expression` (or `e`) - Execute Code
+
+You can run Swift code while paused:
+
+```swift
+class ShoppingCart {
+    var items: [Item] = []
+    var total: Double = 0
+    
+    func addItem(_ item: Item) {
+        items.append(item)
+        total += item.price
+        // Breakpoint here
+    }
+}
+```
+
+```
+(lldb) e items.count
+(Int) $R3 = 5
+
+(lldb) e items.append(Item(name: "Test", price: 10))
+
+(lldb) po items.count
+6
+
+(lldb) e total = 0
+(lldb) e for item in items { total += item.price }
+(lldb) po total
+150.0
+```
+
+**Edge case**: Changes made with `expression` persist after continuing execution. This is powerful but dangerous—you can accidentally corrupt your app's state.
+
+#### `bt` - Backtrace (Call Stack)
+
+Shows how you got to the current point:
+
+```swift
+func loadProfile() {
+    fetchUserData()
+}
+
+func fetchUserData() {
+    parseResponse(data)
+}
+
+func parseResponse(_ data: Data) {
+    // Breakpoint here
+    let json = try? JSONSerialization.jsonObject(with: data)
+}
+```
+
+```
+(lldb) bt
+* thread #1, queue = 'com.apple.main-thread'
+  * frame #0: MyApp.parseResponse(data=<...>) at ProfileView.swift:45
+    frame #1: MyApp.fetchUserData() at ProfileView.swift:38
+    frame #2: MyApp.loadProfile() at ProfileView.swift:32
+    frame #3: MyApp.ProfileViewController.viewDidLoad() at ProfileViewController.swift:20
+```
+
+#### `frame variable` - Show All Local Variables
+
+```swift
+func processOrder(order: Order, user: User, paymentMethod: PaymentMethod) {
+    let tax = order.subtotal * 0.08
+    let total = order.subtotal + tax
+    // Breakpoint here
+}
+```
+
+```
+(lldb) frame variable
+(Order) order = {...}
+(User) user = {...}
+(PaymentMethod) paymentMethod = {...}
+(Double) tax = 8.0
+(Double) total = 108.0
+```
+
+#### Custom LLDB Commands
+
+Create shortcuts for common tasks by adding to `~/.lldbinit`:
+
+```
+command alias pvc expression -l objc -O -- [[[UIApplication sharedApplication] keyWindow] rootViewController]
+command alias pjson expression -l swift -O -- String(data: $0, encoding: .utf8)
+```
+
+### Type Lookup and Casting
+
+When dealing with protocols or Any types:
+
+```swift
+func handleData(_ data: Any) {
+    // Breakpoint here
+    if let user = data as? User {
+        print(user.name)
+    }
+}
+```
+
+```
+(lldb) po type(of: data)
+User
+
+(lldb) po data as? User
+▿ Optional<User>
+  ▿ some: User
+    - id: "123"
+    - name: "Bob"
+```
+
+## View Debugging: Visualizing Your UI
+
+View debugging helps diagnose layout issues, view hierarchy problems, and invisible or misplaced views.
+
+### Starting View Debugging
+
+1. Run your app
+2. Navigate to the screen you want to inspect
+3. Click the "Debug View Hierarchy" button (icon looks like stacked rectangles) or press `⌘⌃Z`
+
+Xcode captures a 3D representation of your view hierarchy that you can rotate and inspect.
+
+### Practical View Debugging Example
+
+```swift
+class ProductViewController: UIViewController {
+    let imageView = UIImageView()
+    let titleLabel = UILabel()
+    let priceLabel = UILabel()
+    let buyButton = UIButton()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+    }
+    
+    func setupUI() {
+        view.addSubview(imageView)
+        view.addSubview(titleLabel)
+        view.addSubview(priceLabel)
+        view.addSubview(buyButton)
+        
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        priceLabel.translatesAutoresizingMaskIntoConstraints = false
+        buyButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.heightAnchor.constraint(equalToConstant: 300),
+            
+            titleLabel.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            
+            // Bug: priceLabel positioned off-screen
+            priceLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            priceLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 1600), // Wrong!
+        ])
+    }
+}
+```
+
+In View Debugger:
+1. Rotate the 3D view to see layers
+2. Select `priceLabel` in the hierarchy
+3. Check its frame in the inspector: `x: 1600` (off-screen!)
+4. View the constraint list to see the incorrect constant
+
+### View Debugger Tips
+
+**Filter views**: Use the search field to find specific views by class name
+```swift
+// Search for "UILabel" to see all labels
+// Search for "ProductViewController" to see your custom view
+```
+
+**Check ambiguous layouts**: Views with orange or red outlines have layout issues
+
+**Inspect clipped content**: Toggle "Show Clipped Content" to see views outside their parent's bounds
+
+**Common mistakes**:
+- Views with alpha 0 or hidden still appear in the hierarchy
+- Constraint issues won't show unless you have conflicting or ambiguous constraints
+- The view debugger captures a snapshot—changes you make in code won't reflect until you capture again
+
+## Memory Graph: Detecting Leaks and Retain Cycles
+
+Memory issues are common in iOS development, especially retain cycles with closures. The Memory Graph tool helps find them.
+
+### Understanding Retain Cycles
+
+```swift
+class ImageDownloader {
+    var onComplete: (() -> Void)?
+    var image: UIImage?
+    
+    func download(url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self, let data = data else { return }
+            self.image = UIImage(data: data)
+            self.onComplete?()
+        }.resume()
+    }
+}
+
+class GalleryViewController: UIViewController {
+    let downloader = ImageDownloader()
+    
+    func loadImage() {
+        // ⚠️ RETAIN CYCLE: self → downloader → onComplete → self
+        downloader.onComplete = {
+            self.updateUI()
+        }
+        downloader.download(url: imageURL)
+    }
+    
+    func updateUI() {
+        // Update image view
+    }
+}
+```
+
+### Using Memory Graph
+
+1. Run your app
+2. Navigate through screens to trigger potential leaks
+3. Click the Memory Graph button (icon looks like circles and lines) or press `⌘⌥M`
+4. Look for purple exclamation marks indicating leaks
+
+When you see a leak:
+1. Select the leaked object in the left panel
+2. View the reference graph on the right
+3. Identify the retain cycle
+
+### Fixing the Retain Cycle
+
+```swift
+class GalleryViewController: UIViewController {
+    let downloader = ImageDownloader()
+    
+    func loadImage() {
+        // ✅ FIXED: Use weak or unowned self
+        downloader.onComplete = { [weak self] in
+            self?.updateUI()
+        }
+        downloader.download(url: imageURL)
+    }
+    
+    func updateUI() {
+        // Update image view
+    }
+}
+```
+
+### Common Memory Issues
+
+#### Delegate Retain Cycles
+
+```swift
+// ⚠️ WRONG: Strong delegate reference
+class DataManager {
+    var delegate: DataManagerDelegate?
+}
+
+// ✅ CORRECT: Weak delegate reference
+class DataManager {
+    weak var delegate: DataManagerDelegate?
+}
+
+protocol DataManagerDelegate: AnyObject {
+    func dataDidUpdate()
+}
+```
+
+**Common mistake**: Forgetting `AnyObject` constraint on the protocol. Without it, you can't mark the delegate as `weak`.
+
+#### Timer Retain Cycles
+
+```swift
+class CountdownViewController: UIViewController {
+    var timer: Timer?
+    
+    func startCountdown() {
+        // ⚠️ RETAIN CYCLE: self → timer → target (self)
+        timer = Timer.scheduledTimer(
+            timeInterval: 1.0,
+            target: self,
+            selector: #selector(tick),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+    
+    @objc func tick() {
+        // Update UI
+    }
+    
+    // ✅ MUST invalidate timer
+    deinit {
+        timer?.invalidate()
+    }
+}
+```
+
+Better approach using closure-based timer (iOS 10+):
+
+```swift
+class CountdownViewController: UIViewController {
+    var timer: Timer?
+    
+    func startCountdown() {
+        // ✅ Use weak self in closure
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+    }
+
+    func tick() {
+        // Update UI
+    }
+
+    deinit {
+        timer?.invalidate()
+    }
+}
+```
+
+#### NotificationCenter Leaks
+
+```swift
+class EventListener: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // ⚠️ Old API retains observer if not removed
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNotification),
+            name: .someNotification,
+            object: nil
+        )
+    }
+
+    // ✅ Always remove observers
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc func handleNotification() {
+        // Handle it
+    }
+}
+```
+
+**Note:** Starting with iOS 9, `NotificationCenter` automatically removes observers when they're deallocated for the selector-based API. But it's still good practice to remove them explicitly, especially when using the closure-based API.
+
+### Practical Memory Debugging Workflow
+
+1. **Suspect a leak?** Add `deinit { print("TypeName deallocated") }` to the class
+2. **Navigate away** from the screen that uses the class
+3. **If `deinit` doesn't fire**, you have a leak
+4. **Open Memory Graph** to visualize the retain cycle
+5. **Fix** with `weak` or `unowned` references
+6. **Verify** `deinit` fires after the fix
+
+## Summary Table
+
+| Tool | Purpose | How to Access | Best For |
+|------|---------|---------------|----------|
+| **Basic Breakpoint** | Pause at specific line | Click line number gutter | Inspecting variable state |
+| **Conditional Breakpoint** | Pause when condition is true | Right-click breakpoint > Edit | Filtering specific cases in loops |
+| **Action Breakpoint** | Log without pausing | Edit breakpoint > Add Action + Auto Continue | Non-intrusive logging |
+| **Symbolic Breakpoint** | Pause on any method call | Breakpoint Navigator > + > Symbolic | Framework-level debugging |
+| **Exception Breakpoint** | Pause on exceptions | Breakpoint Navigator > + > Exception | Finding crash root causes |
+| **`po`** | Print object description | LLDB console | Inspecting objects and collections |
+| **`p`** | Print primitive value | LLDB console | Inspecting numbers, booleans |
+| **`expression`** | Execute code at runtime | LLDB console | Modifying state while debugging |
+| **`bt`** | Show call stack | LLDB console | Understanding how you got here |
+| **View Debugger** | 3D UI hierarchy inspection | Debug View Hierarchy button | Layout issues, hidden views |
+| **Memory Graph** | Object reference visualization | Memory Graph button | Retain cycles, memory leaks |
+
+## Official Resources
+
+- [Apple Documentation: Debugging with Xcode](https://developer.apple.com/documentation/xcode/debugging)
+- [Apple Documentation: LLDB](https://developer.apple.com/documentation/xcode/stepping-through-code-and-inspecting-variables-to-isolate-bugs)
+- [Apple Documentation: Diagnosing Memory Issues](https://developer.apple.com/documentation/xcode/diagnosing-memory-thread-and-crash-issues-early)
+- [WWDC18: Advanced Debugging with Xcode and LLDB](https://developer.apple.com/videos/play/wwdc2018/412/)
+- [WWDC21: Detect and Diagnose Memory Issues](https://developer.apple.com/videos/play/wwdc2021/10180/)

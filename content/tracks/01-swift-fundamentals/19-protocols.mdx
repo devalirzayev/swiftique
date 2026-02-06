@@ -1,0 +1,685 @@
+---
+title: "Protocols"
+description: "Defining protocols, conformance, delegation, and protocol extensions"
+sectionId: "1.8-protocols-generics"
+sectionTitle: "Protocols & Generics"
+order: 19
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Protocols in Swift
+
+Protocols are one of Swift's most powerful features for writing flexible, reusable code. Think of a protocol as a contract or blueprint that defines a set of requirements—methods, properties, or other capabilities—that conforming types must implement. Unlike inheritance, which creates an "is-a" relationship, protocols create a "can-do" relationship.
+
+If you're coming from other languages, protocols are similar to interfaces in Java or C#, but with significantly more capabilities in Swift.
+
+## Why Protocols Matter
+
+Protocols enable you to write code that works with any type that meets certain requirements, without needing to know the concrete type. This is fundamental to Swift's approach to abstraction and is heavily used throughout the iOS SDK. Understanding protocols is essential for:
+
+- **Delegation patterns** (used extensively in UIKit and SwiftUI)
+- **Protocol-oriented programming** (Apple's recommended paradigm for Swift)
+- **Writing testable code** (protocols make mocking easier)
+- **Composing behavior** (types can conform to multiple protocols)
+
+## Defining a Protocol
+
+A protocol definition looks similar to a class or struct definition, but only declares the *interface*, not the implementation:
+
+```swift
+protocol Identifiable {
+    var id: String { get }
+    var displayName: String { get set }
+    
+    func describe() -> String
+}
+```
+
+This protocol requires conforming types to:
+- Provide a gettable `id` property (read-only)
+- Provide a gettable and settable `displayName` property (read-write)
+- Implement a `describe()` method that returns a String
+
+### Property Requirements
+
+When declaring properties in protocols, you must specify whether they're gettable, or both gettable and settable:
+
+```swift
+protocol Vehicle {
+    var numberOfWheels: Int { get }        // Read-only (at minimum)
+    var currentSpeed: Double { get set }    // Must be read-write
+    static var category: String { get }     // Type property
+}
+```
+
+**Common mistake**: Writing `{ get }` doesn't mean the property *must* be read-only in the conforming type—it just means it must be *at least* readable. A conforming type can implement it as read-write:
+
+```swift
+struct Car: Vehicle {
+    let numberOfWheels: Int = 4              // Constant is fine for { get }
+    var currentSpeed: Double = 0.0           // Variable for { get set }
+    static let category: String = "Land"     // Static constant works
+}
+
+struct Bicycle: Vehicle {
+    var numberOfWheels: Int { return 2 }     // Computed property also works
+    var currentSpeed: Double = 0.0
+    static var category: String = "Land"
+}
+```
+
+## Protocol Conformance
+
+A type declares that it conforms to a protocol using a colon, just like inheritance:
+
+```swift
+struct User: Identifiable {
+    let id: String
+    var displayName: String
+    
+    func describe() -> String {
+        return "User: \(displayName) (ID: \(id))"
+    }
+}
+```
+
+### Multiple Protocol Conformance
+
+Unlike classes (which can only inherit from one superclass), any type can conform to multiple protocols:
+
+```swift
+protocol Nameable {
+    var name: String { get }
+}
+
+protocol Trackable {
+    var lastUpdated: Date { get set }
+}
+
+struct Product: Nameable, Trackable {
+    let name: String
+    var lastUpdated: Date
+    var price: Double
+}
+```
+
+### Conformance with Extensions
+
+You can add protocol conformance to existing types using extensions, even types you don't own:
+
+```swift
+protocol Resettable {
+    mutating func reset()
+}
+
+extension Array: Resettable {
+    mutating func reset() {
+        self.removeAll()
+    }
+}
+
+var numbers = [1, 2, 3, 4]
+numbers.reset()  // numbers is now []
+```
+
+This is particularly useful for organizing code—you can separate protocol conformance from the main type definition:
+
+```swift
+struct BlogPost {
+    var title: String
+    var content: String
+    var publishDate: Date
+}
+
+// Conformance in extension
+extension BlogPost: Identifiable {
+    var id: String {
+        return title + publishDate.description
+    }
+}
+```
+
+## Protocol as a Type
+
+Protocols can be used as types, allowing you to write functions that accept any conforming type:
+
+```swift
+protocol Drawable {
+    func draw()
+}
+
+struct Circle: Drawable {
+    func draw() {
+        print("Drawing a circle")
+    }
+}
+
+struct Square: Drawable {
+    func draw() {
+        print("Drawing a square")
+    }
+}
+
+func render(shape: Drawable) {
+    shape.draw()
+}
+
+render(shape: Circle())  // "Drawing a circle"
+render(shape: Square())  // "Drawing a square"
+```
+
+### Collections of Protocols
+
+You can create arrays or other collections of protocol types:
+
+```swift
+let shapes: [Drawable] = [Circle(), Square(), Circle()]
+
+for shape in shapes {
+    shape.draw()
+}
+```
+
+**Important note**: When using a protocol as a type (especially before Swift 5.7), you're working with an "existential type." You can only access members defined in the protocol, not members specific to the concrete type.
+
+## Delegation Pattern
+
+Delegation is a design pattern where one object passes responsibility for certain tasks to another object. Protocols are the foundation of delegation in iOS development.
+
+Here's a practical example of implementing delegation:
+
+```swift
+// 1. Define the protocol
+protocol DataDownloadDelegate: AnyObject {
+    func didFinishDownloading(data: Data)
+    func didFailWithError(error: Error)
+}
+
+// 2. Create a class that has a delegate
+class DataDownloader {
+    weak var delegate: DataDownloadDelegate?
+    
+    func downloadData(from url: URL) {
+        // Simulated download
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                self.delegate?.didFailWithError(error: error)
+            } else if let data = data {
+                self.delegate?.didFinishDownloading(data: data)
+            }
+        }.resume()
+    }
+}
+
+// 3. Conform to the protocol in another class
+class ViewController: DataDownloadDelegate {
+    let downloader = DataDownloader()
+    
+    init() {
+        downloader.delegate = self
+    }
+    
+    func didFinishDownloading(data: Data) {
+        print("Received \(data.count) bytes")
+    }
+    
+    func didFailWithError(error: Error) {
+        print("Download failed: \(error.localizedDescription)")
+    }
+}
+```
+
+### Critical Delegation Details
+
+**Use `weak` references**: Notice `weak var delegate: DataDownloadDelegate?` in the example above. The delegate should almost always be `weak` to avoid retain cycles (memory leaks).
+
+**Why `AnyObject` constraint**: The `weak` keyword only works with class types (reference types). Adding `AnyObject` to the protocol declaration restricts conformance to classes:
+
+```swift
+protocol DataDownloadDelegate: AnyObject {
+    // Only classes can conform to this protocol
+}
+```
+
+If you forget `AnyObject`, you'll get a compiler error when trying to use `weak`.
+
+### Optional Protocol Methods
+
+Sometimes you want protocol methods to be optional. This requires the `@objc` attribute and limits conformance to classes:
+
+```swift
+@objc protocol OptionalMethodProtocol {
+    func requiredMethod()
+    @objc optional func optionalMethod()
+}
+
+class MyClass: OptionalMethodProtocol {
+    func requiredMethod() {
+        print("Required")
+    }
+    // optionalMethod() doesn't need to be implemented
+}
+```
+
+**Modern alternative**: Instead of optional methods, consider providing default implementations with protocol extensions (covered next), or use closures for callbacks.
+
+## Protocol Extensions
+
+Protocol extensions are where Swift protocols become significantly more powerful than interfaces in other languages. You can provide default implementations for protocol requirements:
+
+```swift
+protocol Greetable {
+    var name: String { get }
+    func greet() -> String
+}
+
+extension Greetable {
+    func greet() -> String {
+        return "Hello, \(name)!"
+    }
+}
+
+struct Person: Greetable {
+    let name: String
+    // No need to implement greet() - uses default
+}
+
+let person = Person(name: "Alice")
+print(person.greet())  // "Hello, Alice!"
+```
+
+### Overriding Default Implementations
+
+Types can provide their own implementations to override the default:
+
+```swift
+struct FormalPerson: Greetable {
+    let name: String
+    
+    func greet() -> String {
+        return "Good day, \(name)."
+    }
+}
+
+let formal = FormalPerson(name: "Bob")
+print(formal.greet())  // "Good day, Bob."
+```
+
+### Adding New Methods
+
+Protocol extensions can add entirely new methods that weren't in the original protocol:
+
+```swift
+protocol Numeric {
+    var value: Double { get }
+}
+
+extension Numeric {
+    // This method isn't part of the protocol requirement
+    func isPositive() -> Bool {
+        return value > 0
+    }
+    
+    func isNegative() -> Bool {
+        return value < 0
+    }
+}
+
+struct Temperature: Numeric {
+    let value: Double
+}
+
+let temp = Temperature(value: -5.0)
+print(temp.isNegative())  // true
+```
+
+### Protocol Extension Constraints
+
+You can constrain protocol extensions to only apply when certain conditions are met:
+
+```swift
+protocol Container {
+    associatedtype Item
+    var items: [Item] { get }
+}
+
+// Only available when Item is Equatable
+extension Container where Item: Equatable {
+    func contains(_ item: Item) -> Bool {
+        return items.contains(item)
+    }
+}
+
+struct IntContainer: Container {
+    let items: [Int]
+}
+
+let container = IntContainer(items: [1, 2, 3])
+print(container.contains(2))  // true - works because Int is Equatable
+```
+
+This is used extensively in the Swift Standard Library. For example, many array methods are only available when the element type conforms to certain protocols.
+
+## Associated Types
+
+Protocols can define placeholder types using `associatedtype`, which are specified by the conforming type:
+
+```swift
+protocol Queue {
+    associatedtype Element
+    
+    mutating func enqueue(_ element: Element)
+    mutating func dequeue() -> Element?
+    var isEmpty: Bool { get }
+}
+
+struct IntQueue: Queue {
+    typealias Element = Int  // Can be explicit...
+    
+    private var items: [Int] = []
+    
+    mutating func enqueue(_ element: Int) {
+        items.append(element)
+    }
+    
+    mutating func dequeue() -> Int? {
+        return isEmpty ? nil : items.removeFirst()
+    }
+    
+    var isEmpty: Bool {
+        return items.isEmpty
+    }
+}
+
+struct StringQueue: Queue {
+    // Or inferred from usage
+    private var items: [String] = []
+    
+    mutating func enqueue(_ element: String) {
+        items.append(element)
+    }
+    
+    mutating func dequeue() -> String? {
+        return isEmpty ? nil : items.removeFirst()
+    }
+    
+    var isEmpty: Bool {
+        return items.isEmpty
+    }
+}
+```
+
+### Generic Constraints on Associated Types
+
+You can constrain associated types to conform to protocols:
+
+```swift
+protocol SortableContainer {
+    associatedtype Item: Comparable
+    var items: [Item] { get set }
+    
+    mutating func sort()
+}
+
+extension SortableContainer {
+    mutating func sort() {
+        items.sort()  // Works because Item is Comparable
+    }
+}
+```
+
+## Protocol Inheritance
+
+Protocols can inherit from other protocols, creating a hierarchy of requirements:
+
+```swift
+protocol Named {
+    var name: String { get }
+}
+
+protocol Aged {
+    var age: Int { get }
+}
+
+protocol Person: Named, Aged {
+    var email: String { get }
+}
+
+struct Employee: Person {
+    let name: String
+    let age: Int
+    let email: String
+    // Must implement all requirements from Person, Named, and Aged
+}
+```
+
+## Class-Only Protocols
+
+You can restrict protocol conformance to class types (useful for delegates):
+
+```swift
+protocol ClassOnlyProtocol: AnyObject {
+    func doSomething()
+}
+
+class MyClass: ClassOnlyProtocol {
+    func doSomething() {
+        print("Valid")
+    }
+}
+
+// This would cause a compiler error:
+// struct MyStruct: ClassOnlyProtocol { }  // Error: struct can't conform
+```
+
+## Protocol Composition
+
+You can combine multiple protocols into a single requirement using `&`:
+
+```swift
+protocol Named {
+    var name: String { get }
+}
+
+protocol Aged {
+    var age: Int { get }
+}
+
+func celebrate(person: Named & Aged) {
+    print("\(person.name) is turning \(person.age + 1)!")
+}
+
+struct Student: Named, Aged {
+    let name: String
+    let age: Int
+}
+
+let student = Student(name: "Charlie", age: 20)
+celebrate(person: student)
+```
+
+You can even compose protocols with classes:
+
+```swift
+func process(object: UIViewController & Named) {
+    // object must be a UIViewController AND conform to Named
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting `mutating` for Value Types
+
+When a protocol method modifies the instance, mark it as `mutating`:
+
+```swift
+protocol Resettable {
+    mutating func reset()
+}
+
+struct Counter: Resettable {
+    var count: Int
+    
+    mutating func reset() {  // mutating required for structs
+        count = 0
+    }
+}
+
+class ClassCounter: Resettable {
+    var count: Int = 0
+    
+    func reset() {  // mutating not needed for classes
+        count = 0
+    }
+}
+```
+
+### Mistake 2: Protocol Dispatch vs. Type Dispatch
+
+There's a subtle but important difference in behavior:
+
+```swift
+protocol Animal {
+    func makeSound()
+}
+
+extension Animal {
+    func makeSound() {
+        print("Some generic sound")
+    }
+    
+    func sleep() {  // Not in protocol
+        print("Sleeping...")
+    }
+}
+
+struct Dog: Animal {
+    func makeSound() {
+        print("Woof!")
+    }
+    
+    func sleep() {
+        print("Dog sleeping")
+    }
+}
+
+let dog = Dog()
+dog.makeSound()  // "Woof!" - uses Dog's implementation
+dog.sleep()      // "Dog sleeping" - uses Dog's implementation
+
+let animal: Animal = Dog()
+animal.makeSound()  // "Woof!" - protocol dispatch to Dog's implementation
+animal.sleep()      // "Sleeping..." - static dispatch to extension!
+```
+
+**Key insight**: Methods defined in the protocol use dynamic dispatch. Methods only in extensions use static dispatch based on the compile-time type.
+
+### Mistake 3: Retain Cycles with Delegates
+
+Always use `weak` for delegates:
+
+```swift
+// BAD - creates retain cycle
+class Manager {
+    var delegate: SomeDelegate?  // Strong reference
+}
+
+// GOOD - breaks retain cycle
+class Manager {
+    weak var delegate: SomeDelegate?  // Weak reference
+}
+```
+
+### Mistake 4: Using Protocols with Associated Types as Types
+
+Before Swift 5.7, you couldn't use protocols with associated types directly as types:
+
+```swift
+protocol Container {
+    associatedtype Item
+    var items: [Item] { get }
+}
+
+// Pre-Swift 5.7 - error
+// let container: Container = ...
+
+// Solutions:
+
+// 1. Use generics
+func process<C: Container>(container: C) {
+    // ...
+}
+
+// 2. Type erasure (advanced)
+// 3. Swift 5.7+ : Use 'any' keyword
+let container: any Container = IntContainer()
+```
+
+## Real-World Example: Custom Table View Cell Delegate
+
+Here's a practical iOS example combining delegation and protocols:
+
+```swift
+// Protocol for cell delegate
+protocol CustomCellDelegate: AnyObject {
+    func didTapButton(in cell: CustomTableViewCell)
+}
+
+// Custom cell
+class CustomTableViewCell: UITableViewCell {
+    weak var delegate: CustomCellDelegate?
+    
+    @IBAction func buttonTapped(_ sender: UIButton) {
+        delegate?.didTapButton(in: self)
+    }
+}
+
+// View controller conforming to protocol
+class ViewController: UIViewController, CustomCellDelegate {
+    
+    func tableView(_ tableView: UITableView, 
+                   cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(
+            withIdentifier: "CustomCell",
+            for: indexPath
+        ) as! CustomTableViewCell
+        cell.delegate = self
+        return cell
+    }
+
+    func didTapButton(in cell: CustomTableViewCell) {
+        guard let indexPath = tableView.indexPath(for: cell) else { return }
+        print("Button tapped in row \(indexPath.row)")
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **Protocol definition** | `protocol Name { }` | Define a contract |
+| **Conformance** | `struct Type: Protocol { }` | Adopt the contract |
+| **Extension conformance** | `extension Type: Protocol { }` | Add conformance separately |
+| **Protocol as type** | `func f(x: Protocol)` | Accept any conforming type |
+| **Protocol composition** | `Protocol1 & Protocol2` | Require multiple protocols |
+| **Default implementation** | `extension Protocol { }` | Provide shared behavior |
+| **Associated type** | `associatedtype Item` | Generic placeholder in protocols |
+| **Class-only** | `protocol P: AnyObject` | Restrict to reference types |
+| **Delegation** | `weak var delegate: P?` | Delegate responsibility |
+| **Optional methods** | `@objc optional func` | Optional protocol requirements |
+
+### Protocol Dispatch Rules
+
+| Method defined in... | Called on concrete type | Called on protocol type |
+|----------------------|----------------------|----------------------|
+| Protocol requirement | Type's implementation | Type's implementation (dynamic dispatch) |
+| Extension only | Type's implementation | Extension's implementation (static dispatch) |
+
+## Official Resources
+
+- [Apple Documentation: Protocols](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/)
+- [WWDC 2015: Protocol-Oriented Programming in Swift](https://developer.apple.com/videos/play/wwdc2015/408/)
+- [WWDC 2016: Protocol and Value Oriented Programming](https://developer.apple.com/videos/play/wwdc2016/419/)

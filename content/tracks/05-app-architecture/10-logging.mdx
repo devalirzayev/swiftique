@@ -1,0 +1,458 @@
+---
+title: "Logging & OSLog"
+description: "Unified logging with os.Logger, log levels, and signposts"
+sectionId: "5.3-debugging-profiling"
+sectionTitle: "Debugging & Profiling"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Logging & OSLog in Swift
+
+Logging is your window into what's happening in your app at runtime. While `print()` statements might work during development, they're inefficient, can't be filtered, and don't persist beyond the current debug session. Apple's **Unified Logging System** (accessed through `OSLog` and the newer `Logger` API) provides a sophisticated, performant way to track your app's behavior in development and production.
+
+The Unified Logging System integrates with Console.app and Instruments, allows filtering by subsystem and category, supports different log levels for severity, and crucially—is optimized to have minimal performance impact on your app.
+
+## Why OSLog Matters
+
+Consider these scenarios:
+
+- **Debugging production issues**: Users report crashes you can't reproduce. With OSLog, you can capture logs even after the app has shipped.
+- **Performance**: Unlike `print()`, OSLog is asynchronous and highly optimized. Log messages are compressed and stored efficiently.
+- **Privacy**: OSLog automatically redacts sensitive data in production builds.
+- **Filtering**: View only error logs, or only logs from a specific subsystem, without changing code.
+
+## Basic Logging with os.Logger
+
+The modern approach to logging uses `Logger` from the `os` framework (available iOS 14+):
+
+```swift
+import os
+
+let logger = Logger(subsystem: "com.yourcompany.yourapp", category: "network")
+
+logger.info("App launched successfully")
+logger.debug("User ID: \(userID)")
+logger.warning("API response took longer than expected")
+logger.error("Failed to decode JSON: \(error.localizedDescription)")
+```
+
+### Understanding Subsystems and Categories
+
+**Subsystem**: Typically your app's bundle identifier. Groups related categories together.
+
+**Category**: A specific area of functionality (networking, database, UI, authentication, etc.).
+
+This organization helps you filter logs when debugging:
+
+```swift
+// Organize by feature area
+let networkLogger = Logger(subsystem: "com.myapp", category: "network")
+let databaseLogger = Logger(subsystem: "com.myapp", category: "database")
+let authLogger = Logger(subsystem: "com.myapp", category: "authentication")
+
+// Use them contextually
+networkLogger.info("Making API request to /users")
+databaseLogger.debug("Fetching user from local cache")
+authLogger.warning("Token expires in 5 minutes")
+```
+
+## Log Levels
+
+The `Logger` API provides five log levels, each with a specific purpose:
+
+```swift
+let logger = Logger(subsystem: "com.myapp", category: "general")
+
+// DEBUG: Useful only during debugging
+logger.debug("Entering function processPayment()")
+
+// INFO: Helpful but not essential information
+logger.info("User logged in successfully")
+
+// NOTICE (default): Essential information (default level)
+logger.notice("Payment processed: $49.99")
+
+// WARNING (ERROR level): Something unexpected but not fatal
+logger.warning("Cache miss, fetching from network")
+
+// ERROR (FAULT level): An error occurred
+logger.error("Payment failed: \(error.localizedDescription)")
+
+// CRITICAL (FAULT level): Critical errors requiring immediate attention
+logger.critical("Database connection lost")
+```
+
+### When to Use Each Level
+
+| Level | Use Case | Visible in Release? |
+|-------|----------|---------------------|
+| `debug` | Detailed debugging information, function entry/exit | No (by default) |
+| `info` | Informational messages about normal operations | Limited retention |
+| `notice` | Significant events in normal operation | Yes |
+| `warning` | Unexpected but handled situations | Yes |
+| `error` | Errors that should be investigated | Yes |
+| `critical` | Severe errors requiring immediate attention | Yes |
+
+## Privacy and String Interpolation
+
+OSLog automatically protects user privacy by redacting sensitive information in production:
+
+```swift
+let logger = Logger(subsystem: "com.myapp", category: "user")
+
+let email = "user@example.com"
+let userID = 12345
+
+// Default: Redacted in production
+logger.info("User logged in: \(email)")
+// Output in production: "User logged in: <private>"
+
+// Explicitly mark as public (use sparingly!)
+logger.info("User logged in: \(email, privacy: .public)")
+// Output: "User logged in: user@example.com"
+
+// Mark as private (explicit, but this is the default)
+logger.info("Processing payment for user: \(email, privacy: .private)")
+
+// For non-sensitive data, mark as public
+logger.info("App version: \(appVersion, privacy: .public)")
+```
+
+### Hash for Debugging
+
+Sometimes you need to identify specific values without exposing them:
+
+```swift
+let logger = Logger(subsystem: "com.myapp", category: "analytics")
+
+let userEmail = "sensitive@example.com"
+
+// Uses a hash so you can correlate logs without exposing the actual value
+logger.debug("Processing request for user: \(userEmail, privacy: .hash)")
+// Output: "Processing request for user: <hash:a3d5e9f2>"
+```
+
+## The Legacy OSLog API
+
+Before `Logger`, iOS used the `os_log()` function (still available, but `Logger` is preferred):
+
+```swift
+import os
+
+let log = OSLog(subsystem: "com.myapp", category: "network")
+
+os_log("Request started", log: log, type: .info)
+os_log("Error occurred: %@", log: log, type: .error, error.localizedDescription)
+```
+
+**Important differences:**
+- Uses C-style format strings (`%@`, `%d`, etc.)
+- Less type-safe than `Logger`
+- Requires explicit `type` parameter
+- Still supported but `Logger` is the modern approach
+
+## Signposts: Measuring Performance
+
+Signposts are special log entries that mark the beginning and end of operations, enabling powerful performance analysis in Instruments:
+
+```swift
+import os
+
+let logger = Logger(subsystem: "com.myapp", category: "performance")
+
+func fetchUserData() async throws -> User {
+    // Begin a signpost interval
+    let signpostID = OSSignpostID(log: OSLog(subsystem: "com.myapp", category: "performance"))
+    os_signpost(.begin, log: OSLog(subsystem: "com.myapp", category: "performance"), 
+                name: "Fetch User Data", signpostID: signpostID)
+    
+    defer {
+        // End the signpost interval
+        os_signpost(.end, log: OSLog(subsystem: "com.myapp", category: "performance"), 
+                    name: "Fetch User Data", signpostID: signpostID)
+    }
+    
+    // Your actual work
+    let user = try await apiClient.fetchUser()
+    return user
+}
+```
+
+### Signpost Intervals with Modern API
+
+Using the interval API is cleaner:
+
+```swift
+import os
+
+let logger = Logger(subsystem: "com.myapp", category: "performance")
+
+func processImage(_ image: UIImage) -> UIImage {
+    let signpostID = OSSignpostID(log: OSLog(subsystem: "com.myapp", category: "performance"))
+    let state = OSSignpostIntervalState(id: signpostID, isOpen: true)
+    
+    os_signpost(.begin, log: OSLog(subsystem: "com.myapp", category: "performance"),
+                name: "Image Processing", signpostID: signpostID,
+                "Size: %d KB", image.pngData()?.count ?? 0 / 1024)
+    
+    // Process the image
+    let processed = applyFilters(to: image)
+    
+    os_signpost(.end, log: OSLog(subsystem: "com.myapp", category: "performance"),
+                name: "Image Processing", signpostID: signpostID)
+    
+    return processed
+}
+```
+
+### Viewing Signposts in Instruments
+
+1. Run your app with Instruments (Cmd+I in Xcode)
+2. Select the **os_signpost** instrument
+3. You'll see a visual timeline of your signpost intervals
+4. Click on intervals to see duration and associated metadata
+
+## Viewing Logs
+
+### Console.app
+
+1. Open Console.app on your Mac
+2. Connect your iPhone or select your Mac
+3. Filter by subsystem: `subsystem:com.myapp`
+4. Filter by category: `category:network`
+5. Filter by level: `level:error`
+
+### Xcode Debug Console
+
+When running from Xcode, logs appear in the debug console, but with limited information. For full details, use Console.app or `log` command line tool.
+
+### Command Line
+
+```bash
+# Stream logs from a connected device
+log stream --device --predicate 'subsystem == "com.myapp"'
+
+# Show only errors
+log stream --device --predicate 'subsystem == "com.myapp" AND messageType == error'
+
+# Show specific category
+log stream --device --predicate 'subsystem == "com.myapp" AND category == "network"'
+```
+
+## Common Patterns and Best Practices
+
+### Create a Logging Utility
+
+Centralize logger creation for consistency:
+
+```swift
+import os
+
+enum AppLogger {
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.myapp"
+    
+    static let network = Logger(subsystem: subsystem, category: "network")
+    static let database = Logger(subsystem: subsystem, category: "database")
+    static let ui = Logger(subsystem: subsystem, category: "ui")
+    static let auth = Logger(subsystem: subsystem, category: "authentication")
+    
+    static func custom(category: String) -> Logger {
+        Logger(subsystem: subsystem, category: category)
+    }
+}
+
+// Usage
+AppLogger.network.info("API request completed")
+AppLogger.database.error("Failed to save to Core Data")
+```
+
+### Logging in Release Builds
+
+Don't disable logging in release builds. OSLog is designed to be production-safe:
+
+```swift
+// DON'T do this:
+#if DEBUG
+logger.debug("Debug info")
+#endif
+
+// DO this instead - use appropriate log levels
+logger.debug("Detailed debug info")  // Automatically filtered in production
+logger.info("User action completed")  // Retained briefly in production
+logger.error("Critical error")        // Always retained
+```
+
+### Structured Logging
+
+Add context to your logs:
+
+```swift
+func processPayment(amount: Decimal, userID: String) async throws {
+    AppLogger.network.info("""
+        Processing payment - \
+        Amount: \(amount, privacy: .public), \
+        UserID: \(userID, privacy: .hash)
+        """)
+    
+    do {
+        try await paymentService.charge(amount)
+        AppLogger.network.notice("Payment successful")
+    } catch {
+        AppLogger.network.error("Payment failed: \(error.localizedDescription)")
+        throw error
+    }
+}
+```
+
+## Common Mistakes
+
+### 1. Using print() in Production Code
+
+```swift
+// BAD: No filtering, not retained, performance impact
+print("User logged in: \(email)")
+
+// GOOD: Proper logging with privacy controls
+logger.info("User logged in: \(email, privacy: .private)")
+```
+
+### 2. Over-logging or Under-logging
+
+```swift
+// BAD: Too verbose, creates noise
+logger.debug("Entered function")
+logger.debug("About to call API")
+logger.debug("API call returned")
+logger.debug("Parsing response")
+logger.debug("Exiting function")
+
+// GOOD: Log meaningful events
+logger.info("Fetching user data from API")
+logger.notice("User data updated successfully")
+```
+
+### 3. Logging Sensitive Data as Public
+
+```swift
+// BAD: Exposes sensitive information
+logger.info("Password: \(password, privacy: .public)")
+logger.info("Credit card: \(cardNumber, privacy: .public)")
+
+// GOOD: Keep sensitive data private or use hashing
+logger.debug("Authentication attempt for user: \(userID, privacy: .hash)")
+```
+
+### 4. Not Using Subsystems and Categories
+
+```swift
+// BAD: Everything in one logger, hard to filter
+let logger = Logger()
+
+// GOOD: Organized by feature
+AppLogger.network.info("API call completed")
+AppLogger.database.error("Database error")
+```
+
+### 5. Ignoring Log Levels
+
+```swift
+// BAD: Using .error for everything
+logger.error("User tapped button")  // Not an error!
+logger.error("API returned 200 OK")  // Not an error!
+
+// GOOD: Appropriate levels
+logger.info("User tapped button")
+logger.notice("API returned 200 OK")
+logger.error("API returned 500 error")
+```
+
+## Performance Considerations
+
+OSLog is highly optimized, but keep these in mind:
+
+```swift
+// Avoid expensive string interpolation in tight loops
+for item in largeArray {
+    // BAD: String interpolation happens even if not logged
+    logger.debug("Processing \(expensiveOperation(item))")
+    
+    // BETTER: Check if needed first (though Logger is already optimized)
+    if loggingEnabled {
+        logger.debug("Processing \(item.id)")
+    }
+}
+
+// String interpolation in Logger is deferred and optimized
+// This is actually fine:
+logger.debug("Processing \(item.description)")
+```
+
+The Unified Logging System defers string interpolation, so arguments are only evaluated if the log will actually be recorded.
+
+## Integration with Third-Party Tools
+
+While OSLog is excellent for Apple platforms, consider wrapping it if you need cross-platform support:
+
+```swift
+protocol LoggerProtocol {
+    func info(_ message: String)
+    func error(_ message: String)
+}
+
+class OSLogger: LoggerProtocol {
+    private let logger: Logger
+    
+    init(category: String) {
+        logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "app", 
+                       category: category)
+    }
+    
+    func info(_ message: String) {
+        logger.info("\(message)")
+    }
+    
+    func error(_ message: String) {
+        logger.error("\(message)")
+    }
+}
+
+// Now you can swap implementations if needed
+let logger: LoggerProtocol = OSLogger(category: "network")
+```
+
+## Summary
+
+The Unified Logging System through `Logger` provides a professional, performant way to understand your app's behavior in development and production. It's built into the platform, integrates with Apple's developer tools, and is designed for privacy and performance.
+
+| Feature | Description | Best Practice |
+|---------|-------------|---------------|
+| **Logger API** | Modern, type-safe logging | Use for iOS 14+ projects |
+| **Subsystems** | Organizational grouping | Use your bundle ID |
+| **Categories** | Feature-specific logging | Create per feature area |
+| **Log Levels** | debug, info, notice, warning, error, critical | Match severity to level |
+| **Privacy** | Automatic redaction | Default is private; mark public sparingly |
+| **Signposts** | Performance measurement | Use for timing critical operations |
+| **Console.app** | View and filter logs | Use predicates for filtering |
+| **Instruments** | Analyze signpost intervals | Profile performance bottlenecks |
+
+### Key Takeaways
+
+1. **Replace `print()` with `Logger`** for production-quality logging
+2. **Organize logs** using subsystems and categories
+3. **Use appropriate log levels** to make logs actionable
+4. **Respect privacy** by keeping sensitive data private
+5. **Use signposts** to measure and optimize performance
+6. **View logs** in Console.app or Instruments for full capabilities
+7. **Log in production** – OSLog is designed for it
+
+### Further Reading
+
+- [Apple Documentation: Logging](https://developer.apple.com/documentation/os/logging)
+- [Apple Documentation: Logger](https://developer.apple.com/documentation/os/logger)
+- [WWDC: Unified Logging and Activity Tracing](https://developer.apple.com/videos/play/wwdc2016/721/)
+- [WWDC: Explore logging in Swift](https://developer.apple.com/videos/play/wwdc2020/10168/)
+
+Start logging properly today, and you'll thank yourself when debugging that impossible-to-reproduce production issue tomorrow.

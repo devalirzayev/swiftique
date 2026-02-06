@@ -1,0 +1,621 @@
+---
+title: "ViewBuilder & Result Builders"
+description: "Creating custom container views with @ViewBuilder"
+sectionId: "3.3-custom-views"
+sectionTitle: "Custom Views & Graphics"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# ViewBuilder & Result Builders
+
+Result builders are a Swift language feature that allows you to construct complex values from a sequence of statements using a natural, declarative syntax. The most visible example in iOS development is `@ViewBuilder`, which powers SwiftUI's intuitive view composition syntax.
+
+## Why Result Builders Matter
+
+Without result builders, creating a SwiftUI view hierarchy would require verbose array syntax:
+
+```swift
+// Without ViewBuilder (hypothetical)
+VStack(content: [
+    Text("Hello"),
+    Text("World"),
+    Image("logo")
+])
+```
+
+With `@ViewBuilder`, you write clean, readable code:
+
+```swift
+// With ViewBuilder
+VStack {
+    Text("Hello")
+    Text("World")
+    Image("logo")
+}
+```
+
+Result builders transform the block of statements into a single value behind the scenes. They're the magic that makes SwiftUI's declarative syntax possible.
+
+## Understanding @ViewBuilder
+
+`@ViewBuilder` is SwiftUI's result builder that transforms multiple view declarations into a single composite view. It's applied to closures, functions, and computed properties.
+
+### Basic Usage
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        VStack {
+            Text("First line")
+            Text("Second line")
+            Text("Third line")
+        }
+    }
+}
+```
+
+The `body` property and the `VStack` initializer's closure parameter are both marked with `@ViewBuilder`. This allows you to list multiple views without explicit return statements or collection syntax.
+
+### Explicit @ViewBuilder on Functions
+
+You can create custom functions that accept `@ViewBuilder` closures:
+
+```swift
+struct CardView<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack {
+            content
+        }
+        .padding()
+        .background(Color.gray.opacity(0.2))
+        .cornerRadius(10)
+    }
+}
+
+// Usage
+CardView {
+    Text("Title")
+    Text("Description")
+    Image(systemName: "star")
+}
+```
+
+### @ViewBuilder on Computed Properties
+
+```swift
+struct ProfileView: View {
+    let isLoggedIn: Bool
+    
+    @ViewBuilder
+    var statusMessage: some View {
+        if isLoggedIn {
+            Text("Welcome back!")
+            Image(systemName: "checkmark.circle")
+        } else {
+            Text("Please log in")
+            Image(systemName: "lock.circle")
+        }
+    }
+    
+    var body: some View {
+        VStack {
+            statusMessage
+        }
+    }
+}
+```
+
+## How Result Builders Work
+
+Result builders use specially named static methods to transform code blocks. The Swift compiler identifies these methods and applies them during compilation.
+
+### Core Builder Methods
+
+```swift
+@resultBuilder
+struct SimpleBuilder {
+    // Transforms a single component
+    static func buildBlock(_ components: String...) -> String {
+        components.joined(separator: "\n")
+    }
+    
+    // Handles if statements
+    static func buildEither(first component: String) -> String {
+        component
+    }
+    
+    static func buildEither(second component: String) -> String {
+        component
+    }
+    
+    // Handles optional values (if without else)
+    static func buildOptional(_ component: String?) -> String {
+        component ?? ""
+    }
+    
+    // Handles individual expressions
+    static func buildExpression(_ expression: String) -> String {
+        expression
+    }
+}
+
+// Using the builder
+@SimpleBuilder
+func makeMessage() -> String {
+    "Hello"
+    "World"
+    if true {
+        "This is true"
+    }
+}
+
+print(makeMessage())
+// Output:
+// Hello
+// World
+// This is true
+```
+
+## Creating Custom Container Views
+
+Let's build a practical custom container that uses `@ViewBuilder`:
+
+```swift
+struct Section<Header: View, Content: View>: View {
+    let header: Header
+    let content: Content
+    
+    init(
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.header = header()
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+                .font(.headline)
+                .padding(.bottom, 4)
+            
+            content
+                .padding(.leading, 8)
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(8)
+    }
+}
+
+// Usage
+struct ExampleView: View {
+    var body: some View {
+        ScrollView {
+            Section {
+                Text("User Details")
+                Image(systemName: "person.circle")
+            } content: {
+                Text("Name: John Doe")
+                Text("Email: john@example.com")
+                Text("Location: San Francisco")
+            }
+            
+            Section {
+                Text("Settings")
+            } content: {
+                Toggle("Notifications", isOn: .constant(true))
+                Toggle("Dark Mode", isOn: .constant(false))
+            }
+        }
+    }
+}
+```
+
+## ViewBuilder Limitations and Edge Cases
+
+### Limited to 10 Views
+
+`@ViewBuilder` has overloads for up to 10 child views. Exceeding this limit causes a compiler error:
+
+```swift
+VStack {
+    Text("1")
+    Text("2")
+    Text("3")
+    Text("4")
+    Text("5")
+    Text("6")
+    Text("7")
+    Text("8")
+    Text("9")
+    Text("10")
+    Text("11") // Compiler error: Extra argument in call
+}
+```
+
+**Solution**: Group views using `Group` or other containers:
+
+```swift
+VStack {
+    Group {
+        Text("1")
+        Text("2")
+        Text("3")
+        Text("4")
+        Text("5")
+    }
+    Group {
+        Text("6")
+        Text("7")
+        Text("8")
+        Text("9")
+        Text("10")
+        Text("11")
+    }
+}
+```
+
+### Loops Require ForEach
+
+You cannot use standard `for` loops directly in a `@ViewBuilder` context:
+
+```swift
+// ❌ This doesn't work
+VStack {
+    for i in 1...5 {
+        Text("Item \(i)")
+    }
+}
+```
+
+Use `ForEach` instead:
+
+```swift
+// ✅ Correct approach
+VStack {
+    ForEach(1...5, id: \.self) { i in
+        Text("Item \(i)")
+    }
+}
+```
+
+### Switch Statements Not Supported (Pre-Swift 5.9)
+
+Prior to Swift 5.9, switch statements weren't supported in result builders:
+
+```swift
+// ❌ Doesn't work in Swift < 5.9
+@ViewBuilder
+var content: some View {
+    switch userType {
+    case .admin:
+        AdminView()
+    case .user:
+        UserView()
+    }
+}
+```
+
+**Workaround for older Swift versions**:
+
+```swift
+// ✅ Works in all versions
+@ViewBuilder
+var content: some View {
+    if userType == .admin {
+        AdminView()
+    } else if userType == .user {
+        UserView()
+    }
+}
+```
+
+**Swift 5.9+** added native support for switch statements in result builders.
+
+### Return Statements
+
+Explicit `return` only works with single expressions:
+
+```swift
+// ✅ Works - single expression
+@ViewBuilder
+var content: some View {
+    return Text("Hello")
+}
+
+// ❌ Doesn't work - multiple expressions with return
+@ViewBuilder
+var content: some View {
+    return Text("Hello")
+    return Text("World") // Error
+}
+
+// ✅ Works - multiple expressions without return
+@ViewBuilder
+var content: some View {
+    Text("Hello")
+    Text("World")
+}
+```
+
+## Advanced Pattern: Conditional ViewBuilders
+
+Create flexible APIs by combining optionals and generics:
+
+```swift
+struct ConditionalContainer<Primary: View, Secondary: View>: View {
+    let primary: Primary
+    let secondary: Secondary?
+    
+    init(
+        @ViewBuilder primary: () -> Primary,
+        @ViewBuilder secondary: (() -> Secondary)? = nil
+    ) {
+        self.primary = primary()
+        self.secondary = secondary?()
+    }
+    
+    var body: some View {
+        VStack {
+            primary
+            
+            if let secondary = secondary {
+                Divider()
+                secondary
+            }
+        }
+    }
+}
+
+// Usage with optional secondary content
+ConditionalContainer {
+    Text("Always shown")
+}
+
+ConditionalContainer {
+    Text("Primary")
+} secondary: {
+    Text("Secondary")
+}
+```
+
+## Building a Custom Result Builder
+
+Here's a practical custom result builder for constructing HTML:
+
+```swift
+@resultBuilder
+struct HTMLBuilder {
+    static func buildBlock(_ components: String...) -> String {
+        components.joined()
+    }
+    
+    static func buildEither(first component: String) -> String {
+        component
+    }
+    
+    static func buildEither(second component: String) -> String {
+        component
+    }
+    
+    static func buildOptional(_ component: String?) -> String {
+        component ?? ""
+    }
+    
+    static func buildArray(_ components: [String]) -> String {
+        components.joined()
+    }
+}
+
+struct HTML {
+    let content: String
+    
+    init(@HTMLBuilder content: () -> String) {
+        self.content = "<html><body>\(content())</body></html>"
+    }
+}
+
+func heading(_ text: String) -> String {
+    "<h1>\(text)</h1>"
+}
+
+func paragraph(_ text: String) -> String {
+    "<p>\(text)</p>"
+}
+
+func list(_ items: [String]) -> String {
+    let listItems = items.map { "<li>\($0)</li>" }.joined()
+    return "<ul>\(listItems)</ul>"
+}
+
+// Usage
+let page = HTML {
+    heading("Welcome")
+    paragraph("This is a paragraph.")
+    
+    if true {
+        paragraph("Conditional content")
+    }
+    
+    list(["Item 1", "Item 2", "Item 3"])
+}
+
+print(page.content)
+```
+
+## Common Mistakes
+
+### Mistake 1: Forgetting @ViewBuilder on Custom Views
+
+```swift
+// ❌ Won't allow multiple views
+struct CustomStack<Content: View>: View {
+    let content: Content
+    
+    init(content: () -> Content) { // Missing @ViewBuilder
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack {
+            content
+        }
+    }
+}
+
+// Usage fails
+CustomStack {
+    Text("First")
+    Text("Second") // Error: Closure containing multiple statements
+}
+```
+
+```swift
+// ✅ Correct
+struct CustomStack<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) { // Added @ViewBuilder
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack {
+            content
+        }
+    }
+}
+```
+
+### Mistake 2: Trying to Store ViewBuilder Content
+
+```swift
+// ❌ Won't compile
+struct BadExample: View {
+    @ViewBuilder
+    var content: some View {
+        let views = [ // Can't create arrays in ViewBuilder
+            Text("One"),
+            Text("Two")
+        ]
+        return views // Type mismatch
+    }
+}
+```
+
+```swift
+// ✅ Use the builder pattern directly
+struct GoodExample: View {
+    var body: some View {
+        VStack {
+            Text("One")
+            Text("Two")
+        }
+    }
+}
+```
+
+### Mistake 3: Misunderstanding Generic View Types
+
+```swift
+// ❌ Type confusion
+struct Container<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+    }
+    
+    func addBorder() -> some View {
+        self.content.border(Color.red) // Error: 'Content' may not have 'border' method
+    }
+}
+```
+
+```swift
+// ✅ Return self with modified body
+struct Container<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .border(Color.red) // Modify in body
+    }
+}
+```
+
+## Performance Considerations
+
+Result builders create type-safe structures at compile time with minimal runtime overhead. However, be aware:
+
+1. **Deeply nested generics**: Each level of `@ViewBuilder` composition creates additional generic types, potentially increasing compile times
+2. **View identity**: SwiftUI uses view types for identity, so different builder branches create different types
+3. **Recomputation**: Extracting views into separate computed properties can help SwiftUI optimize redraws
+
+```swift
+struct OptimizedView: View {
+    let showDetail: Bool
+    
+    // Extracted to separate property for better performance
+    @ViewBuilder
+    var detailSection: some View {
+        Text("Detail 1")
+        Text("Detail 2")
+        Text("Detail 3")
+    }
+    
+    var body: some View {
+        VStack {
+            Text("Always shown")
+            
+            if showDetail {
+                detailSection // Cleaner and potentially more optimizable
+            }
+        }
+    }
+}
+```
+
+## Reference Documentation
+
+For deeper exploration:
+
+- **Swift Evolution Proposal SE-0289**: [Result Builders](https://github.com/apple/swift-evolution/blob/main/proposals/0289-result-builders.md)
+- **Apple Documentation**: [ViewBuilder](https://developer.apple.com/documentation/swiftui/viewbuilder)
+- **Swift Language Guide**: [Result Builders](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/advancedoperators/#Result-Builders)
+
+## Summary
+
+| Concept | Description | Common Use |
+|---------|-------------|------------|
+| **Result Builder** | Swift language feature transforming code blocks into values | Creating DSLs and declarative APIs |
+| **@ViewBuilder** | SwiftUI's result builder for view composition | Building view hierarchies declaratively |
+| **buildBlock** | Core builder method combining multiple components | Processes each statement in the builder closure |
+| **buildEither** | Handles if-else branching | Enables conditional view logic |
+| **buildOptional** | Handles optional values (if without else) | Optional view inclusion |
+| **10-view limit** | Maximum views per builder block | Use `Group` or containers to exceed |
+| **ForEach** | Required for loops in builders | Iterating over collections |
+| **Generic Content** | Type-safe container pattern | Custom container views |
+| **@ViewBuilder on functions** | Enables builder syntax for parameters | Custom APIs accepting view content |
+
+Result builders represent a powerful metaprogramming feature that makes SwiftUI's API possible. Understanding them helps you create elegant, reusable components and appreciate how SwiftUI works under the hood. Start by using `@ViewBuilder` in your custom container views, then explore creating custom result builders for domain-specific languages in your applications.

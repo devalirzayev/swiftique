@@ -1,0 +1,594 @@
+---
+title: "Growth & ASO"
+description: "App Store Optimization, ratings prompts, and user acquisition"
+sectionId: "7.4-post-launch"
+sectionTitle: "Post-Launch"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Growth & ASO: App Store Optimization and User Acquisition
+
+App Store Optimization (ASO) and growth strategies are critical for ensuring your iOS app reaches its intended audience and maintains engagement. While building a great app is essential, if users can't find it or don't understand its value, your hard work won't pay off. This guide covers the technical implementation of ASO elements, ratings prompts, and user acquisition tracking using Swift.
+
+## Why Growth & ASO Matter
+
+ASO is to the App Store what SEO is to Google. It involves optimizing your app's metadata, visuals, and user engagement signals to improve visibility in search results and increase conversion rates. The technical aspects you control as a developer include:
+
+- Implementing ratings and review prompts strategically
+- Tracking user acquisition channels
+- Optimizing onboarding flows
+- Implementing deep linking for campaigns
+- Monitoring and responding to user engagement metrics
+
+## Requesting Ratings and Reviews
+
+Apple provides `StoreKit`'s `SKStoreReviewController` (and its newer `RequestReview` action) to request ratings without disrupting the user experience.
+
+### Basic Implementation
+
+```swift
+import StoreKit
+
+class RatingsManager {
+    // Track app launches to determine when to prompt
+    private let userDefaults = UserDefaults.standard
+    private let launchCountKey = "appLaunchCount"
+    private let lastPromptVersionKey = "lastPromptVersion"
+    
+    func incrementLaunchCount() {
+        let count = userDefaults.integer(forKey: launchCountKey)
+        userDefaults.set(count + 1, forKey: launchCountKey)
+    }
+    
+    func requestReviewIfAppropriate() {
+        let launchCount = userDefaults.integer(forKey: launchCountKey)
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let lastPromptVersion = userDefaults.string(forKey: lastPromptVersionKey)
+        
+        // Only prompt after 10 launches and once per version
+        guard launchCount >= 10,
+              currentVersion != lastPromptVersion else {
+            return
+        }
+        
+        // Request review
+        if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            SKStoreReviewController.requestReview(in: scene)
+            userDefaults.set(currentVersion, forKey: lastPromptVersionKey)
+        }
+    }
+}
+```
+
+### SwiftUI Implementation (iOS 16+)
+
+```swift
+import SwiftUI
+import StoreKit
+
+struct ContentView: View {
+    @Environment(\.requestReview) var requestReview
+    @State private var taskCompletionCount = 0
+    
+    var body: some View {
+        VStack {
+            Button("Complete Task") {
+                taskCompletionCount += 1
+                
+                // Request review after user completes meaningful actions
+                if taskCompletionCount == 5 {
+                    requestReview()
+                }
+            }
+        }
+    }
+}
+```
+
+### Common Mistakes with Ratings Prompts
+
+**❌ Don't do this:**
+
+```swift
+// Prompting too frequently
+func applicationDidBecomeActive(_ application: UIApplication) {
+    SKStoreReviewController.requestReview() // This will annoy users!
+}
+
+// Prompting at inappropriate times
+func userDeletedAllData() {
+    // User just had a negative experience
+    SKStoreReviewController.requestReview() // Bad timing!
+}
+```
+
+**✅ Do this:**
+
+```swift
+class SmartRatingsManager {
+    private let minDaysBetweenPrompts = 90
+    private let minPositiveActions = 3
+    private var positiveActionCount = 0
+    
+    func recordPositiveAction() {
+        positiveActionCount += 1
+    }
+    
+    func shouldPromptForReview() -> Bool {
+        // Check time since last prompt
+        let lastPromptDate = UserDefaults.standard.object(forKey: "lastRatingPrompt") as? Date
+        if let lastDate = lastPromptDate {
+            let daysSinceLastPrompt = Calendar.current.dateComponents([.day], from: lastDate, to: Date()).day ?? 0
+            guard daysSinceLastPrompt >= minDaysBetweenPrompts else {
+                return false
+            }
+        }
+        
+        // Check for positive user behavior
+        guard positiveActionCount >= minPositiveActions else {
+            return false
+        }
+        
+        return true
+    }
+    
+    func promptForReviewIfAppropriate(in windowScene: UIWindowScene) {
+        guard shouldPromptForReview() else { return }
+        
+        SKStoreReviewController.requestReview(in: windowScene)
+        UserDefaults.standard.set(Date(), forKey: "lastRatingPrompt")
+        positiveActionCount = 0
+    }
+}
+```
+
+## Deep Linking for User Acquisition
+
+Deep links allow users to land directly on specific content in your app from marketing campaigns, emails, or other apps.
+
+### Universal Links Setup
+
+First, add the Associated Domains capability to your app with the format `applinks:yourdomain.com`.
+
+```swift
+// In your SceneDelegate or AppDelegate
+func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+          let url = userActivity.webpageURL else {
+        return
+    }
+    
+    handleDeepLink(url: url)
+}
+
+func handleDeepLink(url: URL) {
+    // Parse URL components
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+          let host = components.host else {
+        return
+    }
+    
+    // Route based on path
+    switch components.path {
+    case "/product":
+        if let productID = components.queryItems?.first(where: { $0.name == "id" })?.value {
+            navigateToProduct(id: productID)
+        }
+    case "/campaign":
+        if let campaignID = components.queryItems?.first(where: { $0.name == "campaign" })?.value {
+            trackCampaign(id: campaignID)
+        }
+    default:
+        navigateToHome()
+    }
+}
+
+func trackCampaign(id: String) {
+    // Track where users came from
+    UserDefaults.standard.set(id, forKey: "acquisitionCampaign")
+    // Send to your analytics service
+    Analytics.shared.track(event: "campaign_attribution", properties: ["campaign_id": id])
+}
+```
+
+### Custom URL Schemes
+
+For simpler deep linking (though Universal Links are preferred):
+
+```swift
+// Add URL scheme to Info.plist first
+func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    guard let url = URLContexts.first?.url else { return }
+    
+    // Handle custom scheme: myapp://action/parameter
+    if url.scheme == "myapp" {
+        handleCustomURL(url: url)
+    }
+}
+
+func handleCustomURL(url: URL) {
+    let action = url.host // "action"
+    let parameters = url.pathComponents.dropFirst() // ["parameter"]
+    
+    switch action {
+    case "referral":
+        if let referralCode = parameters.first {
+            processReferral(code: referralCode)
+        }
+    case "promo":
+        if let promoCode = parameters.first {
+            applyPromoCode(code: promoCode)
+        }
+    default:
+        break
+    }
+}
+```
+
+## Tracking User Acquisition
+
+Understanding where your users come from helps optimize marketing spend.
+
+```swift
+import AdSupport
+import AppTrackingTransparency
+
+class AcquisitionTracker {
+    static let shared = AcquisitionTracker()
+    
+    func requestTrackingPermission(completion: @escaping (Bool) -> Void) {
+        // Required since iOS 14.5
+        ATTrackingManager.requestTrackingAuthorization { status in
+            let granted = status == .authorized
+            completion(granted)
+        }
+    }
+    
+    func trackInstallSource() {
+        // Check if this is first launch
+        let hasLaunchedBefore = UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
+        
+        if !hasLaunchedBefore {
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+            
+            // Record install timestamp
+            UserDefaults.standard.set(Date(), forKey: "installDate")
+            
+            // Track install attribution
+            trackAttribution()
+        }
+    }
+    
+    private func trackAttribution() {
+        // Check for deferred deep link (from ad networks)
+        // Most attribution SDKs (Branch, AppsFlyer, Adjust) handle this
+        
+        // Record install source if available from Universal Link
+        if let campaignID = UserDefaults.standard.string(forKey: "acquisitionCampaign") {
+            sendToAnalytics(event: "install", campaign: campaignID)
+        } else {
+            sendToAnalytics(event: "organic_install", campaign: "organic")
+        }
+    }
+    
+    private func sendToAnalytics(event: String, campaign: String) {
+        // Send to your analytics service
+        print("Event: \(event), Campaign: \(campaign)")
+    }
+}
+```
+
+### Handling App Clip Codes (for App Clips)
+
+App Clips are a powerful acquisition tool:
+
+```swift
+// In your App Clip target
+func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard let incomingURL = userActivity.webpageURL else { return }
+    
+    // Track App Clip launch
+    Analytics.shared.track(event: "app_clip_launch", properties: [
+        "url": incomingURL.absoluteString
+    ])
+    
+    // Offer to download full app
+    presentFullAppDownloadPrompt()
+}
+
+func presentFullAppDownloadPrompt() {
+    // Use SKOverlay to promote full app
+    #if canImport(StoreKit)
+    if #available(iOS 14.0, *) {
+        let config = SKOverlay.AppClipConfiguration(position: .bottom)
+        let overlay = SKOverlay(configuration: config)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            overlay.present(in: scene)
+        }
+    }
+    #endif
+}
+```
+
+## Onboarding Optimization
+
+First impressions matter for retention and ratings.
+
+```swift
+import SwiftUI
+
+struct OnboardingView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var currentPage = 0
+    
+    let pages = [
+        OnboardingPage(title: "Welcome", description: "Track your fitness goals", imageName: "figure.run"),
+        OnboardingPage(title: "Stay Motivated", description: "Get daily reminders", imageName: "bell.badge"),
+        OnboardingPage(title: "See Progress", description: "Visualize your journey", imageName: "chart.line.uptrend.xyaxis")
+    ]
+    
+    var body: some View {
+        VStack {
+            TabView(selection: $currentPage) {
+                ForEach(0..<pages.count, id: \.self) { index in
+                    OnboardingPageView(page: pages[index])
+                        .tag(index)
+                }
+            }
+            .tabViewStyle(.page)
+            .indexViewStyle(.page(backgroundDisplayMode: .always))
+            
+            Button(action: completeOnboarding) {
+                Text(currentPage == pages.count - 1 ? "Get Started" : "Next")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            .padding()
+        }
+    }
+    
+    func completeOnboarding() {
+        if currentPage < pages.count - 1 {
+            currentPage += 1
+        } else {
+            hasCompletedOnboarding = true
+            // Track onboarding completion
+            Analytics.shared.track(event: "onboarding_completed")
+        }
+    }
+}
+
+struct OnboardingPage {
+    let title: String
+    let description: String
+    let imageName: String
+}
+
+struct OnboardingPageView: View {
+    let page: OnboardingPage
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: page.imageName)
+                .font(.system(size: 100))
+                .foregroundColor(.blue)
+            
+            Text(page.title)
+                .font(.title)
+                .fontWeight(.bold)
+            
+            Text(page.description)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+    }
+}
+```
+
+## App Store Metadata Optimization
+
+While you set most metadata in App Store Connect, you can programmatically access and test elements:
+
+```swift
+// Testing localized metadata
+func getCurrentAppStoreRegion() -> String {
+    return Locale.current.regionCode ?? "US"
+}
+
+func getPreferredLanguage() -> String {
+    return Locale.preferredLanguages.first ?? "en"
+}
+
+// Testing different app names/titles impact
+func logAppConfiguration() {
+    let displayName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String
+    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    
+    print("App: \(displayName ?? "Unknown"), Version: \(version ?? "Unknown")")
+}
+```
+
+## A/B Testing Features
+
+Test different features or UI to optimize conversion:
+
+```swift
+class FeatureFlagManager {
+    static let shared = FeatureFlagManager()
+    
+    private let userDefaults = UserDefaults.standard
+    private let variantKey = "experimentVariant"
+    
+    enum OnboardingVariant: String {
+        case control = "control"
+        case variant1 = "variant1"
+        case variant2 = "variant2"
+    }
+    
+    func assignVariant() -> OnboardingVariant {
+        // Check if user already has a variant
+        if let savedVariant = userDefaults.string(forKey: variantKey),
+           let variant = OnboardingVariant(rawValue: savedVariant) {
+            return variant
+        }
+        
+        // Randomly assign variant (33% each)
+        let variants: [OnboardingVariant] = [.control, .variant1, .variant2]
+        let assigned = variants.randomElement() ?? .control
+        
+        userDefaults.set(assigned.rawValue, forKey: variantKey)
+        
+        // Track assignment
+        Analytics.shared.track(event: "experiment_assigned", properties: [
+            "variant": assigned.rawValue
+        ])
+        
+        return assigned
+    }
+    
+    func shouldShowFeature(_ feature: String) -> Bool {
+        // Remote feature flags can be more sophisticated
+        // This is a simple local example
+        let variant = assignVariant()
+        
+        switch feature {
+        case "premium_prompt":
+            return variant == .variant1
+        case "social_sharing":
+            return variant != .control
+        default:
+            return false
+        }
+    }
+}
+```
+
+## Edge Cases and Common Pitfalls
+
+### 1. Rating Prompt Limits
+
+Apple limits how often you can show the rating prompt:
+
+```swift
+class SafeRatingsManager {
+    // Apple shows max 3 prompts per 365 days
+    // Don't track this yourself - Apple handles it
+    // But do track when YOU request to avoid over-requesting
+    
+    func canShowPrompt() -> Bool {
+        let lastAttempt = UserDefaults.standard.object(forKey: "lastRatingAttempt") as? Date
+        let now = Date()
+        
+        if let last = lastAttempt {
+            // Wait at least 30 days between attempts
+            let daysSince = Calendar.current.dateComponents([.day], from: last, to: now).day ?? 0
+            return daysSince >= 30
+        }
+        
+        return true
+    }
+    
+    func attemptToShowPrompt(in windowScene: UIWindowScene) {
+        guard canShowPrompt() else { return }
+        
+        // Record attempt (not whether Apple actually showed the dialog)
+        UserDefaults.standard.set(Date(), forKey: "lastRatingAttempt")
+
+        SKStoreReviewController.requestReview(in: windowScene)
+    }
+}
+```
+
+### 2. Deep Link Handling Race Conditions
+
+When your app launches from a deep link, the view hierarchy might not be ready:
+
+```swift
+class DeepLinkHandler {
+    static let shared = DeepLinkHandler()
+    private var pendingDeepLink: URL?
+
+    func handleIncomingURL(_ url: URL) {
+        if isAppReady {
+            processDeepLink(url)
+        } else {
+            // Store and process when app is ready
+            pendingDeepLink = url
+        }
+    }
+
+    func appDidBecomeReady() {
+        if let url = pendingDeepLink {
+            processDeepLink(url)
+            pendingDeepLink = nil
+        }
+    }
+
+    private var isAppReady = false
+
+    private func processDeepLink(_ url: URL) {
+        // Navigate to the appropriate screen
+    }
+}
+```
+
+### 3. ATT Timing
+
+Request App Tracking Transparency at the right moment—not immediately on first launch:
+
+```swift
+// ❌ Don't prompt immediately on launch
+func applicationDidFinishLaunching() {
+    ATTrackingManager.requestTrackingAuthorization { _ in }
+}
+
+// ✅ Prompt after the user understands the app's value
+func userCompletedOnboarding() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        ATTrackingManager.requestTrackingAuthorization { status in
+            switch status {
+            case .authorized:
+                print("Tracking authorized")
+            case .denied, .restricted:
+                print("Tracking denied")
+            case .notDetermined:
+                print("Not determined")
+            @unknown default:
+                break
+            }
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Implementation | Purpose |
+|---------|---------------|---------|
+| **Rating prompt** | `SKStoreReviewController.requestReview(in:)` | Request App Store ratings |
+| **SwiftUI review** | `@Environment(\.requestReview)` | Request review in SwiftUI (iOS 16+) |
+| **Universal Links** | Associated Domains + URL handling | Deep linking from web |
+| **Custom URL schemes** | `myapp://action/parameter` | Deep linking between apps |
+| **ATT permission** | `ATTrackingManager.requestTrackingAuthorization` | Request tracking permission |
+| **Install tracking** | First launch detection + attribution | Track user acquisition source |
+| **App Clips** | `SKOverlay` for full app promotion | Lightweight app experiences |
+| **Onboarding** | `@AppStorage("hasCompletedOnboarding")` | First-run experience |
+| **A/B testing** | `FeatureFlagManager` with random variant assignment | Test feature variations |
+| **ASO metadata** | App Store Connect configuration | Optimize discoverability |
+
+## Official Resources
+
+- [Apple Documentation: SKStoreReviewController](https://developer.apple.com/documentation/storekit/skstorereviewcontroller)
+- [Apple Documentation: Universal Links](https://developer.apple.com/documentation/xcode/allowing-apps-and-websites-to-link-to-your-content)
+- [Apple Documentation: App Tracking Transparency](https://developer.apple.com/documentation/apptrackingtransparency)
+- [Apple Documentation: App Clips](https://developer.apple.com/documentation/app_clips)
+- [App Store Connect Help: App Analytics](https://developer.apple.com/help/app-store-connect/view-app-analytics/)

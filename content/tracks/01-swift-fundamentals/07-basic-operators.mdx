@@ -1,0 +1,428 @@
+---
+title: "Basic Operators"
+description: "Arithmetic, comparison, logical, and ternary operators"
+sectionId: "1.3-operators-strings"
+sectionTitle: "Operators & Strings"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Basic Operators
+
+Operators are symbols that perform operations on values and variables. In Swift, operators work much like they do in other languages, but with some distinctive features that make your code safer and more expressive. Understanding Swift's operator system is essential because you'll use them constantly—from simple arithmetic to complex logical conditions.
+
+Swift operators are type-safe, meaning the compiler catches many errors at compile time rather than runtime. This article covers the fundamental operators you'll use daily: arithmetic, comparison, logical, and ternary operators.
+
+## Arithmetic Operators
+
+Arithmetic operators perform mathematical calculations. Swift supports the standard operators you'd expect, with some safety features built in.
+
+### Basic Arithmetic
+
+```swift
+let sum = 5 + 3          // 8
+let difference = 10 - 4   // 6
+let product = 4 * 3       // 12
+let quotient = 15 / 3     // 5
+let remainder = 17 % 5    // 2 (remainder operator)
+```
+
+### Important Differences from Other Languages
+
+Unlike some languages, Swift's arithmetic operators **do not allow value overflow by default**. This prevents silent bugs:
+
+```swift
+var willOverflow: Int8 = 127
+// willOverflow + 1  // This crashes with an overflow error
+
+// If you need overflow behavior, use the overflow operators:
+let (result, overflowed) = willOverflow.addingReportingOverflow(1)
+```
+
+### Integer vs. Floating-Point Division
+
+Division behavior depends on the operand types:
+
+```swift
+let integerDivision = 10 / 3        // 3 (truncates decimal)
+let floatingDivision = 10.0 / 3.0   // 3.333...
+let mixedDivision = 10.0 / 3        // 3.333... (promotes to Double)
+```
+
+**Common Mistake:** Forgetting that integer division truncates can lead to unexpected results:
+
+```swift
+let percentage = 3 / 10 * 100  // 0, not 30!
+// Fix: Use floating-point
+let correctPercentage = 3.0 / 10.0 * 100  // 30.0
+```
+
+### Unary Operators
+
+Unary operators work with a single value:
+
+```swift
+let positive = 5
+let negative = -positive  // -5
+let alsoPositive = -negative  // 5
+
+var counter = 0
+let plusResult = +counter  // Unary plus (rarely used, doesn't change value)
+```
+
+### Compound Assignment Operators
+
+These combine an operation with assignment:
+
+```swift
+var value = 10
+value += 5   // value is now 15 (equivalent to: value = value + 5)
+value -= 3   // value is now 12
+value *= 2   // value is now 24
+value /= 4   // value is now 6
+value %= 4   // value is now 2
+```
+
+**Important:** Compound assignment operators don't return a value in Swift:
+
+```swift
+var a = 5
+// let b = (a += 1)  // Error: compound assignments don't return values
+```
+
+## Comparison Operators
+
+Comparison operators compare two values and return a Boolean (`true` or `false`).
+
+```swift
+let a = 5
+let b = 10
+
+a == b   // false (equal to)
+a != b   // true (not equal to)
+a > b    // false (greater than)
+a < b    // true (less than)
+a >= b   // false (greater than or equal to)
+a <= b   // true (less than or equal to)
+```
+
+### Comparing Strings
+
+Swift can compare strings lexicographically:
+
+```swift
+"apple" < "banana"   // true
+"Apple" < "apple"    // true (uppercase letters come before lowercase in Unicode)
+"hello" == "hello"   // true
+```
+
+### Tuple Comparison
+
+Swift can compare tuples element by element from left to right:
+
+```swift
+(1, "apple") < (2, "banana")   // true (1 < 2)
+(3, "apple") < (3, "banana")   // true (3 == 3, so compare "apple" < "banana")
+(4, "dog") == (4, "dog")       // true
+
+// Note: tuples must have the same type and number of elements
+```
+
+**Limitation:** Swift can only compare tuples with fewer than seven elements out of the box.
+
+### Identity Operators
+
+For reference types (classes), you can check if two variables refer to the same instance:
+
+```swift
+class Person {
+    var name: String
+    init(name: String) { self.name = name }
+}
+
+let person1 = Person(name: "Alice")
+let person2 = Person(name: "Alice")
+let person3 = person1
+
+person1 === person3  // true (same instance)
+person1 === person2  // false (different instances)
+person1 !== person2  // true (not the same instance)
+```
+
+## Logical Operators
+
+Logical operators work with Boolean values to create complex conditions.
+
+### Logical NOT (`!`)
+
+Inverts a Boolean value:
+
+```swift
+let isEnabled = true
+let isDisabled = !isEnabled  // false
+
+if !isEnabled {
+    print("Feature is disabled")
+}
+```
+
+### Logical AND (`&&`)
+
+Returns `true` only if both operands are `true`:
+
+```swift
+let temperature = 25
+let isSunny = true
+
+if temperature > 20 && isSunny {
+    print("Perfect weather!")  // This prints
+}
+
+// Short-circuit evaluation: second condition isn't evaluated if first is false
+let result = false && expensiveFunction()  // expensiveFunction() never called
+```
+
+### Logical OR (`||`)
+
+Returns `true` if at least one operand is `true`:
+
+```swift
+let isWeekend = false
+let isHoliday = true
+
+if isWeekend || isHoliday {
+    print("No work today!")  // This prints
+}
+
+// Short-circuit evaluation: second condition isn't evaluated if first is true
+let result = true || expensiveFunction()  // expensiveFunction() never called
+```
+
+### Combining Logical Operators
+
+```swift
+let age = 25
+let hasTicket = true
+let isVIP = false
+
+if (age >= 18 && hasTicket) || isVIP {
+    print("Entry granted")
+}
+```
+
+**Best Practice:** Use parentheses to make complex conditions clear, even when not strictly required:
+
+```swift
+// Less clear
+if a && b || c && d { }
+
+// More clear
+if (a && b) || (c && d) { }
+```
+
+## Ternary Conditional Operator
+
+The ternary operator is a shorthand for simple if-else statements. It has the form: `condition ? valueIfTrue : valueIfFalse`
+
+```swift
+let age = 18
+let status = age >= 18 ? "Adult" : "Minor"
+// Equivalent to:
+// let status: String
+// if age >= 18 {
+//     status = "Adult"
+// } else {
+//     status = "Minor"
+// }
+```
+
+### Practical Examples
+
+```swift
+// Setting UI properties
+let textColor = isDarkMode ? .white : .black
+
+// Default values
+let username = user.name ?? "Guest"  // Actually the nil-coalescing operator
+let displayName = user.name.isEmpty ? "Anonymous" : user.name
+
+// Nested ternary (use sparingly!)
+let classification = age < 13 ? "Child" : age < 18 ? "Teen" : "Adult"
+
+// Better: use if-else for complex logic
+let betterClassification: String
+if age < 13 {
+    betterClassification = "Child"
+} else if age < 18 {
+    betterClassification = "Teen"
+} else {
+    betterClassification = "Adult"
+}
+```
+
+**Common Mistake:** Overusing the ternary operator for complex conditions reduces readability. If you're nesting multiple ternary operators, use an if-else statement instead.
+
+## Range Operators
+
+Swift includes specialized operators for creating ranges, commonly used with loops and collections.
+
+### Closed Range Operator (`...`)
+
+Creates a range that includes both endpoints:
+
+```swift
+for number in 1...5 {
+    print(number)  // Prints 1, 2, 3, 4, 5
+}
+
+let range = 0...10  // Includes both 0 and 10
+```
+
+### Half-Open Range Operator (`..<`)
+
+Creates a range that excludes the upper bound:
+
+```swift
+let array = ["a", "b", "c", "d"]
+for index in 0..<array.count {
+    print(array[index])  // Iterates through all elements
+}
+
+let range = 0..<5  // Includes 0, 1, 2, 3, 4 (but not 5)
+```
+
+### One-Sided Ranges
+
+You can omit one endpoint:
+
+```swift
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+let firstFive = numbers[..<5]      // [1, 2, 3, 4, 5]
+let lastFive = numbers[5...]       // [6, 7, 8, 9, 10]
+let exceptLast = numbers[..<9]     // All elements except the last
+
+// Careful: one-sided ranges can be infinite
+for number in 1... {
+    if number > 5 { break }
+    print(number)  // Must include a break condition!
+}
+```
+
+## Nil-Coalescing Operator
+
+The nil-coalescing operator (`??`) provides a default value when unwrapping an optional:
+
+```swift
+let optionalName: String? = nil
+let greeting = "Hello, " + (optionalName ?? "Guest")  // "Hello, Guest"
+
+// Equivalent to:
+let greeting2 = "Hello, " + (optionalName != nil ? optionalName! : "Guest")
+```
+
+This is technically not part of the basic operators, but it's used so frequently with Swift's optional system that it's worth mentioning here.
+
+## Operator Precedence and Associativity
+
+Swift operators have defined precedence levels that determine evaluation order:
+
+```swift
+let result = 2 + 3 * 4  // 14, not 20 (multiplication before addition)
+
+// Use parentheses to override precedence
+let different = (2 + 3) * 4  // 20
+```
+
+**Common precedence order (highest to lowest):**
+1. Unary operators (`!`, `-`, `+`)
+2. Multiplication, division, remainder (`*`, `/`, `%`)
+3. Addition, subtraction (`+`, `-`)
+4. Range operators (`...`, `..<`)
+5. Comparison operators (`<`, `>`, `<=`, `>=`, `==`, `!=`)
+6. Logical AND (`&&`)
+7. Logical OR (`||`)
+8. Ternary conditional (`? :`)
+9. Assignment operators (`=`, `+=`, etc.)
+
+[Full precedence documentation](https://developer.apple.com/documentation/swift/operator-declarations) is available in Apple's Swift Language Guide.
+
+## Common Pitfalls and Edge Cases
+
+### Integer Division by Zero
+
+```swift
+// let crash = 10 / 0  // Runtime error: Division by zero
+```
+
+Always validate divisors when working with user input or calculations.
+
+### Floating-Point Precision
+
+```swift
+let a = 0.1 + 0.2
+print(a == 0.3)  // false! (floating-point precision issue)
+print(a)         // 0.30000000000000004
+
+// For currency or precise calculations, use Decimal
+let precise = Decimal(0.1) + Decimal(0.2)  // Exactly 0.3
+```
+
+### Comparing Optionals
+
+```swift
+let optionalInt: Int? = 5
+// let comparison = optionalInt > 3  // Error: optional not unwrapped
+
+// Correct approaches:
+if let value = optionalInt, value > 3 {
+    print("Greater than 3")
+}
+
+// Or compare optionals directly (since Swift 5.1)
+if optionalInt ?? 0 > 3 {
+    print("Greater than 3")
+}
+```
+
+### String Comparison Gotchas
+
+```swift
+let emoji1 = "👨‍👩‍👧‍👦"
+let emoji2 = "👨‍👩‍👧‍👦"
+print(emoji1 == emoji2)  // May be true or false depending on Unicode composition
+
+// For user-facing comparisons, consider:
+emoji1.compare(emoji2, options: .literal) == .orderedSame
+```
+
+## Summary Table
+
+| Operator Category | Operators | Example | Result |
+|------------------|-----------|---------|--------|
+| **Arithmetic** | `+`, `-`, `*`, `/`, `%` | `10 + 5` | `15` |
+| **Unary** | `-`, `+`, `!` | `-10` | `-10` |
+| **Compound Assignment** | `+=`, `-=`, `*=`, `/=`, `%=` | `a += 5` | Adds 5 to `a` |
+| **Comparison** | `==`, `!=`, `>`, `<`, `>=`, `<=` | `5 > 3` | `true` |
+| **Identity** | `===`, `!==` | `obj1 === obj2` | `false` |
+| **Logical NOT** | `!` | `!true` | `false` |
+| **Logical AND** | `&&` | `true && false` | `false` |
+| **Logical OR** | `||` | `true \|\| false` | `true` |
+| **Ternary** | `? :` | `age >= 18 ? "Adult" : "Minor"` | `"Adult"` or `"Minor"` |
+| **Closed Range** | `...` | `1...5` | Range: 1, 2, 3, 4, 5 |
+| **Half-Open Range** | `..<` | `1..<5` | Range: 1, 2, 3, 4 |
+| **Nil-Coalescing** | `??` | `name ?? "Guest"` | `name` or `"Guest"` |
+
+## Key Takeaways
+
+- Swift operators are **type-safe** and prevent many common errors at compile time
+- **Integer division** truncates; use floating-point types for decimal results
+- **Comparison operators** work with many types, including strings and tuples
+- **Logical operators** use short-circuit evaluation for efficiency
+- Use the **ternary operator** for simple conditions, but prefer if-else for complex logic
+- **Range operators** are powerful for iteration and subscripting
+- Always consider **operator precedence** or use parentheses for clarity
+
+For more details, refer to Apple's [Basic Operators documentation](https://docs.swift.org/swift-book/LanguageGuide/BasicOperators.html) in the Swift Language Guide.

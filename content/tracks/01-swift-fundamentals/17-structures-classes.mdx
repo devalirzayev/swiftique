@@ -1,0 +1,574 @@
+---
+title: "Structures & Classes"
+description: "Value vs reference types, properties, methods, and initializers"
+sectionId: "1.7-enums-structs-classes"
+sectionTitle: "Enumerations, Structures & Classes"
+order: 17
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Structures & Classes in Swift
+
+Structures and classes are the fundamental building blocks for organizing code in Swift. While they share many similarities, understanding their key difference—value semantics versus reference semantics—is crucial for writing correct, performant Swift code.
+
+## Why This Matters
+
+In Swift, choosing between a struct and a class isn't arbitrary. This choice affects:
+
+- **Memory management**: How your data is copied and shared
+- **Performance**: When and how copies are made
+- **Safety**: Preventing unintended side effects from shared mutable state
+- **Design**: How you architect your application
+
+Apple's Swift standard library uses structs for most data types (Array, Dictionary, String, Int), while UIKit and SwiftUI use classes for view controllers and reference-based components.
+
+## The Fundamental Difference: Value vs Reference Types
+
+### Value Types (Structures)
+
+Structures are **value types**. When you assign a struct to a new variable or pass it to a function, Swift creates an independent copy.
+
+```swift
+struct Point {
+    var x: Int
+    var y: Int
+}
+
+var point1 = Point(x: 10, y: 20)
+var point2 = point1  // Creates a copy
+
+point2.x = 30
+
+print(point1.x)  // Prints: 10 (unchanged)
+print(point2.x)  // Prints: 30
+```
+
+### Reference Types (Classes)
+
+Classes are **reference types**. When you assign a class instance to a new variable, both variables reference the same instance in memory.
+
+```swift
+class Person {
+    var name: String
+    var age: Int
+    
+    init(name: String, age: Int) {
+        self.name = name
+        self.age = age
+    }
+}
+
+let person1 = Person(name: "Alice", age: 30)
+let person2 = person1  // Both reference the same instance
+
+person2.age = 31
+
+print(person1.age)  // Prints: 31 (changed!)
+print(person2.age)  // Prints: 31
+```
+
+## Defining Structures and Classes
+
+The syntax is nearly identical:
+
+```swift
+struct Resolution {
+    var width: Int
+    var height: Int
+}
+
+class VideoMode {
+    var resolution = Resolution(width: 1920, height: 1080)
+    var frameRate: Double = 0.0
+    var name: String?
+}
+```
+
+## Properties
+
+### Stored Properties
+
+Both structs and classes can have stored properties that hold values:
+
+```swift
+struct Employee {
+    var name: String
+    var id: Int
+    let department: String  // Constant property
+}
+
+class BankAccount {
+    var balance: Double
+    let accountNumber: String
+    
+    init(accountNumber: String, initialBalance: Double) {
+        self.accountNumber = accountNumber
+        self.balance = initialBalance
+    }
+}
+```
+
+### Computed Properties
+
+Properties that calculate a value rather than store one:
+
+```swift
+struct Rectangle {
+    var width: Double
+    var height: Double
+    
+    var area: Double {
+        return width * height
+    }
+    
+    var perimeter: Double {
+        get {
+            return 2 * (width + height)
+        }
+    }
+}
+
+let rect = Rectangle(width: 10, height: 5)
+print(rect.area)       // Prints: 50.0
+print(rect.perimeter)  // Prints: 30.0
+```
+
+### Property Observers
+
+Monitor changes to property values:
+
+```swift
+struct StepCounter {
+    var totalSteps: Int = 0 {
+        willSet {
+            print("About to set totalSteps to \(newValue)")
+        }
+        didSet {
+            if totalSteps > oldValue {
+                print("Added \(totalSteps - oldValue) steps")
+            }
+        }
+    }
+}
+
+var counter = StepCounter()
+counter.totalSteps = 100
+// Prints: "About to set totalSteps to 100"
+// Prints: "Added 100 steps"
+```
+
+### Lazy Properties
+
+Properties that aren't calculated until first access (classes and structs):
+
+```swift
+class DataManager {
+    lazy var importer = DataImporter()  // Expensive to create
+    var data: [String] = []
+}
+
+class DataImporter {
+    var filename = "data.txt"
+    init() {
+        print("DataImporter initialized")
+    }
+}
+
+let manager = DataManager()
+manager.data.append("Some data")
+// DataImporter not yet initialized
+
+print(manager.importer.filename)
+// Now prints: "DataImporter initialized"
+// Then prints: "data.txt"
+```
+
+**Important**: Lazy properties must be declared with `var` because their initial value might not be retrieved until after initialization completes.
+
+## Methods
+
+### Instance Methods
+
+Functions that belong to instances of a type:
+
+```swift
+struct Counter {
+    var count = 0
+    
+    mutating func increment() {
+        count += 1
+    }
+    
+    mutating func increment(by amount: Int) {
+        count += amount
+    }
+    
+    func describe() -> String {
+        return "Count is \(count)"
+    }
+}
+
+var counter = Counter()
+counter.increment()
+counter.increment(by: 5)
+print(counter.describe())  // Prints: "Count is 6"
+```
+
+**Critical**: Methods in structs that modify properties must be marked `mutating`. Classes don't need this keyword.
+
+```swift
+class MutableCounter {
+    var count = 0
+    
+    func increment() {  // No 'mutating' needed
+        count += 1
+    }
+}
+```
+
+### Type Methods
+
+Methods called on the type itself, not instances:
+
+```swift
+struct Math {
+    static func square(_ number: Int) -> Int {
+        return number * number
+    }
+}
+
+print(Math.square(5))  // Prints: 25
+
+class SomeClass {
+    class func typeMethod() {
+        print("Called on the class")
+    }
+}
+
+SomeClass.typeMethod()
+```
+
+**Note**: Use `static` for structs and final classes. Use `class` if you want subclasses to override the method.
+
+## Initializers
+
+### Default Initializers
+
+Structs get a memberwise initializer for free:
+
+```swift
+struct Size {
+    var width: Double
+    var height: Double
+}
+
+let size = Size(width: 10.0, height: 20.0)  // Memberwise initializer
+```
+
+Classes with default property values get a default initializer:
+
+```swift
+class ShoppingCart {
+    var items: [String] = []
+    // Can use: let cart = ShoppingCart()
+}
+```
+
+### Custom Initializers
+
+Define your own initialization logic:
+
+```swift
+struct Celsius {
+    var temperatureInCelsius: Double
+    
+    init(fromFahrenheit fahrenheit: Double) {
+        temperatureInCelsius = (fahrenheit - 32.0) / 1.8
+    }
+    
+    init(fromKelvin kelvin: Double) {
+        temperatureInCelsius = kelvin - 273.15
+    }
+}
+
+let freezing = Celsius(fromFahrenheit: 32.0)
+print(freezing.temperatureInCelsius)  // Prints: 0.0
+```
+
+**Important**: When you define a custom initializer for a struct, you lose the automatic memberwise initializer unless you define it explicitly.
+
+### Class Initializers and Inheritance
+
+Classes have designated and convenience initializers:
+
+```swift
+class Vehicle {
+    var numberOfWheels: Int
+    
+    init(numberOfWheels: Int) {  // Designated initializer
+        self.numberOfWheels = numberOfWheels
+    }
+    
+    convenience init() {  // Convenience initializer
+        self.init(numberOfWheels: 4)
+    }
+}
+
+class Bicycle: Vehicle {
+    var hasBasket: Bool
+    
+    init(hasBasket: Bool) {
+        self.hasBasket = hasBasket
+        super.init(numberOfWheels: 2)  // Must call superclass initializer
+    }
+}
+```
+
+### Failable Initializers
+
+Return `nil` if initialization cannot succeed:
+
+```swift
+struct Temperature {
+    var celsius: Double
+    
+    init?(celsius: Double) {
+        guard celsius >= -273.15 else {
+            return nil  // Below absolute zero
+        }
+        self.celsius = celsius
+    }
+}
+
+if let temp = Temperature(celsius: -300) {
+    print(temp.celsius)
+} else {
+    print("Invalid temperature")  // This prints
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Expecting Value Semantics with Classes
+
+```swift
+class Counter {
+    var count = 0
+}
+
+func incrementCounter(_ counter: Counter) {
+    counter.count += 1
+}
+
+let myCounter = Counter()
+incrementCounter(myCounter)
+print(myCounter.count)  // Prints: 1 (modified!)
+```
+
+If you expect isolation, use a struct instead.
+
+### Mistake 2: Forgetting `mutating` for Structs
+
+```swift
+struct Point {
+    var x: Int
+    var y: Int
+    
+    func moveBy(x deltaX: Int, y deltaY: Int) {  // Error!
+        x += deltaX  // Cannot assign to property: 'self' is immutable
+        y += deltaY
+    }
+}
+```
+
+**Fix**: Add the `mutating` keyword:
+
+```swift
+mutating func moveBy(x deltaX: Int, y deltaY: Int) {
+    x += deltaX
+    y += deltaY
+}
+```
+
+### Mistake 3: Using `let` with Struct Instances
+
+```swift
+struct Point {
+    var x: Int
+    var y: Int
+    
+    mutating func moveRight() {
+        x += 1
+    }
+}
+
+let point = Point(x: 0, y: 0)
+point.moveRight()  // Error: Cannot use mutating member on immutable value
+```
+
+Even with a `mutating` method, you can't modify a struct declared with `let`. Use `var` instead.
+
+### Edge Case: Copy-on-Write Collections
+
+Swift's standard library collections (Array, Dictionary, Set) are structs but use copy-on-write optimization:
+
+```swift
+var array1 = [1, 2, 3]
+var array2 = array1  // No copy yet
+
+array2.append(4)     // Now a copy is made
+
+print(array1)  // [1, 2, 3]
+print(array2)  // [1, 2, 3, 4]
+```
+
+This gives you value semantics with reference type performance characteristics.
+
+### Edge Case: Identity vs Equality
+
+For classes, use identity operators to check if two variables reference the same instance:
+
+```swift
+class Person {
+    var name: String
+    init(name: String) { self.name = name }
+}
+
+let person1 = Person(name: "Alice")
+let person2 = person1
+let person3 = Person(name: "Alice")
+
+print(person1 === person2)  // true (same instance)
+print(person1 === person3)  // false (different instances)
+```
+
+Structs don't have identity—only equality (if they conform to `Equatable`).
+
+## When to Use Structs vs Classes
+
+### Use Structures When:
+
+- You want value semantics (independent copies)
+- Your data is relatively simple
+- You're modeling data that should be compared by value
+- You want thread safety by default (no shared mutable state)
+- You don't need inheritance
+
+**Examples**: Coordinates, sizes, ranges, colors, simple model objects
+
+### Use Classes When:
+
+- You need reference semantics (shared state)
+- You need inheritance
+- You need to interface with Objective-C APIs
+- You're modeling a single instance (singleton)
+- You need deinitializers for cleanup
+
+**Examples**: View controllers, network managers, file handles, UI components
+
+### Apple's Recommendation
+
+From the [Swift documentation](https://docs.swift.org/swift-book/LanguageGuide/ClassesAndStructures.html):
+
+> "As a general guideline, prefer structures because they're easier to reason about, and use classes when they're appropriate or necessary."
+
+## Property Wrappers (Modern Swift)
+
+A powerful feature for adding behavior to properties:
+
+```swift
+@propertyWrapper
+struct Capitalized {
+    private var value: String = ""
+    
+    var wrappedValue: String {
+        get { value }
+        set { value = newValue.capitalized }
+    }
+}
+
+struct User {
+    @Capitalized var firstName: String
+    @Capitalized var lastName: String
+}
+
+var user = User()
+user.firstName = "john"
+user.lastName = "doe"
+print("\(user.firstName) \(user.lastName)")  // Prints: "John Doe"
+```
+
+SwiftUI heavily uses property wrappers like `@State`, `@Binding`, and `@ObservedObject`.
+
+## Memory Management with Classes
+
+Classes use Automatic Reference Counting (ARC). Be aware of strong reference cycles:
+
+```swift
+class Person {
+    var name: String
+    var apartment: Apartment?
+    
+    init(name: String) { self.name = name }
+    deinit { print("\(name) is being deinitialized") }
+}
+
+class Apartment {
+    var number: Int
+    weak var tenant: Person?  // Use 'weak' to break cycle
+    
+    init(number: Int) { self.number = number }
+    deinit { print("Apartment #\(number) is being deinitialized") }
+}
+
+var john: Person? = Person(name: "John")
+var unit4A: Apartment? = Apartment(number: 4)
+
+john?.apartment = unit4A
+unit4A?.tenant = john
+
+john = nil
+unit4A = nil
+// Both deinitializers are called due to 'weak' reference
+```
+
+## Summary Table
+
+| Feature | Structures | Classes |
+|---------|-----------|---------|
+| **Type** | Value type | Reference type |
+| **Assignment behavior** | Creates independent copy | Shares same instance |
+| **Inheritance** | ❌ No | ✅ Yes |
+| **Type casting** | ❌ No | ✅ Yes |
+| **Deinitializers** | ❌ No | ✅ Yes |
+| **Reference counting** | ❌ No | ✅ Yes (ARC) |
+| **Memberwise initializer** | ✅ Automatic | ❌ Manual only |
+| **Mutating keyword** | ✅ Required for modifying methods | ❌ Not needed |
+| **`let` instances** | Completely immutable | Properties can change (if var) |
+| **Identity operators (===)** | ❌ Not applicable | ✅ Available |
+| **Thread safety** | ✅ Safer (no shared state) | ⚠️ Must manage manually |
+| **Performance** | ⚡ Fast for small types | ⚡ Fast for reference sharing |
+| **Conformance to protocols** | ✅ Yes | ✅ Yes |
+| **Memory location** | Usually stack (small types) | Heap |
+| **Recommended default** | ✅ Yes (per Apple) | Use when necessary |
+
+## Key Takeaways
+
+1. **Structs are copied, classes are shared**: This is the most important distinction
+2. **Use `mutating` for struct methods** that modify properties
+3. **Structs with `let` are completely immutable**, including all properties
+4. **Prefer structs** unless you specifically need class features
+5. **Watch for reference cycles** with classes (use `weak` or `unowned`)
+6. **Structs can't inherit**, but both can conform to protocols
+7. **Classes need explicit initializers** when properties lack default values
+8. **Property wrappers** work with both structs and classes
+
+## Further Reading
+
+- [Apple's Swift Language Guide: Structures and Classes](https://docs.swift.org/swift-book/LanguageGuide/ClassesAndStructures.html)
+- [Apple's Swift Language Guide: Properties](https://docs.swift.org/swift-book/LanguageGuide/Properties.html)
+- [Apple's Swift Language Guide: Methods](https://docs.swift.org/swift-book/LanguageGuide/Methods.html)
+- [Apple's Swift Language Guide: Initialization](https://docs.swift.org/swift-book/LanguageGuide/Initialization.html)
+- [WWDC Session: Building Better Apps with Value Types](https://developer.apple.com/videos/play/wwdc2015/414/)

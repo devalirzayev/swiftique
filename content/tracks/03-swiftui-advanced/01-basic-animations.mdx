@@ -1,0 +1,540 @@
+---
+title: "Basic Animations"
+description: "withAnimation, implicit animations, Animation curves and timing"
+sectionId: "3.1-animations"
+sectionTitle: "Animations & Transitions"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Basic Animations in SwiftUI
+
+Animation is one of SwiftUI's most powerful features, allowing you to bring your interfaces to life with minimal code. Unlike UIKit, where animations often require verbose setup, SwiftUI provides declarative APIs that automatically animate state changes. Understanding basic animations is essential for creating polished, professional iOS apps that feel responsive and intuitive to users.
+
+In this article, we'll explore SwiftUI's fundamental animation mechanisms: explicit animations with `withAnimation`, implicit animations using the `.animation()` modifier, and how to control animation behavior with curves and timing.
+
+## Why Animations Matter
+
+Animations serve several critical purposes in iOS development:
+
+- **Visual feedback**: Confirming that an action has occurred
+- **Continuity**: Helping users understand state changes
+- **Polish**: Making your app feel professional and well-crafted
+- **Guidance**: Drawing attention to important elements
+
+SwiftUI makes animation accessible by automatically interpolating between state changes. When a view property changes, SwiftUI can smoothly transition from the old value to the new one.
+
+## Understanding SwiftUI's Animation System
+
+SwiftUI animations work by observing changes to state variables and interpolating animatable properties. When a `@State`, `@Binding`, or other property wrapper changes, SwiftUI recomputes the view hierarchy. If an animation is active, it smoothly transitions rather than jumping instantly.
+
+Animatable properties include:
+
+- Position and size (`offset`, `frame`, `scaleEffect`)
+- Opacity
+- Colors
+- Rotation
+- Corner radius
+- Padding and spacing
+
+## Explicit Animations with withAnimation
+
+The `withAnimation` function is the most straightforward way to animate in SwiftUI. It wraps state changes and tells SwiftUI to animate any views that depend on those states.
+
+### Basic withAnimation Usage
+
+```swift
+import SwiftUI
+
+struct ExplicitAnimationExample: View {
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack {
+            Rectangle()
+                .fill(isExpanded ? Color.blue : Color.red)
+                .frame(width: isExpanded ? 200 : 100, height: 100)
+                .cornerRadius(isExpanded ? 50 : 10)
+            
+            Button("Toggle") {
+                withAnimation {
+                    isExpanded.toggle()
+                }
+            }
+        }
+    }
+}
+```
+
+In this example, when you tap the button, `withAnimation` wraps the state change. SwiftUI automatically animates the color, width, and corner radius changes.
+
+### Specifying Animation Types
+
+You can pass an `Animation` parameter to `withAnimation` to control the animation behavior:
+
+```swift
+struct CustomAnimationExample: View {
+    @State private var offset: CGFloat = 0
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 50, height: 50)
+                .offset(x: offset)
+            
+            HStack {
+                Button("Linear") {
+                    withAnimation(.linear(duration: 1.0)) {
+                        offset = offset == 0 ? 150 : 0
+                    }
+                }
+                
+                Button("Spring") {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                        offset = offset == 0 ? 150 : 0
+                    }
+                }
+                
+                Button("Ease In Out") {
+                    withAnimation(.easeInOut(duration: 1.0)) {
+                        offset = offset == 0 ? 150 : 0
+                    }
+                }
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Multiple State Changes
+
+`withAnimation` animates **all** state changes within its closure:
+
+```swift
+struct MultipleStateChanges: View {
+    @State private var scale: CGFloat = 1.0
+    @State private var rotation: Double = 0
+    @State private var opacity: Double = 1.0
+    
+    var body: some View {
+        VStack {
+            Image(systemName: "star.fill")
+                .font(.system(size: 80))
+                .scaleEffect(scale)
+                .rotationEffect(.degrees(rotation))
+                .opacity(opacity)
+            
+            Button("Animate All") {
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    scale = scale == 1.0 ? 1.5 : 1.0
+                    rotation = rotation == 0 ? 360 : 0
+                    opacity = opacity == 1.0 ? 0.3 : 1.0
+                }
+            }
+        }
+    }
+}
+```
+
+## Implicit Animations with .animation()
+
+The `.animation()` modifier attaches an animation to a specific view. When any animatable property of that view changes, it animates automatically—without needing `withAnimation`.
+
+### Basic Implicit Animation
+
+```swift
+struct ImplicitAnimationExample: View {
+    @State private var rotationAngle: Double = 0
+    
+    var body: some View {
+        VStack {
+            Rectangle()
+                .fill(Color.purple)
+                .frame(width: 100, height: 100)
+                .rotationEffect(.degrees(rotationAngle))
+                .animation(.easeInOut(duration: 0.5), value: rotationAngle)
+            
+            Button("Rotate") {
+                rotationAngle += 90
+            }
+        }
+    }
+}
+```
+
+**Important**: As of iOS 15+, you should use `.animation(_:value:)` instead of the deprecated `.animation(_:)`. The `value` parameter specifies which state variable should trigger the animation.
+
+### Why the value Parameter Matters
+
+The `value` parameter prevents unwanted animations. Consider this example:
+
+```swift
+struct ValueParameterExample: View {
+    @State private var color: Color = .red
+    @State private var size: CGFloat = 100
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            // Only animates when size changes
+            Circle()
+                .fill(color)
+                .frame(width: size, height: size)
+                .animation(.easeInOut, value: size)
+            
+            Button("Change Color (No Animation)") {
+                color = color == .red ? .blue : .red
+            }
+            
+            Button("Change Size (Animated)") {
+                size = size == 100 ? 200 : 100
+            }
+        }
+    }
+}
+```
+
+Without the `value` parameter, **both** color and size would animate. By specifying `value: size`, only size changes trigger animation.
+
+## Animation Curves and Timing
+
+SwiftUI provides several built-in animation curves that control how values change over time.
+
+### Linear Animations
+
+Linear animations change at a constant rate:
+
+```swift
+.animation(.linear(duration: 1.0), value: myState)
+```
+
+Use linear animations for continuous progress indicators or simple movements where acceleration isn't important.
+
+### Ease Animations
+
+Ease animations feel more natural by accelerating and/or decelerating:
+
+```swift
+// Starts slow, ends slow
+.animation(.easeInOut(duration: 0.5), value: myState)
+
+// Starts slow, ends fast
+.animation(.easeIn(duration: 0.5), value: myState)
+
+// Starts fast, ends slow
+.animation(.easeOut(duration: 0.5), value: myState)
+```
+
+These are excellent default choices for most UI transitions.
+
+### Spring Animations
+
+Spring animations simulate physical motion with bounce and overshoot:
+
+```swift
+struct SpringAnimationExample: View {
+    @State private var yPosition: CGFloat = 0
+    
+    var body: some View {
+        VStack {
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 60, height: 60)
+                .offset(y: yPosition)
+            
+            Spacer().frame(height: 200)
+            
+            HStack(spacing: 20) {
+                Button("Bouncy") {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.3)) {
+                        yPosition = yPosition == 0 ? -150 : 0
+                    }
+                }
+                
+                Button("Smooth") {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                        yPosition = yPosition == 0 ? -150 : 0
+                    }
+                }
+            }
+        }
+        .padding()
+    }
+}
+```
+
+**Spring parameters**:
+- `response`: How long the spring takes to complete (in seconds)
+- `dampingFraction`: How much bounce (0 = infinite bounce, 1 = no bounce)
+- `blendDuration`: How long to blend with other springs
+
+Spring animations feel particularly natural for interactive elements and gesture-driven animations.
+
+### Custom Timing Curves
+
+For precise control, use custom timing curves:
+
+```swift
+struct CustomTimingExample: View {
+    @State private var scale: CGFloat = 1.0
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.pink)
+                .frame(width: 100, height: 100)
+                .scaleEffect(scale)
+            
+            Button("Custom Timing") {
+                withAnimation(
+                    .timingCurve(0.2, 0.8, 0.2, 1.0, duration: 0.8)
+                ) {
+                    scale = scale == 1.0 ? 1.3 : 1.0
+                }
+            }
+        }
+    }
+}
+```
+
+The `.timingCurve()` parameters are control points for a cubic Bézier curve: `(x1, y1, x2, y2, duration)`.
+
+### Animation Modifiers
+
+You can modify animations with additional options:
+
+```swift
+struct AnimationModifiersExample: View {
+    @State private var opacity: Double = 1.0
+    
+    var body: some View {
+        VStack {
+            Text("Hello, Animation!")
+                .font(.title)
+                .opacity(opacity)
+            
+            Button("Animate") {
+                withAnimation(
+                    .easeInOut(duration: 0.5)
+                        .delay(0.2)
+                        .repeatCount(3, autoreverses: true)
+                ) {
+                    opacity = 0.2
+                }
+            }
+        }
+    }
+}
+```
+
+**Common modifiers**:
+- `.delay(_:)`: Wait before starting
+- `.speed(_:)`: Change playback speed (2.0 = twice as fast)
+- `.repeatCount(_:autoreverses:)`: Repeat the animation
+- `.repeatForever(autoreverses:)`: Loop indefinitely
+
+## Comparing withAnimation vs .animation()
+
+Understanding when to use each approach is crucial:
+
+### Use withAnimation when:
+- You want to animate multiple state changes together
+- You need precise control over when animation occurs
+- You're responding to user actions (button taps, gestures)
+- You want different animations for different actions
+
+### Use .animation() when:
+- You want a view to always animate when a specific property changes
+- You're building reusable components with consistent animation behavior
+- You want to isolate animation logic to specific views
+
+### Combined Example
+
+```swift
+struct CombinedAnimationExample: View {
+    @State private var isLiked = false
+    @State private var likeCount = 42
+    
+    var body: some View {
+        VStack {
+            // Implicit animation - always animates when isLiked changes
+            Image(systemName: isLiked ? "heart.fill" : "heart")
+                .font(.system(size: 60))
+                .foregroundColor(isLiked ? .red : .gray)
+                .scaleEffect(isLiked ? 1.2 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isLiked)
+            
+            Text("\(likeCount) likes")
+                .font(.headline)
+            
+            Button("Like") {
+                // Explicit animation for count change
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isLiked.toggle()
+                    likeCount += isLiked ? 1 : -1
+                }
+            }
+        }
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Animating Non-Animatable Properties
+
+Not all properties can be animated. For example, conditional view structures don't interpolate:
+
+```swift
+// ❌ This won't animate smoothly
+struct BadExample: View {
+    @State private var showCircle = true
+    
+    var body: some View {
+        VStack {
+            if showCircle {
+                Circle()
+            } else {
+                Rectangle()
+            }
+        }
+        .animation(.default, value: showCircle)
+    }
+}
+
+// ✅ Use opacity and overlay instead
+struct GoodExample: View {
+    @State private var showCircle = true
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .opacity(showCircle ? 1 : 0)
+            Rectangle()
+                .opacity(showCircle ? 0 : 1)
+        }
+        .animation(.default, value: showCircle)
+    }
+}
+```
+
+### Mistake 2: Over-Animating
+
+Animating every state change can make your UI feel sluggish:
+
+```swift
+// ❌ Animates unnecessarily
+struct OverAnimatedExample: View {
+    @State private var text = ""
+    
+    var body: some View {
+        TextField("Type here", text: $text)
+            .animation(.default, value: text) // Animates every keystroke!
+    }
+}
+
+// ✅ Only animate what needs animation
+struct BetterExample: View {
+    @State private var text = ""
+    @State private var isValid = true
+    
+    var body: some View {
+        TextField("Type here", text: $text)
+            .border(isValid ? Color.gray : Color.red)
+            .animation(.default, value: isValid) // Only animates border color
+    }
+}
+```
+
+### Mistake 3: Forgetting the value Parameter
+
+Using the old `.animation(_:)` modifier (without `value`) can cause unexpected animations:
+
+```swift
+// ⚠️ Deprecated and unpredictable
+.animation(.default)
+
+// ✅ Explicitly specify which value triggers animation
+.animation(.default, value: myState)
+```
+
+### Edge Case: Transaction Conflicts
+
+When multiple animations affect the same view, the last one wins:
+
+```swift
+struct AnimationConflictExample: View {
+    @State private var scale: CGFloat = 1.0
+    
+    var body: some View {
+        Circle()
+            .scaleEffect(scale)
+            .animation(.linear(duration: 2.0), value: scale) // This gets ignored
+            .animation(.spring(), value: scale) // This takes precedence
+            .onTapGesture {
+                scale = scale == 1.0 ? 1.5 : 1.0
+            }
+    }
+}
+```
+
+### Edge Case: Animation During Appear
+
+Views don't animate their initial appearance by default:
+
+```swift
+struct AppearAnimationExample: View {
+    @State private var isShowing = false
+    
+    var body: some View {
+        VStack {
+            if isShowing {
+                Text("Hello!")
+                    .transition(.scale)
+            }
+            
+            Button("Show") {
+                withAnimation {
+                    isShowing.toggle()
+                }
+            }
+        }
+        .onAppear {
+            // Animate after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation {
+                    isShowing = true
+                }
+            }
+        }
+    }
+}
+```
+
+Use `.transition()` modifiers to define how views animate in and out of the hierarchy.
+
+## Performance Considerations
+
+While SwiftUI animations are generally performant, keep these tips in mind:
+
+1. **Avoid animating large lists**: Animating every cell in a `List` can cause performance issues
+2. **Use `drawingGroup()`** for complex animations: This rasterizes the view for better performance
+
+```swift
+ComplexAnimatedView()
+    .drawingGroup() // Renders into an off-screen image
+```
+
+3. **Profile with Instruments**: Use the Core Animation instrument to identify bottlenecks
+
+## Official Documentation References
+
+For deeper exploration, refer to these Apple resources:
+
+- [Animation (SwiftUI)](https://developer.apple.com/documentation/swiftui/animation) - Official Animation struct documentation
+- [withAnimation(_:_:)](https://developer.apple.com/documentation/swiftui/withanimation(_:_:)) - Explicit animation function
+- [View Animations](https://developer.apple.com/documentation/swiftui/animations) - Overview of animation in SwiftUI
+- [WWDC 2023: Explore SwiftUI Animation](https://developer.apple.com/videos/play/wwdc2023/10156/) - Deep dive into modern animation APIs

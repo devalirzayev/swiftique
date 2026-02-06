@@ -1,0 +1,700 @@
+---
+title: "Properties & Methods"
+description: "Stored, computed, lazy properties, static methods, and subscripts"
+sectionId: "1.7-enums-structs-classes"
+sectionTitle: "Enumerations, Structures & Classes"
+order: 18
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Properties & Methods in Swift
+
+Properties and methods are the building blocks of types in Swift. They define what data your types hold and what operations they can perform. If you're coming from other languages, Swift's property system offers some unique features that go beyond simple field declarations—computed values, lazy initialization, and observation hooks give you powerful tools for managing state and behavior.
+
+Understanding these features is essential because they affect performance, memory usage, and how you structure your code. Let's break down each type with practical examples.
+
+## Stored Properties
+
+Stored properties are the simplest form—they store constant or variable values as part of an instance. Think of them as instance variables in other languages.
+
+```swift
+struct Person {
+    var name: String
+    var age: Int
+    let birthCountry: String  // Constant stored property
+}
+
+var john = Person(name: "John", age: 30, birthCountry: "USA")
+john.age = 31  // ✅ Can modify variable properties
+// john.birthCountry = "Canada"  // ❌ Error: Cannot modify constant property
+```
+
+### Default Values
+
+You can provide default values for stored properties to avoid requiring them in initializers:
+
+```swift
+struct Configuration {
+    var timeout: TimeInterval = 30.0
+    var retryCount: Int = 3
+    var enableLogging: Bool = false
+}
+
+let config = Configuration()  // Uses all defaults
+let customConfig = Configuration(timeout: 60.0)  // Override specific values
+```
+
+### Common Mistake: Optional vs. Default Values
+
+Beginners often make properties optional when a default value would be more appropriate:
+
+```swift
+// ❌ Unnecessarily optional
+struct User {
+    var preferences: [String: String]?
+}
+
+// ✅ Better: provide default empty dictionary
+struct User {
+    var preferences: [String: String] = [:]
+}
+```
+
+## Computed Properties
+
+Computed properties don't actually store values—they provide a getter and optional setter to retrieve and set other properties indirectly. They're calculated each time you access them.
+
+```swift
+struct Rectangle {
+    var width: Double
+    var height: Double
+    
+    // Read-only computed property
+    var area: Double {
+        return width * height
+    }
+    
+    // Read-write computed property
+    var perimeter: Double {
+        get {
+            return 2 * (width + height)
+        }
+        set {
+            // newValue is automatically provided
+            // Set width and height to maintain aspect ratio
+            let ratio = width / height
+            height = sqrt(newValue / (2 * (ratio + 1)))
+            width = ratio * height
+        }
+    }
+}
+
+var rect = Rectangle(width: 10, height: 5)
+print(rect.area)  // 50.0
+rect.perimeter = 40  // Adjusts width and height
+```
+
+### Shorthand for Read-Only Computed Properties
+
+When you only need a getter, you can omit the `get` keyword:
+
+```swift
+struct Circle {
+    var radius: Double
+    
+    var diameter: Double {
+        radius * 2  // Implicit return
+    }
+    
+    var circumference: Double {
+        2 * .pi * radius
+    }
+}
+```
+
+### When to Use Computed vs. Stored Properties
+
+- **Use stored properties** for data that needs to persist
+- **Use computed properties** when the value can be derived from other properties
+- **Consider performance**: computed properties recalculate every access
+
+```swift
+// ❌ Anti-pattern: storing derivable data
+struct Triangle {
+    var base: Double
+    var height: Double
+    var area: Double  // This can go out of sync!
+    
+    init(base: Double, height: Double) {
+        self.base = base
+        self.height = height
+        self.area = base * height / 2
+    }
+}
+
+// ✅ Better: compute it
+struct Triangle {
+    var base: Double
+    var height: Double
+    var area: Double {
+        base * height / 2
+    }
+}
+```
+
+## Lazy Stored Properties
+
+Lazy properties delay initialization until first access. They're useful for expensive operations or when initial values depend on external factors not available at initialization time.
+
+```swift
+class DataManager {
+    lazy var importer: DataImporter = {
+        // DataImporter is expensive to create
+        let importer = DataImporter()
+        importer.configure()
+        return importer()
+    }()
+    
+    var data: [String] = []
+}
+
+let manager = DataManager()
+// importer hasn't been created yet
+manager.data.append("Some data")
+// Still not created
+let importer = manager.importer  // NOW it's created
+```
+
+### Important Lazy Property Rules
+
+1. **Must use `var`**: Lazy properties can't be constants because their value isn't set until after initialization
+2. **Not thread-safe**: Multiple threads accessing a lazy property simultaneously may initialize it multiple times
+3. **Classes only (mostly)**: Lazy properties on structs require `mutating` access, limiting their usefulness
+
+```swift
+struct ImageProcessor {
+    lazy var filter: ComplexFilter = ComplexFilter()
+    
+    mutating func process(_ image: Image) -> Image {
+        // ❌ Requires `mutating` even just to read the lazy property
+        return filter.apply(to: image)
+    }
+}
+```
+
+### Practical Example: Lazy Loading in View Controllers
+
+```swift
+class ProfileViewController: UIViewController {
+    lazy var profileImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 50
+        return imageView
+    }()
+    
+    lazy var nameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 24, weight: .bold)
+        label.textAlignment = .center
+        return label
+    }()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Views are only created when added to hierarchy
+        view.addSubview(profileImageView)
+        view.addSubview(nameLabel)
+    }
+}
+```
+
+## Property Observers
+
+Swift provides two observers you can attach to stored properties: `willSet` (called before the value is stored) and `didSet` (called after).
+
+```swift
+class StepCounter {
+    var totalSteps: Int = 0 {
+        willSet {
+            print("About to set totalSteps to \(newValue)")
+        }
+        didSet {
+            if totalSteps > oldValue {
+                print("Added \(totalSteps - oldValue) steps")
+            }
+        }
+    }
+}
+
+let counter = StepCounter()
+counter.totalSteps = 100
+// About to set totalSteps to 100
+// Added 100 steps
+```
+
+### Practical Use Case: UI Updates
+
+```swift
+class ProductViewController: UIViewController {
+    var product: Product? {
+        didSet {
+            updateUI()
+        }
+    }
+    
+    @IBOutlet weak var titleLabel: UILabel!
+    @IBOutlet weak var priceLabel: UILabel!
+    
+    private func updateUI() {
+        guard let product = product else { return }
+        titleLabel.text = product.name
+        priceLabel.text = "$\(product.price)"
+    }
+}
+```
+
+### Edge Case: Observers Not Called
+
+Property observers are **not** called during initialization:
+
+```swift
+class Temperature {
+    var celsius: Double = 0.0 {
+        didSet {
+            print("Temperature changed to \(celsius)°C")
+        }
+    }
+    
+    init(celsius: Double) {
+        self.celsius = celsius  // didSet is NOT called
+    }
+}
+
+let temp = Temperature(celsius: 25.0)  // No print statement
+temp.celsius = 30.0  // Temperature changed to 30.0°C
+```
+
+## Type Properties (Static Properties)
+
+Type properties belong to the type itself, not to instances. Use `static` for value types, or `class` for class types when you want to allow overriding.
+
+```swift
+struct AppConfiguration {
+    static let apiVersion = "v2"
+    static var baseURL = "https://api.example.com"
+    
+    static func fullURL(for endpoint: String) -> String {
+        return "\(baseURL)/\(apiVersion)/\(endpoint)"
+    }
+}
+
+// Access without creating an instance
+let url = AppConfiguration.fullURL(for: "users")
+print(url)  // https://api.example.com/v2/users
+```
+
+### Static vs. Class
+
+In classes, use `class` instead of `static` when you want subclasses to be able to override:
+
+```swift
+class Vehicle {
+    class var numberOfWheels: Int {
+        return 4
+    }
+    
+    static let requiresLicense = true  // Cannot be overridden
+}
+
+class Motorcycle: Vehicle {
+    override class var numberOfWheels: Int {
+        return 2
+    }
+    
+    // ❌ Cannot override static property
+    // override static let requiresLicense = false
+}
+```
+
+### Common Pattern: Singleton
+
+```swift
+class NetworkManager {
+    static let shared = NetworkManager()
+    
+    private init() {
+        // Private initializer prevents creating other instances
+    }
+    
+    func fetchData() {
+        // Implementation
+    }
+}
+
+// Usage
+NetworkManager.shared.fetchData()
+```
+
+## Instance Methods
+
+Methods are functions that belong to a particular type. They can access and modify properties of their instance.
+
+```swift
+struct Counter {
+    var value: Int = 0
+    
+    mutating func increment() {
+        value += 1
+    }
+    
+    mutating func increment(by amount: Int) {
+        value += amount
+    }
+    
+    func description() -> String {
+        return "Count: \(value)"
+    }
+}
+
+var counter = Counter()
+counter.increment()
+counter.increment(by: 5)
+print(counter.description())  // Count: 6
+```
+
+### The `mutating` Keyword
+
+For value types (structs and enums), methods that modify properties must be marked `mutating`:
+
+```swift
+struct Point {
+    var x: Double
+    var y: Double
+    
+    mutating func moveBy(x deltaX: Double, y deltaY: Double) {
+        x += deltaX
+        y += deltaY
+    }
+    
+    // ❌ This won't compile without `mutating`
+    // func reset() {
+    //     x = 0
+    //     y = 0
+    // }
+}
+```
+
+**Important**: You cannot call mutating methods on constant instances:
+
+```swift
+let point = Point(x: 1.0, y: 1.0)
+// point.moveBy(x: 2.0, y: 3.0)  // ❌ Error: cannot use mutating member
+```
+
+## Type Methods (Static Methods)
+
+Type methods are called on the type itself, not on instances:
+
+```swift
+struct Math {
+    static func square(_ number: Double) -> Double {
+        return number * number
+    }
+    
+    static func cube(_ number: Double) -> Double {
+        return number * number * number
+    }
+}
+
+let result = Math.square(5.0)  // 25.0
+```
+
+### Accessing Type Properties from Type Methods
+
+```swift
+struct Player {
+    static var highScore: Int = 0
+    var score: Int = 0
+    
+    static func resetHighScore() {
+        highScore = 0  // Access type property directly
+    }
+    
+    mutating func finishGame() {
+        if score > Player.highScore {
+            Player.highScore = score  // Must use type name
+        }
+    }
+}
+```
+
+## Subscripts
+
+Subscripts provide shorthand syntax for accessing elements of a collection, list, or sequence. You've used them with arrays and dictionaries; now you can create your own.
+
+```swift
+struct TimesTable {
+    let multiplier: Int
+    
+    subscript(index: Int) -> Int {
+        return multiplier * index
+    }
+}
+
+let threeTimesTable = TimesTable(multiplier: 3)
+print(threeTimesTable[6])  // 18
+```
+
+### Multiple Subscript Parameters
+
+Subscripts can take multiple parameters, useful for matrix-like structures:
+
+```swift
+struct Matrix {
+    let rows: Int
+    let columns: Int
+    var grid: [Double]
+    
+    init(rows: Int, columns: Int) {
+        self.rows = rows
+        self.columns = columns
+        grid = Array(repeating: 0.0, count: rows * columns)
+    }
+    
+    subscript(row: Int, column: Int) -> Double {
+        get {
+            assert(indexIsValid(row: row, column: column), "Index out of range")
+            return grid[(row * columns) + column]
+        }
+        set {
+            assert(indexIsValid(row: row, column: column), "Index out of range")
+            grid[(row * columns) + column] = newValue
+        }
+    }
+    
+    private func indexIsValid(row: Int, column: Int) -> Bool {
+        return row >= 0 && row < rows && column >= 0 && column < columns
+    }
+}
+
+var matrix = Matrix(rows: 2, columns: 2)
+matrix[0, 1] = 1.5
+matrix[1, 0] = 3.2
+print(matrix[0, 1])  // 1.5
+```
+
+### Type Subscripts
+
+Like properties and methods, subscripts can also be type-level:
+
+```swift
+enum Planet: Int {
+    case mercury = 1, venus, earth, mars, jupiter, saturn, uranus, neptune
+    
+    static subscript(n: Int) -> Planet {
+        return Planet(rawValue: n)!
+    }
+}
+
+let earth = Planet[3]  // Planet.earth
+```
+
+### Subscript Options
+
+Subscripts support:
+- **Read-only** (getter only)
+- **Read-write** (getter and setter)
+- **Multiple parameters**
+- **Variadic parameters**
+- **Default parameter values**
+
+```swift
+struct LogStore {
+    private var logs: [String] = []
+    
+    // Read-only subscript with default parameter
+    subscript(recent last: Int = 10) -> [String] {
+        let start = max(0, logs.count - last)
+        return Array(logs[start...])
+    }
+    
+    mutating func add(_ log: String) {
+        logs.append(log)
+    }
+}
+
+var store = LogStore()
+store.add("Error 1")
+store.add("Error 2")
+let recentLogs = store[recent: 5]
+```
+
+## Property Wrappers
+
+Property wrappers (introduced in Swift 5.1) let you extract common property logic into a reusable type. SwiftUI uses these extensively with `@State`, `@Binding`, etc.
+
+```swift
+@propertyWrapper
+struct Capitalized {
+    private var value: String = ""
+    
+    var wrappedValue: String {
+        get { value }
+        set { value = newValue.capitalized }
+    }
+    
+    init(wrappedValue: String) {
+        self.value = wrappedValue.capitalized
+    }
+}
+
+struct User {
+    @Capitalized var firstName: String
+    @Capitalized var lastName: String
+}
+
+var user = User(firstName: "john", lastName: "doe")
+print(user.firstName)  // John
+user.firstName = "jane"
+print(user.firstName)  // Jane
+```
+
+### Practical Property Wrapper: UserDefaults
+
+```swift
+@propertyWrapper
+struct UserDefault<T> {
+    let key: String
+    let defaultValue: T
+    
+    var wrappedValue: T {
+        get {
+            UserDefaults.standard.object(forKey: key) as? T ?? defaultValue
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: key)
+        }
+    }
+}
+
+struct Settings {
+    @UserDefault(key: "hasSeenOnboarding", defaultValue: false)
+    static var hasSeenOnboarding: Bool
+    
+    @UserDefault(key: "username", defaultValue: "Guest")
+    static var username: String
+}
+
+// Usage
+if !Settings.hasSeenOnboarding {
+    // Show onboarding
+    Settings.hasSeenOnboarding = true
+}
+```
+
+## Common Mistakes and Best Practices
+
+### 1. Mutating Value Types from Methods
+
+```swift
+// ❌ Forgetting mutating keyword
+struct ShoppingCart {
+    var items: [String] = []
+    
+    func addItem(_ item: String) {  // Won't compile
+        // items.append(item)
+    }
+}
+
+// ✅ Correct
+struct ShoppingCart {
+    var items: [String] = []
+
+    mutating func addItem(_ item: String) {
+        items.append(item)
+    }
+}
+```
+
+### 2. Expensive Computed Properties
+
+```swift
+// ❌ Expensive work on every access
+struct DataProcessor {
+    var rawData: [Int]
+
+    var processedData: [Int] {
+        // O(n log n) every time you read this property!
+        return rawData.sorted().filter { $0 > 0 }
+    }
+}
+
+// ✅ Better: use lazy or cache the result
+class DataProcessor {
+    var rawData: [Int] {
+        didSet { _processedData = nil }
+    }
+
+    private var _processedData: [Int]?
+
+    var processedData: [Int] {
+        if let cached = _processedData { return cached }
+        let result = rawData.sorted().filter { $0 > 0 }
+        _processedData = result
+        return result
+    }
+
+    init(rawData: [Int]) {
+        self.rawData = rawData
+    }
+}
+```
+
+### 3. Property Observer Infinite Loops
+
+```swift
+// ❌ Potential infinite loop
+class Counter {
+    var value: Int = 0 {
+        didSet {
+            value = max(0, value) // This triggers didSet again!
+        }
+    }
+}
+
+// ✅ Safe: check before setting
+class Counter {
+    var value: Int = 0 {
+        didSet {
+            if value < 0 {
+                value = 0 // Only triggers didSet once more
+            }
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Feature | Keyword | Stored? | Use Case |
+|---------|---------|---------|----------|
+| **Stored property** | `var`/`let` | Yes | Persistent data |
+| **Computed property** | `var { get }` | No | Derived values |
+| **Lazy property** | `lazy var` | Yes (deferred) | Expensive initialization |
+| **Property observer** | `willSet`/`didSet` | Yes | React to changes |
+| **Type property** | `static`/`class` | Yes | Shared across instances |
+| **Instance method** | `func` | N/A | Operations on instances |
+| **Mutating method** | `mutating func` | N/A | Modify value type properties |
+| **Type method** | `static func` | N/A | Operations on the type |
+| **Subscript** | `subscript` | N/A | Index-based access |
+| **Property wrapper** | `@propertyWrapper` | Yes | Reusable property logic |
+
+## Official Resources
+
+- [Apple Documentation: Properties](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/properties/)
+- [Apple Documentation: Methods](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/methods/)
+- [Apple Documentation: Subscripts](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/subscripts/)

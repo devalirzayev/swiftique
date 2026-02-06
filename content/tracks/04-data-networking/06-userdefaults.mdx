@@ -1,0 +1,495 @@
+---
+title: "UserDefaults & AppStorage"
+description: "Simple key-value storage and SwiftUI integration"
+sectionId: "4.3-persistence"
+sectionTitle: "Data Persistence"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# UserDefaults & AppStorage: Simple Key-Value Storage for iOS Apps
+
+UserDefaults is Apple's built-in mechanism for storing small amounts of user preferences and app settings. Think of it as a lightweight, persistent dictionary that survives app launches. AppStorage brings UserDefaults into SwiftUI with automatic UI updates when values change.
+
+You'll use these for things like: user preferences, app settings, simple flags (like "has user seen onboarding"), or any small piece of data that needs to persist between app launches. **Important**: This is not for large data, sensitive information (use Keychain instead), or complex data structures (use Core Data or file storage).
+
+## Understanding UserDefaults
+
+UserDefaults stores property list types: `String`, `Int`, `Double`, `Bool`, `Date`, `Data`, `Array`, and `Dictionary` (as long as their contents are also property list types).
+
+### Basic Usage
+
+```swift
+import Foundation
+
+// Writing values
+UserDefaults.standard.set("John Doe", forKey: "username")
+UserDefaults.standard.set(25, forKey: "userAge")
+UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
+
+// Reading values
+let username = UserDefaults.standard.string(forKey: "username") // Optional String
+let userAge = UserDefaults.standard.integer(forKey: "userAge") // Returns 0 if not found
+let hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding") // Returns false if not found
+```
+
+Notice that reading methods return different types depending on what you're retrieving. Some return optionals (`string(forKey:)`), while others return default values when the key doesn't exist (`integer(forKey:)` returns `0`, `bool(forKey:)` returns `false`).
+
+### Type-Specific Reading Methods
+
+```swift
+// Methods that return optionals (safer)
+UserDefaults.standard.string(forKey: "key") // String?
+UserDefaults.standard.array(forKey: "key") // [Any]?
+UserDefaults.standard.dictionary(forKey: "key") // [String: Any]?
+UserDefaults.standard.data(forKey: "key") // Data?
+UserDefaults.standard.url(forKey: "key") // URL?
+UserDefaults.standard.object(forKey: "key") // Any?
+
+// Methods that return non-optional values with defaults
+UserDefaults.standard.integer(forKey: "key") // Int (default: 0)
+UserDefaults.standard.float(forKey: "key") // Float (default: 0.0)
+UserDefaults.standard.double(forKey: "key") // Double (default: 0.0)
+UserDefaults.standard.bool(forKey: "key") // Bool (default: false)
+```
+
+### Removing Values
+
+```swift
+UserDefaults.standard.removeObject(forKey: "username")
+```
+
+### Checking If a Key Exists
+
+```swift
+// This is a common mistake: checking if an object exists
+if UserDefaults.standard.object(forKey: "hasSeenOnboarding") != nil {
+    // Key exists
+}
+
+// For booleans, this is problematic because bool(forKey:) returns false for both
+// "key doesn't exist" and "key exists with value false"
+let exists = UserDefaults.standard.object(forKey: "hasSeenOnboarding") != nil
+```
+
+## Using AppStorage in SwiftUI
+
+AppStorage is a property wrapper that automatically connects a SwiftUI view to UserDefaults. When the stored value changes, the view automatically updates.
+
+### Basic AppStorage
+
+```swift
+import SwiftUI
+
+struct SettingsView: View {
+    @AppStorage("isDarkMode") private var isDarkMode = false
+    @AppStorage("fontSize") private var fontSize = 16.0
+    @AppStorage("username") private var username = "Guest"
+    
+    var body: some View {
+        Form {
+            Toggle("Dark Mode", isOn: $isDarkMode)
+            
+            Slider(value: $fontSize, in: 12...24) {
+                Text("Font Size: \(fontSize, specifier: "%.0f")")
+            }
+            
+            TextField("Username", text: $username)
+        }
+    }
+}
+```
+
+The default value you provide (`false`, `16.0`, `"Guest"`) is used only if the key doesn't exist in UserDefaults yet. Once set, UserDefaults remembers the value across app launches.
+
+### AppStorage with Custom UserDefaults Stores
+
+```swift
+// Create a custom UserDefaults suite
+let customDefaults = UserDefaults(suiteName: "com.myapp.settings")
+
+struct ContentView: View {
+    @AppStorage("theme", store: customDefaults) private var theme = "light"
+    
+    var body: some View {
+        Text("Current theme: \(theme)")
+    }
+}
+```
+
+## Creating a Type-Safe Wrapper
+
+Raw string keys are error-prone. A type-safe wrapper improves code quality:
+
+```swift
+enum UserDefaultsKeys {
+    static let hasSeenOnboarding = "hasSeenOnboarding"
+    static let username = "username"
+    static let loginCount = "loginCount"
+}
+
+// Usage
+UserDefaults.standard.set(true, forKey: UserDefaultsKeys.hasSeenOnboarding)
+```
+
+Even better, create an extension with computed properties:
+
+```swift
+extension UserDefaults {
+    var hasSeenOnboarding: Bool {
+        get { bool(forKey: "hasSeenOnboarding") }
+        set { set(newValue, forKey: "hasSeenOnboarding") }
+    }
+    
+    var username: String? {
+        get { string(forKey: "username") }
+        set { set(newValue, forKey: "username") }
+    }
+    
+    var loginCount: Int {
+        get { integer(forKey: "loginCount") }
+        set { set(newValue, forKey: "loginCount") }
+    }
+}
+
+// Usage becomes cleaner
+UserDefaults.standard.hasSeenOnboarding = true
+UserDefaults.standard.loginCount += 1
+```
+
+## Storing Custom Types
+
+UserDefaults only stores property list types natively. For custom types, you need to encode them.
+
+### Using Codable
+
+```swift
+struct User: Codable {
+    let name: String
+    let email: String
+    let age: Int
+}
+
+extension UserDefaults {
+    func setEncodable<T: Encodable>(_ value: T, forKey key: String) {
+        if let encoded = try? JSONEncoder().encode(value) {
+            set(encoded, forKey: key)
+        }
+    }
+    
+    func decodable<T: Decodable>(forKey key: String, as type: T.Type) -> T? {
+        guard let data = data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+}
+
+// Usage
+let user = User(name: "Alice", email: "alice@example.com", age: 30)
+UserDefaults.standard.setEncodable(user, forKey: "currentUser")
+
+if let savedUser = UserDefaults.standard.decodable(forKey: "currentUser", as: User.self) {
+    print(savedUser.name) // "Alice"
+}
+```
+
+### AppStorage Limitations with Custom Types
+
+**Important**: `@AppStorage` only works with specific types: `Bool`, `Int`, `Double`, `String`, `URL`, and `Data`. You cannot directly use custom types with `@AppStorage`.
+
+For custom types in SwiftUI, use `@State` or `@StateObject` and manually sync with UserDefaults:
+
+```swift
+class UserSettings: ObservableObject {
+    @Published var user: User? {
+        didSet {
+            if let user = user {
+                UserDefaults.standard.setEncodable(user, forKey: "currentUser")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "currentUser")
+            }
+        }
+    }
+    
+    init() {
+        self.user = UserDefaults.standard.decodable(forKey: "currentUser", as: User.self)
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var settings = UserSettings()
+    
+    var body: some View {
+        if let user = settings.user {
+            Text("Welcome, \(user.name)")
+        }
+    }
+}
+```
+
+## AppStorage with RawRepresentable Enums
+
+You *can* use enums with `@AppStorage` if they conform to `RawRepresentable` with a supported raw value type:
+
+```swift
+enum Theme: String {
+    case light, dark, auto
+}
+
+struct SettingsView: View {
+    @AppStorage("selectedTheme") private var theme: Theme = .auto
+    
+    var body: some View {
+        Picker("Theme", selection: $theme) {
+            Text("Light").tag(Theme.light)
+            Text("Dark").tag(Theme.dark)
+            Text("Auto").tag(Theme.auto)
+        }
+    }
+}
+```
+
+## Synchronization and Performance
+
+### When Are Values Written?
+
+UserDefaults doesn't write immediately. It periodically flushes to disk automatically. To force immediate writing (rarely needed):
+
+```swift
+UserDefaults.standard.set(value, forKey: "key")
+UserDefaults.standard.synchronize() // Usually not necessary
+```
+
+Apple's documentation states: "This method is unnecessary and shouldn't be used." The system manages synchronization efficiently.
+
+### Performance Considerations
+
+```swift
+// Bad: Reading in a loop
+for _ in 0..<1000 {
+    let value = UserDefaults.standard.string(forKey: "someKey")
+    // Do something with value
+}
+
+// Better: Read once, cache locally
+let cachedValue = UserDefaults.standard.string(forKey: "someKey")
+for _ in 0..<1000 {
+    // Use cachedValue
+}
+```
+
+UserDefaults is fast for occasional reads/writes but not optimized for high-frequency access. Cache values if you're accessing them repeatedly.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Using Bool Without Checking Existence
+
+```swift
+// Problem: You can't distinguish between "key doesn't exist" and "key is false"
+let hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+// Returns false in both cases!
+
+// Solution: Check if the key exists first
+if UserDefaults.standard.object(forKey: "hasSeenOnboarding") != nil {
+    let value = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+    // Now you know the key exists
+} else {
+    // Key doesn't exist - this is first launch
+}
+```
+
+### Mistake 2: Storing Sensitive Data
+
+```swift
+// NEVER DO THIS
+UserDefaults.standard.set("mySecretPassword123", forKey: "password")
+
+// UserDefaults is stored in plain text. Use Keychain for sensitive data.
+```
+
+### Mistake 3: Storing Large Data
+
+```swift
+// Bad: Storing large images or files
+let largeImage = UIImage(named: "hugeImage")!
+let imageData = largeImage.pngData()
+UserDefaults.standard.set(imageData, forKey: "profileImage") // Don't do this
+
+// Better: Store file URL or use proper file storage
+let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+let imageURL = documentsPath.appendingPathComponent("profileImage.png")
+// Write file and store only the path/filename
+```
+
+Keep UserDefaults under a few hundred KB total. Apple doesn't specify a hard limit, but it's loaded entirely into memory.
+
+### Mistake 4: Type Mismatches
+
+```swift
+// Store as String
+UserDefaults.standard.set("42", forKey: "count")
+
+// Try to read as Int
+let count = UserDefaults.standard.integer(forKey: "count")
+// Returns 0, not 42! Type mismatch.
+
+// Always use the same type for reading and writing
+```
+
+### Mistake 5: Forgetting AppStorage Initializers
+
+```swift
+// This compiles but won't work as expected for Optionals
+@AppStorage("username") private var username: String? = nil
+// AppStorage doesn't support Optional types directly
+
+// Workaround: Use an empty string as sentinel
+@AppStorage("username") private var username: String = ""
+
+// Or check with separate flag
+@AppStorage("hasUsername") private var hasUsername: Bool = false
+@AppStorage("username") private var username: String = ""
+```
+
+## Testing with UserDefaults
+
+For unit tests, use a custom suite to avoid polluting real user defaults:
+
+```swift
+import XCTest
+
+class UserDefaultsTests: XCTestCase {
+    var testDefaults: UserDefaults!
+    
+    override func setUp() {
+        super.setUp()
+        // Create a temporary suite
+        testDefaults = UserDefaults(suiteName: "TestDefaults")!
+    }
+    
+    override func tearDown() {
+        // Clean up after tests
+        testDefaults.removePersistentDomain(forName: "TestDefaults")
+        super.tearDown()
+    }
+    
+    func testSavingUsername() {
+        testDefaults.set("TestUser", forKey: "username")
+        XCTAssertEqual(testDefaults.string(forKey: "username"), "TestUser")
+    }
+}
+```
+
+## App Groups and Shared Defaults
+
+To share UserDefaults between an app and its extensions (like widgets):
+
+```swift
+// In Xcode, enable App Groups capability for both targets
+// Use the same group identifier (e.g., "group.com.yourcompany.yourapp")
+
+let sharedDefaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")!
+sharedDefaults.set("Shared Value", forKey: "sharedKey")
+
+// In your widget
+let sharedDefaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")!
+let value = sharedDefaults.string(forKey: "sharedKey")
+```
+
+With AppStorage:
+
+```swift
+let sharedDefaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")
+
+struct ContentView: View {
+    @AppStorage("count", store: sharedDefaults) private var count = 0
+    
+    var body: some View {
+        Text("Count: \(count)")
+    }
+}
+```
+
+## Migration and Defaults Registration
+
+Register default values that exist before the user sets anything:
+
+```swift
+func registerDefaultSettings() {
+    let defaults: [String: Any] = [
+        "fontSize": 16,
+        "theme": "light",
+        "notificationsEnabled": true
+    ]
+    UserDefaults.standard.register(defaults: defaults)
+}
+
+// Call in AppDelegate or App initializer
+@main
+struct MyApp: App {
+    init() {
+        registerDefaultSettings()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+**Important difference**: `register(defaults:)` provides default values without actually writing to UserDefaults. These defaults are only used if no value exists. Once the user changes a setting, their value takes precedence.
+
+## Observing Changes
+
+Sometimes you need to react when UserDefaults values change outside your views:
+
+```swift
+class SettingsObserver {
+    init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(defaultsChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+    }
+    
+    @objc func defaultsChanged(notification: Notification) {
+        // Check specific keys and react
+        let theme = UserDefaults.standard.string(forKey: "theme")
+        print("Settings changed. Theme: \(theme ?? "none")")
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+}
+```
+
+In SwiftUI, `@AppStorage` handles this automatically for you.
+
+## Summary Table
+
+| Feature | UserDefaults | AppStorage |
+|---------|-------------|------------|
+| **Framework** | Foundation | SwiftUI |
+| **Syntax** | Imperative (set/get methods) | Declarative (property wrapper) |
+| **UI Updates** | Manual | Automatic |
+| **Supported Types** | Property list types (String, Int, Double, Bool, Date, Data, Array, Dictionary) | Bool, Int, Double, String, URL, Data, RawRepresentable with supported raw value |
+| **Optional Support** | Yes (some methods return optionals) | No (use sentinel values) |
+| **Custom Types** | Requires encoding (Codable + JSONEncoder) | Not directly supported (use RawRepresentable enums) |
+| **Shared Access** | `UserDefaults(suiteName:)` for App Groups | `store:` parameter for custom UserDefaults |
+| **Testing** | Custom suite (`UserDefaults(suiteName: "Test")`) | Inject custom store |
+| **Thread Safety** | Thread-safe for reads and writes | Main thread only (SwiftUI) |
+| **Default Registration** | `register(defaults:)` | Default value in property declaration |
+
+## Official Resources
+
+- [Apple Documentation: UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults)
+- [Apple Documentation: AppStorage](https://developer.apple.com/documentation/swiftui/appstorage)
+- [Apple Documentation: App Groups](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_application-groups)
+- [WWDC20: What's New in SwiftUI](https://developer.apple.com/videos/play/wwdc2020/10041/)
+- [Apple Documentation: Property List Types](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/PropertyLists/AboutPropertyLists/AboutPropertyLists.html)

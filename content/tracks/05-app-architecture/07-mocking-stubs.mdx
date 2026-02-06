@@ -1,0 +1,617 @@
+---
+title: "Mocking & Test Doubles"
+description: "Protocols for testing, mock objects, and test fixtures"
+sectionId: "5.2-testing"
+sectionTitle: "Testing"
+order: 7
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Mocking & Test Doubles in Swift
+
+## Introduction
+
+When testing your Swift code, you'll often encounter dependencies that make testing difficult or impractical. A network service might require an internet connection, a database might need complex setup, or a payment processor could charge real money. This is where **test doubles** come in.
+
+Test doubles are objects that stand in for real dependencies during testing. They let you isolate the code you're testing, control the behavior of dependencies, and verify interactions—all without dealing with the complexity or side effects of real implementations.
+
+**Why this matters for iOS development:**
+- Tests run faster (no network calls, file I/O, or database operations)
+- Tests become reliable (no flaky failures from external services)
+- You can test edge cases that are hard to reproduce (network errors, specific data states)
+- You can verify that your code interacts correctly with dependencies
+
+## Types of Test Doubles
+
+There are several types of test doubles, each serving a different purpose:
+
+### 1. Dummy
+
+An object passed around but never actually used. Often used to fill parameter lists.
+
+```swift
+class DummyLogger: Logger {
+    func log(_ message: String) {
+        // Does nothing
+    }
+}
+
+// Usage: We need to pass a logger, but this test doesn't care about logging
+func testUserCreation() {
+    let service = UserService(logger: DummyLogger())
+    // Test code...
+}
+```
+
+### 2. Stub
+
+Provides canned answers to calls made during the test. Doesn't respond to anything outside what's programmed for the test.
+
+```swift
+protocol WeatherService {
+    func fetchTemperature(completion: (Result<Double, Error>) -> Void)
+}
+
+class WeatherServiceStub: WeatherService {
+    var temperatureToReturn: Double = 72.0
+    
+    func fetchTemperature(completion: (Result<Double, Error>) -> Void) {
+        completion(.success(temperatureToReturn))
+    }
+}
+
+// Usage in test
+func testTemperatureDisplay() {
+    let stub = WeatherServiceStub()
+    stub.temperatureToReturn = 85.0
+    
+    let viewModel = WeatherViewModel(service: stub)
+    viewModel.loadWeather()
+    
+    XCTAssertEqual(viewModel.displayText, "85°F")
+}
+```
+
+### 3. Spy
+
+Records information about how it was called, allowing you to verify interactions.
+
+```swift
+protocol AnalyticsService {
+    func track(event: String, properties: [String: Any])
+}
+
+class AnalyticsServiceSpy: AnalyticsService {
+    var trackedEvents: [(event: String, properties: [String: Any])] = []
+    
+    func track(event: String, properties: [String: Any]) {
+        trackedEvents.append((event, properties))
+    }
+    
+    // Helper methods for assertions
+    func didTrack(event: String) -> Bool {
+        return trackedEvents.contains { $0.event == event }
+    }
+    
+    func trackCount(for event: String) -> Int {
+        return trackedEvents.filter { $0.event == event }.count
+    }
+}
+
+// Usage in test
+func testCheckoutTracking() {
+    let spy = AnalyticsServiceSpy()
+    let checkoutService = CheckoutService(analytics: spy)
+    
+    checkoutService.completePurchase(amount: 99.99)
+    
+    XCTAssertTrue(spy.didTrack(event: "purchase_completed"))
+    XCTAssertEqual(spy.trackCount(for: "purchase_completed"), 1)
+}
+```
+
+### 4. Mock
+
+Pre-programmed with expectations about calls it should receive. Fails the test if expectations aren't met.
+
+```swift
+class DatabaseMock: Database {
+    var expectedSaveCount = 0
+    var actualSaveCount = 0
+    var shouldFailOnSave = false
+    
+    func save(_ user: User) throws {
+        actualSaveCount += 1
+        
+        if shouldFailOnSave {
+            throw DatabaseError.saveFailed
+        }
+    }
+    
+    func verify() -> Bool {
+        return actualSaveCount == expectedSaveCount
+    }
+}
+
+// Usage in test
+func testUserRegistration() {
+    let mock = DatabaseMock()
+    mock.expectedSaveCount = 1
+    
+    let service = UserRegistrationService(database: mock)
+    service.register(username: "testuser", email: "test@example.com")
+    
+    XCTAssertTrue(mock.verify(), "Expected save to be called exactly once")
+}
+```
+
+### 5. Fake
+
+Has a working implementation, but takes shortcuts that make it unsuitable for production (e.g., an in-memory database).
+
+```swift
+class FakeUserRepository: UserRepository {
+    private var users: [String: User] = [:]
+    
+    func save(_ user: User) throws {
+        users[user.id] = user
+    }
+    
+    func fetch(id: String) -> User? {
+        return users[id]
+    }
+    
+    func delete(id: String) throws {
+        users.removeValue(forKey: id)
+    }
+    
+    func all() -> [User] {
+        return Array(users.values)
+    }
+}
+
+// Usage in test
+func testUserCRUDOperations() {
+    let repository = FakeUserRepository()
+    let user = User(id: "123", name: "Alice")
+    
+    try? repository.save(user)
+    let fetched = repository.fetch(id: "123")
+    
+    XCTAssertEqual(fetched?.name, "Alice")
+}
+```
+
+## Protocols: The Foundation of Testing in Swift
+
+Swift doesn't have the same runtime reflection capabilities as Objective-C, making it harder to create mocks dynamically. The solution is **protocol-oriented design**, which is idiomatic Swift and enables testability.
+
+### Designing for Testability
+
+```swift
+// ❌ Hard to test - concrete dependency
+class ViewController {
+    let networkManager = NetworkManager()
+    
+    func loadData() {
+        networkManager.fetch(url: "https://api.example.com") { data in
+            // Handle data
+        }
+    }
+}
+
+// ✅ Easy to test - protocol dependency
+protocol NetworkService {
+    func fetch(url: String, completion: @escaping (Result<Data, Error>) -> Void)
+}
+
+class NetworkManager: NetworkService {
+    func fetch(url: String, completion: @escaping (Result<Data, Error>) -> Void) {
+        // Real implementation
+    }
+}
+
+class ViewController {
+    let networkService: NetworkService
+    
+    init(networkService: NetworkService = NetworkManager()) {
+        self.networkService = networkService
+    }
+    
+    func loadData() {
+        networkService.fetch(url: "https://api.example.com") { result in
+            // Handle result
+        }
+    }
+}
+```
+
+### Dependency Injection Patterns
+
+```swift
+// 1. Initializer Injection (Preferred)
+class UserViewModel {
+    private let userService: UserService
+    
+    init(userService: UserService) {
+        self.userService = userService
+    }
+}
+
+// 2. Property Injection
+class UserViewModel {
+    var userService: UserService = ProductionUserService()
+}
+
+// 3. Default Parameter with Protocol
+class UserViewModel {
+    private let userService: UserService
+    
+    init(userService: UserService = ProductionUserService()) {
+        self.userService = userService
+    }
+}
+```
+
+## Practical Example: Testing a Login Feature
+
+Let's build a complete example showing how to use test doubles for a login feature.
+
+### Production Code
+
+```swift
+// Protocols
+protocol AuthenticationService {
+    func login(username: String, password: String) async throws -> User
+}
+
+protocol UserStorage {
+    func save(_ user: User)
+    func getCurrentUser() -> User?
+    func clearUser()
+}
+
+protocol LoginViewModelDelegate: AnyObject {
+    func loginDidSucceed(user: User)
+    func loginDidFail(error: String)
+}
+
+// Models
+struct User {
+    let id: String
+    let username: String
+    let email: String
+}
+
+enum AuthError: Error {
+    case invalidCredentials
+    case networkError
+}
+
+// View Model
+class LoginViewModel {
+    private let authService: AuthenticationService
+    private let storage: UserStorage
+    weak var delegate: LoginViewModelDelegate?
+    
+    private(set) var isLoading = false
+    
+    init(authService: AuthenticationService, storage: UserStorage) {
+        self.authService = authService
+        self.storage = storage
+    }
+    
+    func login(username: String, password: String) async {
+        guard !username.isEmpty, !password.isEmpty else {
+            delegate?.loginDidFail(error: "Username and password are required")
+            return
+        }
+        
+        isLoading = true
+        
+        do {
+            let user = try await authService.login(username: username, password: password)
+            storage.save(user)
+            isLoading = false
+            delegate?.loginDidSucceed(user: user)
+        } catch AuthError.invalidCredentials {
+            isLoading = false
+            delegate?.loginDidFail(error: "Invalid username or password")
+        } catch {
+            isLoading = false
+            delegate?.loginDidFail(error: "Something went wrong. Please try again.")
+        }
+    }
+}
+```
+
+### Test Doubles
+
+```swift
+// Stub for successful authentication
+class AuthenticationServiceStub: AuthenticationService {
+    var userToReturn: User?
+    var errorToThrow: Error?
+    var callCount = 0
+    
+    func login(username: String, password: String) async throws -> User {
+        callCount += 1
+        
+        if let error = errorToThrow {
+            throw error
+        }
+        
+        return userToReturn ?? User(id: "123", username: username, email: "\(username)@example.com")
+    }
+}
+
+// Spy for storage to verify save was called
+class UserStorageSpy: UserStorage {
+    var savedUser: User?
+    var saveCallCount = 0
+    var currentUser: User?
+    
+    func save(_ user: User) {
+        savedUser = user
+        saveCallCount += 1
+    }
+    
+    func getCurrentUser() -> User? {
+        return currentUser
+    }
+    
+    func clearUser() {
+        currentUser = nil
+        savedUser = nil
+    }
+}
+
+// Mock delegate to verify callbacks
+class LoginViewModelDelegateMock: LoginViewModelDelegate {
+    var successUser: User?
+    var failureError: String?
+    var successCallCount = 0
+    var failureCallCount = 0
+    
+    func loginDidSucceed(user: User) {
+        successUser = user
+        successCallCount += 1
+    }
+    
+    func loginDidFail(error: String) {
+        failureError = error
+        failureCallCount += 1
+    }
+}
+```
+
+### Test Cases
+
+```swift
+import XCTest
+
+class LoginViewModelTests: XCTestCase {
+    
+    var sut: LoginViewModel!
+    var authService: AuthenticationServiceStub!
+    var storage: UserStorageSpy!
+    var delegate: LoginViewModelDelegateMock!
+    
+    override func setUp() {
+        super.setUp()
+        authService = AuthenticationServiceStub()
+        storage = UserStorageSpy()
+        delegate = LoginViewModelDelegateMock()
+        sut = LoginViewModel(authService: authService, storage: storage)
+        sut.delegate = delegate
+    }
+    
+    override func tearDown() {
+        sut = nil
+        authService = nil
+        storage = nil
+        delegate = nil
+        super.tearDown()
+    }
+    
+    func testSuccessfulLogin() async {
+        // Given
+        let expectedUser = User(id: "456", username: "testuser", email: "test@example.com")
+        authService.userToReturn = expectedUser
+        
+        // When
+        await sut.login(username: "testuser", password: "password123")
+        
+        // Then
+        XCTAssertEqual(authService.callCount, 1)
+        XCTAssertEqual(storage.saveCallCount, 1)
+        XCTAssertEqual(storage.savedUser?.id, expectedUser.id)
+        XCTAssertEqual(delegate.successCallCount, 1)
+        XCTAssertEqual(delegate.successUser?.username, "testuser")
+        XCTAssertFalse(sut.isLoading)
+    }
+    
+    func testLoginWithInvalidCredentials() async {
+        // Given
+        authService.errorToThrow = AuthError.invalidCredentials
+        
+        // When
+        await sut.login(username: "testuser", password: "wrongpassword")
+        
+        // Then
+        XCTAssertEqual(delegate.failureCallCount, 1)
+        XCTAssertEqual(delegate.failureError, "Invalid username or password")
+        XCTAssertEqual(storage.saveCallCount, 0)
+        XCTAssertFalse(sut.isLoading)
+    }
+    
+    func testLoginWithNetworkError() async {
+        // Given
+        authService.errorToThrow = AuthError.networkError
+        
+        // When
+        await sut.login(username: "testuser", password: "password123")
+        
+        // Then
+        XCTAssertEqual(delegate.failureCallCount, 1)
+        XCTAssertEqual(delegate.failureError, "Something went wrong. Please try again.")
+    }
+    
+    func testLoginWithEmptyUsername() async {
+        // When
+        await sut.login(username: "", password: "password123")
+        
+        // Then
+        XCTAssertEqual(delegate.failureError, "Username and password are required")
+        XCTAssertEqual(authService.callCount, 0, "Should not call auth service with empty username")
+    }
+    
+    func testLoginWithEmptyPassword() async {
+        // When
+        await sut.login(username: "testuser", password: "")
+        
+        // Then
+        XCTAssertEqual(delegate.failureError, "Username and password are required")
+        XCTAssertEqual(authService.callCount, 0, "Should not call auth service with empty password")
+    }
+}
+```
+
+## Test Fixtures
+
+Test fixtures are the fixed state used as a baseline for running tests. They help you create consistent test data.
+
+```swift
+// Fixture Factory
+struct UserFixture {
+    static func makeUser(
+        id: String = UUID().uuidString,
+        username: String = "testuser",
+        email: String = "test@example.com"
+    ) -> User {
+        return User(id: id, username: username, email: email)
+    }
+    
+    static func makeUsers(count: Int) -> [User] {
+        return (0..<count).map { index in
+            makeUser(
+                id: "\(index)",
+                username: "user\(index)",
+                email: "user\(index)@example.com"
+            )
+        }
+    }
+    
+    static var adminUser: User {
+        return User(id: "admin-1", username: "admin", email: "admin@example.com")
+    }
+}
+
+// Usage in tests
+func testUserListDisplay() {
+    let users = UserFixture.makeUsers(count: 5)
+    let viewModel = UserListViewModel(users: users)
+    
+    XCTAssertEqual(viewModel.numberOfUsers, 5)
+}
+
+func testAdminFeatures() {
+    let admin = UserFixture.adminUser
+    let service = AdminService(currentUser: admin)
+    
+    XCTAssertTrue(service.hasAdminPrivileges)
+}
+```
+
+### Builder Pattern for Complex Fixtures
+
+```swift
+class UserBuilder {
+    private var id: String = UUID().uuidString
+    private var username: String = "testuser"
+    private var email: String = "test@example.com"
+    private var isVerified: Bool = false
+    private var createdAt: Date = Date()
+    
+    func withId(_ id: String) -> UserBuilder {
+        self.id = id
+        return self
+    }
+    
+    func withUsername(_ username: String) -> UserBuilder {
+        self.username = username
+        return self
+    }
+    
+    func withEmail(_ email: String) -> UserBuilder {
+        self.email = email
+        return self
+    }
+    
+    func verified() -> UserBuilder {
+        self.isVerified = true
+        return self
+    }
+    
+    func createdAt(_ date: Date) -> UserBuilder {
+        self.createdAt = date
+        return self
+    }
+
+    func build() -> User {
+        return User(
+            id: id,
+            username: username,
+            email: email,
+            isVerified: isVerified,
+            createdAt: createdAt
+        )
+    }
+}
+
+// Usage
+let user = UserBuilder()
+    .withUsername("alice")
+    .withEmail("alice@example.com")
+    .verified()
+    .build()
+```
+
+## Common Mistakes
+
+**Over-mocking.** Don't mock everything. Only mock external dependencies (network, database, file system). Use real objects for simple value types and utilities.
+
+**Mocking what you don't own.** Don't mock Apple's frameworks directly. Instead, wrap them in your own protocol and mock that protocol.
+
+**Coupling tests to implementation.** If your mock verifies that a method was called 3 times in a specific order, your test breaks when you refactor the implementation even if the behavior is correct.
+
+**Not resetting mocks between tests.** Always create fresh mocks in `setUp()` and nil them in `tearDown()` to prevent test pollution.
+
+**Using concrete types instead of protocols.** If your code depends on concrete classes, you can't inject mocks. Always depend on protocols for testability.
+
+## Summary Table
+
+| Test Double | Purpose | Records Calls | Returns Data | Validates Behavior |
+|-------------|---------|---------------|--------------|-------------------|
+| **Dummy** | Fill parameter lists | No | No | No |
+| **Stub** | Return predetermined data | No | Yes | No |
+| **Spy** | Record interactions for later verification | Yes | Optional | After the fact |
+| **Mock** | Verify expected interactions | Yes | Optional | During/after test |
+| **Fake** | Working simplified implementation | No | Yes (computed) | No |
+
+| Pattern | Purpose | Example |
+|---------|---------|---------|
+| **Protocol-based DI** | Enable mock injection | `init(service: UserService)` |
+| **Initializer injection** | Pass dependencies at creation | Preferred DI approach |
+| **Test fixtures** | Consistent test data | `UserFixture.makeUser()` |
+| **Builder pattern** | Complex test data construction | `UserBuilder().verified().build()` |
+
+## Official Resources
+
+- [Apple Documentation: XCTest](https://developer.apple.com/documentation/xctest)
+- [Apple Documentation: Testing Your Apps in Xcode](https://developer.apple.com/documentation/xcode/testing-your-apps-in-xcode)
+- [Martin Fowler: Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
+- [Swift by Sundell: Unit Testing in Swift](https://www.swiftbysundell.com/articles/unit-testing-in-swift/)
+- [WWDC23: Meet Swift Testing](https://developer.apple.com/videos/play/wwdc2023/10175/)

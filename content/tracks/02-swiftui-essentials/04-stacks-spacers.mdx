@@ -1,0 +1,519 @@
+---
+title: "Stacks & Spacers"
+description: "HStack, VStack, ZStack, Spacer for layout composition"
+sectionId: "2.2-layout"
+sectionTitle: "Layout & Composition"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Stacks & Spacers in SwiftUI
+
+Stacks and spacers are the fundamental building blocks for creating layouts in SwiftUI. Unlike UIKit's constraint-based approach, SwiftUI uses a declarative model where you compose views by stacking them horizontally, vertically, or in layers. Understanding these primitives is essential for building any SwiftUI interface.
+
+## Why Stacks Matter
+
+In SwiftUI, you rarely position views using explicit coordinates. Instead, you describe *relationships* between views. Stacks provide this structure by automatically arranging their children with sensible defaults while giving you fine-grained control when needed.
+
+The three stack types are:
+- **HStack**: Arranges views horizontally (left to right)
+- **VStack**: Arranges views vertically (top to bottom)
+- **ZStack**: Layers views on top of each other (depth-wise)
+
+## HStack: Horizontal Layouts
+
+HStack arranges views in a row. Each child view gets space based on its ideal size, with flexible views expanding to fill available space.
+
+```swift
+struct HStackExample: View {
+    var body: some View {
+        HStack {
+            Text("First")
+            Text("Second")
+            Text("Third")
+        }
+    }
+}
+```
+
+### Controlling Spacing
+
+By default, HStack applies platform-appropriate spacing between views. You can customize this:
+
+```swift
+HStack(spacing: 20) {
+    Text("Wide")
+    Text("Spacing")
+}
+
+// No spacing at all
+HStack(spacing: 0) {
+    Text("No")
+    Text("Gap")
+}
+```
+
+### Alignment
+
+HStack accepts an alignment parameter to control vertical positioning of children:
+
+```swift
+HStack(alignment: .top) {
+    Text("Short")
+    Text("This is a much taller text that wraps to multiple lines")
+        .frame(width: 100)
+}
+
+// Available alignments: .top, .center (default), .bottom, .firstTextBaseline, .lastTextBaseline
+```
+
+Text baseline alignments are particularly useful for typography:
+
+```swift
+HStack(alignment: .firstTextBaseline) {
+    Text("Large")
+        .font(.largeTitle)
+    Text("Regular")
+        .font(.body)
+    Text("Small")
+        .font(.caption)
+}
+```
+
+## VStack: Vertical Layouts
+
+VStack works identically to HStack but arranges views vertically:
+
+```swift
+VStack(alignment: .leading, spacing: 16) {
+    Text("Title")
+        .font(.headline)
+    Text("This is a subtitle")
+        .font(.subheadline)
+    Text("Body content goes here")
+}
+```
+
+### Horizontal Alignment
+
+VStack's alignment parameter controls horizontal positioning:
+
+```swift
+VStack(alignment: .leading) {
+    Text("Left aligned")
+    Text("Also left")
+}
+
+VStack(alignment: .trailing) {
+    Text("Right aligned")
+    Text("Also right")
+}
+
+// Available alignments: .leading, .center (default), .trailing
+```
+
+## ZStack: Layered Views
+
+ZStack overlays views, with later views appearing on top of earlier ones:
+
+```swift
+ZStack {
+    Rectangle()
+        .fill(Color.blue)
+        .frame(width: 200, height: 200)
+    
+    Text("Overlay Text")
+        .foregroundColor(.white)
+        .font(.title)
+}
+```
+
+### ZStack Alignment
+
+Unlike HStack and VStack, ZStack's alignment is two-dimensional:
+
+```swift
+ZStack(alignment: .topLeading) {
+    Rectangle()
+        .fill(Color.gray.opacity(0.3))
+        .frame(width: 300, height: 200)
+    
+    Text("Top Left")
+        .padding(8)
+}
+
+// Available alignments: .topLeading, .top, .topTrailing,
+// .leading, .center (default), .trailing,
+// .bottomLeading, .bottom, .bottomTrailing
+```
+
+## Spacer: Flexible Empty Space
+
+`Spacer()` is a flexible view that expands to push other views apart. It's one of the most powerful layout tools in SwiftUI.
+
+### Basic Spacer Usage
+
+```swift
+HStack {
+    Text("Left")
+    Spacer()
+    Text("Right")
+}
+```
+
+This pushes "Left" to the left edge and "Right" to the right edge.
+
+### Multiple Spacers
+
+Spacers divide available space equally:
+
+```swift
+HStack {
+    Text("Left")
+    Spacer()
+    Text("Center")
+    Spacer()
+    Text("Right")
+}
+```
+
+### Limiting Spacer Size
+
+You can constrain a spacer's maximum expansion:
+
+```swift
+HStack {
+    Text("Text")
+    Spacer()
+        .frame(maxWidth: 50)
+    Text("Close")
+}
+```
+
+### Minimum Length
+
+Spacers have a default minimum length, but you can specify your own:
+
+```swift
+VStack {
+    Text("Top")
+    Spacer(minLength: 100)
+    Text("Bottom")
+}
+```
+
+Without `minLength`, the spacer might collapse to near-zero if the parent has no extra space.
+
+## Nesting Stacks
+
+Real interfaces require nesting stacks within stacks:
+
+```swift
+struct ProfileView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header with image and text side-by-side
+            HStack(spacing: 12) {
+                Image(systemName: "person.circle.fill")
+                    .font(.system(size: 60))
+                
+                VStack(alignment: .leading) {
+                    Text("John Appleseed")
+                        .font(.headline)
+                    Text("iOS Developer")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            
+            Divider()
+            
+            // Bio section
+            Text("Passionate about building great user experiences with SwiftUI.")
+                .font(.body)
+        }
+        .padding()
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Too Many Views in a Stack
+
+Stacks have a 10-view limit due to Swift's type system. If you need more, use `Group` or extract into separate views:
+
+```swift
+// This won't compile with 11+ views
+VStack {
+    Text("1")
+    Text("2")
+    // ... more than 10 items
+}
+
+// Solution 1: Use Group
+VStack {
+    Group {
+        Text("1")
+        Text("2")
+        // ... up to 10
+    }
+    Group {
+        Text("11")
+        // ... more items
+    }
+}
+
+// Solution 2: Extract to subviews (preferred)
+VStack {
+    FirstSection()
+    SecondSection()
+}
+```
+
+### Mistake 2: Spacer Not Expanding
+
+Spacers only expand when there's available space in the parent:
+
+```swift
+// Spacer has no effect here
+HStack {
+    Text("Text")
+    Spacer()
+}
+.frame(width: 100) // HStack is sized exactly, no extra space
+
+// Fix: Let HStack expand
+HStack {
+    Text("Text")
+    Spacer()
+}
+.frame(maxWidth: .infinity) // Now there's space for Spacer to fill
+```
+
+### Mistake 3: Unexpected Alignment Behavior
+
+Child views can override parent stack alignment:
+
+```swift
+VStack(alignment: .leading) {
+    Text("Left aligned")
+    Text("I'm centered!")
+        .frame(maxWidth: .infinity, alignment: .center)
+}
+```
+
+The second text creates its own frame that spans the full width, so its internal alignment takes precedence.
+
+### Edge Case: Empty Stacks
+
+Empty stacks have zero size:
+
+```swift
+let showContent = false
+
+VStack {
+    if showContent {
+        Text("Content")
+    }
+}
+.background(Color.red) // You won't see this if showContent is false
+```
+
+If you need a minimum size for empty stacks, add a frame:
+
+```swift
+VStack {
+    if showContent {
+        Text("Content")
+    }
+}
+.frame(minHeight: 100)
+.background(Color.red)
+```
+
+### Edge Case: Spacer in ZStack
+
+Spacers in ZStack expand to fill all available space, which usually means pushing the ZStack to maximum size:
+
+```swift
+ZStack {
+    Spacer() // This makes ZStack fill its parent
+    Text("Centered")
+}
+```
+
+This is rarely what you want. Use `.frame(maxWidth: .infinity, maxHeight: .infinity)` on a specific view instead.
+
+## Layout Priority
+
+When multiple views compete for space, layout priority determines which views get their preferred size:
+
+```swift
+HStack {
+    Text("This text is important and should not truncate")
+        .layoutPriority(1)
+    
+    Text("This can truncate if needed")
+}
+.frame(width: 200)
+```
+
+Higher priority views get sized first. Default priority is 0.
+
+## Practical Example: Login Form
+
+Here's a complete example combining these concepts:
+
+```swift
+struct LoginView: View {
+    @State private var email = ""
+    @State private var password = ""
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            // Logo
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.blue)
+            
+            // Title
+            VStack(spacing: 8) {
+                Text("Welcome Back")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                Text("Sign in to continue")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Input fields
+            VStack(spacing: 16) {
+                TextField("Email", text: $email)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textContentType(.emailAddress)
+                    .autocapitalization(.none)
+                
+                SecureField("Password", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textContentType(.password)
+            }
+            .padding(.top, 32)
+            
+            // Login button
+            Button(action: login) {
+                HStack {
+                    Spacer()
+                    Text("Sign In")
+                        .fontWeight(.semibold)
+                    Spacer()
+                }
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+            }
+            
+            // Footer
+            HStack {
+                Text("Don't have an account?")
+                    .foregroundColor(.secondary)
+                Button("Sign Up") {
+                    // Navigate to signup
+                }
+            }
+            .font(.footnote)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+    }
+    
+    func login() {
+        // Login logic
+    }
+}
+```
+
+## Performance Considerations
+
+Stacks are extremely efficient, but deeply nested structures can impact performance:
+
+```swift
+// Avoid excessive nesting
+VStack {
+    VStack {
+        VStack {
+            VStack {
+                Text("Too deep!")
+            }
+        }
+    }
+}
+
+// Better: Flatten when possible
+VStack(spacing: 0) {
+    Text("Flatter structure")
+        .padding(.top, 20)
+        .padding(.bottom, 10)
+}
+```
+
+Use `LazyVStack` and `LazyHStack` for lists with many items:
+
+```swift
+ScrollView {
+    LazyVStack {
+        ForEach(0..<1000) { index in
+            Text("Row \(index)")
+        }
+    }
+}
+```
+
+Lazy stacks only create views as they're scrolled into view, dramatically improving performance for large datasets.
+
+## Official Documentation
+
+For more details, see Apple's official documentation:
+
+- [HStack](https://developer.apple.com/documentation/swiftui/hstack)
+- [VStack](https://developer.apple.com/documentation/swiftui/vstack)
+- [ZStack](https://developer.apple.com/documentation/swiftui/zstack)
+- [Spacer](https://developer.apple.com/documentation/swiftui/spacer)
+- [Layout Fundamentals](https://developer.apple.com/documentation/swiftui/building-layouts-with-stack-views)
+
+## Summary Table
+
+| Component | Purpose | Key Parameters | Common Use Cases |
+|-----------|---------|----------------|------------------|
+| **HStack** | Horizontal arrangement | `alignment` (.top, .center, .bottom, .firstTextBaseline, .lastTextBaseline), `spacing` (CGFloat) | Navigation bars, button groups, icon-text pairs |
+| **VStack** | Vertical arrangement | `alignment` (.leading, .center, .trailing), `spacing` (CGFloat) | Forms, lists, content sections |
+| **ZStack** | Layered arrangement | `alignment` (2D: .topLeading, .center, etc.) | Overlays, badges, background decorations |
+| **Spacer** | Flexible empty space | `minLength` (CGFloat?) | Pushing views apart, creating margins |
+| **LazyHStack** | Horizontal, lazy-loaded | Same as HStack | Horizontal scrolling galleries with many items |
+| **LazyVStack** | Vertical, lazy-loaded | Same as VStack | Long lists, feeds |
+
+### Alignment Quick Reference
+
+**HStack alignment (vertical):** `.top`, `.center`, `.bottom`, `.firstTextBaseline`, `.lastTextBaseline`
+
+**VStack alignment (horizontal):** `.leading`, `.center`, `.trailing`
+
+**ZStack alignment (2D):** `.topLeading`, `.top`, `.topTrailing`, `.leading`, `.center`, `.trailing`, `.bottomLeading`, `.bottom`, `.bottomTrailing`
+
+### When to Use Each Stack
+
+- **HStack**: Items should appear side-by-side (buttons, labels with icons)
+- **VStack**: Items should stack vertically (forms, text blocks, cards)
+- **ZStack**: Items should overlap (badges on images, watermarks, custom controls)
+- **Lazy variants**: Lists with 50+ items or expensive view creation
+
+Mastering stacks and spacers gives you the foundation to build any SwiftUI layout. They're simple primitives that compose into complex interfaces, embodying SwiftUI's declarative philosophy.

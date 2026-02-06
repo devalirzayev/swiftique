@@ -1,0 +1,549 @@
+---
+title: "Tuples & Optionals"
+description: "Compound values and handling nil"
+sectionId: "1.2-the-basics"
+sectionTitle: "The Basics"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Tuples & Optionals
+
+Tuples and optionals are two fundamental Swift features that help you work with compound data and handle the absence of values safely. Tuples let you group multiple values together temporarily without creating a formal type, while optionals provide a type-safe way to represent values that might not exist. Together, they eliminate entire categories of bugs common in other languages.
+
+## Why These Matter
+
+In languages like Objective-C or Java, you might return `null` or `nil` when a value doesn't exist, leading to crashes when you forget to check. Swift's optionals make the possibility of "no value" explicit in the type system, forcing you to handle it deliberately. Tuples complement this by letting you return multiple values from functions cleanly, including combinations of optional and non-optional values.
+
+## Tuples: Grouping Values Together
+
+A tuple groups multiple values into a single compound value. The values can be of any type and don't have to be the same type.
+
+### Basic Tuple Syntax
+
+```swift
+let httpStatus = (404, "Not Found")
+// Type: (Int, String)
+
+let coordinates = (latitude: 37.7749, longitude: -122.4194)
+// Type: (latitude: Double, longitude: Double)
+
+let mixed = ("Swift", 5, true)
+// Type: (String, Int, Bool)
+```
+
+### Accessing Tuple Values
+
+You can access tuple elements by index or by name (if you labeled them):
+
+```swift
+let response = (200, "OK")
+
+// Access by index
+print(response.0)  // 200
+print(response.1)  // "OK"
+
+// Named tuple elements
+let namedResponse = (code: 200, message: "OK")
+print(namedResponse.code)     // 200
+print(namedResponse.message)  // "OK"
+```
+
+### Decomposing Tuples
+
+Decomposition (also called destructuring) lets you break a tuple into individual constants or variables:
+
+```swift
+let httpResponse = (statusCode: 404, description: "Not Found")
+
+// Decompose into separate constants
+let (code, message) = httpResponse
+print("Status: \(code)")  // Status: 404
+print("Message: \(message)")  // Message: Not Found
+
+// Ignore values you don't need with underscore
+let (justTheCode, _) = httpResponse
+print(justTheCode)  // 404
+```
+
+### Practical Use Cases for Tuples
+
+**Returning Multiple Values from Functions:**
+
+```swift
+func minMax(array: [Int]) -> (min: Int, max: Int)? {
+    guard !array.isEmpty else { return nil }
+    
+    var currentMin = array[0]
+    var currentMax = array[0]
+    
+    for value in array[1..<array.count] {
+        if value < currentMin {
+            currentMin = value
+        } else if value > currentMax {
+            currentMax = value
+        }
+    }
+    
+    return (currentMin, currentMax)
+}
+
+if let bounds = minMax(array: [8, -6, 2, 109, 3, 71]) {
+    print("Range: \(bounds.min) to \(bounds.max)")
+    // Range: -6 to 109
+}
+```
+
+**Iterating with Enumerated:**
+
+```swift
+let fruits = ["Apple", "Banana", "Cherry"]
+
+for (index, fruit) in fruits.enumerated() {
+    print("\(index): \(fruit)")
+}
+// 0: Apple
+// 1: Banana
+// 2: Cherry
+```
+
+**Swapping Values:**
+
+```swift
+var a = 5
+var b = 10
+(a, b) = (b, a)  // Swap using tuple assignment
+print("a: \(a), b: \(b)")  // a: 10, b: 5
+```
+
+### Common Tuple Mistakes
+
+**Mistake: Using tuples for persistent data structures**
+
+```swift
+// ❌ Don't do this
+let user = (name: "Alice", age: 30, email: "alice@example.com")
+
+// ✅ Use a struct instead for data models
+struct User {
+    let name: String
+    let age: Int
+    let email: String
+}
+```
+
+Tuples are best for temporary groupings. For anything that represents a domain concept or needs methods, use a struct or class.
+
+**Mistake: Creating overly complex tuples**
+
+```swift
+// ❌ Hard to understand and maintain
+let complexData = (1, "text", true, 3.14, ["a", "b"], (x: 10, y: 20))
+
+// ✅ Break down into meaningful types
+struct Point {
+    let x: Int
+    let y: Int
+}
+
+struct DataPacket {
+    let id: Int
+    let description: String
+    let isValid: Bool
+    let value: Double
+    let tags: [String]
+    let location: Point
+}
+```
+
+## Optionals: Handling the Absence of Values
+
+An optional represents two possibilities: either there *is* a value and you can unwrap the optional to access it, or there *isn't* a value at all (`nil`).
+
+### Declaring Optionals
+
+Add a `?` after the type name to make it optional:
+
+```swift
+var optionalString: String? = "Hello"
+optionalString = nil  // Now it contains no value
+
+var optionalInt: Int? = 42
+var implicitlyNil: Double?  // Automatically initialized to nil
+```
+
+### Unwrapping Optionals Safely
+
+**Optional Binding (if let / guard let):**
+
+The safest and most common approach:
+
+```swift
+let possibleNumber = "123"
+let convertedNumber = Int(possibleNumber)  // Int? (optional Int)
+
+if let number = convertedNumber {
+    print("Conversion successful: \(number)")
+} else {
+    print("Conversion failed")
+}
+
+// Multiple bindings in one statement
+let firstName: String? = "John"
+let lastName: String? = "Doe"
+
+if let first = firstName, let last = lastName {
+    print("Full name: \(first) \(last)")
+}
+```
+
+**Guard Statements:**
+
+Guard provides early exit and keeps the unwrapped value in scope:
+
+```swift
+func processUser(id: String?) {
+    guard let userId = id else {
+        print("No user ID provided")
+        return
+    }
+    
+    // userId is available for the rest of the function
+    print("Processing user: \(userId)")
+}
+
+processUser(id: "12345")  // Processing user: 12345
+processUser(id: nil)      // No user ID provided
+```
+
+### Nil Coalescing Operator
+
+Provide a default value when an optional is `nil`:
+
+```swift
+let nickname: String? = nil
+let defaultName = "Anonymous"
+
+let displayName = nickname ?? defaultName
+print(displayName)  // Anonymous
+
+// Works with expressions
+let username = nickname ?? "User\(Int.random(in: 1000...9999))"
+```
+
+### Optional Chaining
+
+Call properties, methods, and subscripts on an optional that might be `nil`. The entire chain returns `nil` if any link is `nil`:
+
+```swift
+struct Address {
+    var street: String
+    var city: String
+}
+
+struct Person {
+    var name: String
+    var address: Address?
+}
+
+let person = Person(name: "Alice", address: nil)
+
+// Optional chaining with ?
+let city = person.address?.city  // city is String?, equals nil
+
+// Without optional chaining, this would crash:
+// let city = person.address.city  // ❌ Fatal error
+```
+
+**Chaining Multiple Levels:**
+
+```swift
+struct Country {
+    var name: String
+}
+
+struct City {
+    var name: String
+    var country: Country?
+}
+
+struct Address {
+    var street: String
+    var city: City?
+}
+
+struct Person {
+    var address: Address?
+}
+
+let person = Person(address: Address(street: "Main St", city: City(name: "Paris", country: Country(name: "France"))))
+
+let countryName = person.address?.city?.country?.name
+print(countryName ?? "Unknown")  // France
+```
+
+### Force Unwrapping (Use Sparingly)
+
+The `!` operator force unwraps an optional. If the optional is `nil`, your app will crash:
+
+```swift
+let possibleNumber = "42"
+let convertedNumber = Int(possibleNumber)!  // Force unwrap
+
+// ❌ This will crash
+let notANumber = "abc"
+let willCrash = Int(notANumber)!  // Fatal error: Unexpectedly found nil
+```
+
+**When force unwrapping is acceptable:**
+
+```swift
+// 1. IBOutlets (after viewDidLoad)
+@IBOutlet weak var titleLabel: UILabel!
+
+// 2. Values you've just verified
+if convertedNumber != nil {
+    print(convertedNumber!)  // Safe because we checked
+}
+
+// 3. Loading resources that must exist
+let image = UIImage(named: "AppIcon")!  // App would be broken without this
+```
+
+### Implicitly Unwrapped Optionals
+
+Declared with `!` instead of `?`. These are optionals that are automatically unwrapped when accessed:
+
+```swift
+var assumedString: String! = "Hello"
+print(assumedString)  // No need for unwrapping
+
+assumedString = nil
+// print(assumedString)  // ❌ Would crash
+```
+
+**Use cases:**
+
+- Properties that are `nil` during initialization but always have a value afterward (like IBOutlets)
+- Two-phase initialization patterns
+
+```swift
+class ProfileViewController: UIViewController {
+    var userId: String!  // Set by presenting view controller
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        loadProfile(for: userId)  // Safe to use without unwrapping
+    }
+}
+```
+
+### Optional Map and FlatMap
+
+Transform optional values functionally:
+
+```swift
+let possibleNumber: Int? = 42
+
+// map: transforms the value if it exists
+let doubled = possibleNumber.map { $0 * 2 }
+print(doubled ?? 0)  // 84
+
+let noNumber: Int? = nil
+let noResult = noNumber.map { $0 * 2 }
+print(noResult ?? 0)  // 0
+
+// flatMap: prevents nested optionals
+func parseAndDouble(_ string: String) -> Int? {
+    return Int(string).map { $0 * 2 }
+}
+
+let stringNumber: String? = "21"
+let result = stringNumber.flatMap(parseAndDouble)  // Int?, not Int??
+print(result ?? 0)  // 42
+```
+
+## Combining Tuples and Optionals
+
+Tuples and optionals work together naturally in Swift:
+
+```swift
+// Tuple of optionals
+let credentials: (username: String?, password: String?) = ("alice", nil)
+
+if let user = credentials.username, let pass = credentials.password {
+    print("Login with \(user)")
+} else {
+    print("Incomplete credentials")
+}
+
+// Optional tuple
+func lookupCoordinates(for address: String) -> (lat: Double, lon: Double)? {
+    // Returns nil if address not found
+    if address == "Cupertino" {
+        return (37.3230, -122.0322)
+    }
+    return nil
+}
+
+if let location = lookupCoordinates(for: "Cupertino") {
+    print("Location: \(location.lat), \(location.lon)")
+}
+
+// Function returning optional tuple with optional elements
+func getUserData(id: String) -> (name: String, email: String?)? {
+    guard !id.isEmpty else { return nil }
+    return ("Alice", nil)  // User exists but has no email
+}
+```
+
+## Common Mistakes with Optionals
+
+**Mistake: Pyramid of doom (excessive nesting)**
+
+```swift
+// ❌ Hard to read
+if let user = currentUser {
+    if let profile = user.profile {
+        if let email = profile.email {
+            sendEmail(to: email)
+        }
+    }
+}
+
+// ✅ Use optional chaining or guard
+guard let email = currentUser?.profile?.email else {
+    return
+}
+sendEmail(to: email)
+```
+
+**Mistake: Comparing optionals incorrectly**
+
+```swift
+let optionalInt: Int? = 0
+
+// ❌ This checks if optional has a value, not if it's 0
+if optionalInt != nil {
+    print("Has value")
+}
+
+// ✅ Unwrap and compare
+if let value = optionalInt, value == 0 {
+    print("Value is zero")
+}
+
+// Or compare directly (Swift allows this)
+if optionalInt == 0 {
+    print("Value is zero")
+}
+```
+
+**Mistake: Using optionals when a default makes sense**
+
+```swift
+// ❌ Unnecessary optional handling
+func getDisplayCount(items: [String]?) -> String {
+    if let items = items {
+        return "\(items.count) items"
+    } else {
+        return "0 items"
+    }
+}
+
+// ✅ Use default value
+func getDisplayCount(items: [String] = []) -> String {
+    return "\(items.count) items"
+}
+```
+
+## Edge Cases and Gotchas
+
+**Optional Collections:**
+
+```swift
+// Empty array vs nil array
+let emptyArray: [Int] = []
+let nilArray: [Int]? = nil
+
+print(emptyArray.isEmpty)  // true
+print(nilArray?.isEmpty ?? true)  // true
+
+// ✅ Prefer non-optional empty collections when possible
+func getItems() -> [String] {
+    return []  // Better than returning nil
+}
+```
+
+**Optional Booleans:**
+
+```swift
+let optionalBool: Bool? = false
+
+// ❌ This is true when nil OR false
+if optionalBool != true {
+    print("Not true")
+}
+
+// ✅ Be explicit about what you're checking
+if let value = optionalBool, value {
+    print("Definitely true")
+}
+
+// Nil coalescing for clarity
+if optionalBool ?? false {
+    print("True or default false")
+}
+```
+
+**Comparing Optionals:**
+
+```swift
+let a: Int? = 5
+let b: Int? = 5
+let c: Int? = nil
+
+print(a == b)   // true
+print(a == c)   // false
+print(c == nil) // true
+
+// Comparing optional to non-optional
+let nonOptional = 5
+print(a == nonOptional)  // true - Swift promotes non-optional
+```
+
+## Apple Documentation References
+
+- [The Swift Programming Language: The Basics - Optionals](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics#Optionals)
+- [The Swift Programming Language: The Basics - Tuples](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics#Tuples)
+- [Optional - Swift Standard Library](https://developer.apple.com/documentation/swift/optional)
+
+## Summary Table
+
+| Feature | Syntax | Use Case | Example |
+|---------|--------|----------|---------|
+| **Tuples** |
+| Basic tuple | `(value1, value2)` | Group related values temporarily | `let point = (10, 20)` |
+| Named tuple | `(label1: value1, label2: value2)` | Self-documenting grouped values | `let http = (code: 200, message: "OK")` |
+| Decomposition | `let (a, b) = tuple` | Extract tuple values | `let (x, y) = point` |
+| Ignore elements | `let (a, _) = tuple` | Extract only needed values | `let (code, _) = http` |
+| **Optionals** |
+| Declaration | `Type?` | Value that might be absent | `var name: String? = nil` |
+| Optional binding | `if let constant = optional` | Safely unwrap with condition | `if let name = userName { }` |
+| Guard statement | `guard let constant = optional else { }` | Early exit with unwrapped value | `guard let id = userId else { return }` |
+| Nil coalescing | `optional ?? defaultValue` | Provide fallback value | `let display = nickname ?? "Guest"` |
+| Optional chaining | `optional?.property` | Access nested optionals safely | `person.address?.city?.name` |
+| Force unwrap | `optional!` | Assert value exists (use sparingly) | `let value = optional!` |
+| Implicitly unwrapped | `Type!` | Optional auto-unwrapped on access | `@IBOutlet var label: UILabel!` |
+| Map | `optional.map { transform }` | Transform if value exists | `age.map { $0 + 1 }` |
+| FlatMap | `optional.flatMap { transform }` | Transform returning optional | `str.flatMap { Int($0) }` |
+
+## Official Resources
+
+- [Swift Language Guide: The Basics](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/)
+- [Apple Documentation: Optional](https://developer.apple.com/documentation/swift/optional)
+- [Swift Language Guide: Optional Chaining](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/)
+- [WWDC: Understanding Swift Performance](https://developer.apple.com/videos/play/wwdc2016/416/)
+- [Swift Evolution: SE-0230 Flatten Optional Try](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0230-flatten-optional-try.md)

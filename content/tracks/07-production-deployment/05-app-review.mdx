@@ -1,0 +1,640 @@
+---
+title: "App Review Guidelines"
+description: "Common rejection reasons, guidelines compliance, and appeals"
+sectionId: "7.2-testing-distribution"
+sectionTitle: "Testing & Distribution"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# App Review Guidelines
+
+When you build an iOS app, submitting it to the App Store is the final step before users can download it. However, Apple doesn't automatically accept every app. The **App Review Guidelines** are Apple's rulebook that determines whether your app gets approved or rejected. Understanding these guidelines before you submit can save you weeks of back-and-forth rejections.
+
+## Why App Review Guidelines Matter
+
+Apple reviews every app submission to ensure:
+
+- **Safety**: Apps don't compromise user security or privacy
+- **Quality**: Apps meet minimum performance and design standards
+- **Legal compliance**: Apps follow laws and don't infringe on intellectual property
+- **User experience**: Apps work as advertised without deceptive practices
+
+A rejection can delay your launch by days or weeks, so knowing these guidelines early in development is crucial.
+
+## The Review Process Overview
+
+When you submit your app through App Store Connect, Apple's review team:
+
+1. Tests your app on real devices
+2. Checks metadata (descriptions, screenshots, keywords)
+3. Verifies compliance with guidelines
+4. Either approves it or rejects it with specific reasons
+
+The process typically takes 24-48 hours, but can be longer during peak times.
+
+## Common Rejection Reasons and How to Avoid Them
+
+### 1. Crashes and Bugs (Guideline 2.1)
+
+**The Problem**: Apps that crash during review get immediately rejected.
+
+**How to Prevent**:
+
+```swift
+// BAD: Forced unwrapping can cause crashes
+class ProfileViewController: UIViewController {
+    var user: User?
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        nameLabel.text = user!.name // Crashes if user is nil
+    }
+}
+
+// GOOD: Safe unwrapping with guard
+class ProfileViewController: UIViewController {
+    var user: User?
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        guard let user = user else {
+            showError("Unable to load user profile")
+            return
+        }
+        
+        nameLabel.text = user.name
+    }
+}
+```
+
+**Common Mistake**: Not testing on actual devices. The simulator doesn't always reveal memory issues or device-specific crashes.
+
+```swift
+// Always handle network errors gracefully
+func fetchData() {
+    URLSession.shared.dataTask(with: url) { data, response, error in
+        // BAD: Assuming success
+        // let json = try! JSONDecoder().decode(Model.self, from: data!)
+        
+        // GOOD: Proper error handling
+        guard let data = data, error == nil else {
+            DispatchQueue.main.async {
+                self.showErrorAlert(error?.localizedDescription ?? "Network error")
+            }
+            return
+        }
+        
+        do {
+            let model = try JSONDecoder().decode(Model.self, from: data)
+            DispatchQueue.main.async {
+                self.updateUI(with: model)
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.showErrorAlert("Unable to process data")
+            }
+        }
+    }.resume()
+}
+```
+
+### 2. Incomplete or Misleading Information (Guideline 2.3.7)
+
+**The Problem**: Demo accounts not working, features mentioned but not present, or unclear app descriptions.
+
+**How to Prevent**: Always provide working demo credentials in App Review Information.
+
+```swift
+// If your app requires authentication, implement a demo mode
+class AuthenticationManager {
+    static let demoUsername = "demo@example.com"
+    static let demoPassword = "demo123"
+    
+    func login(username: String, password: String) async throws -> User {
+        // Check for demo account first
+        if username == Self.demoUsername && password == Self.demoPassword {
+            return User.demoUser()
+        }
+        
+        // Regular authentication
+        return try await authenticateWithServer(username: username, password: password)
+    }
+}
+
+extension User {
+    static func demoUser() -> User {
+        User(
+            id: "demo-001",
+            name: "Demo User",
+            email: "demo@example.com",
+            isDemo: true
+        )
+    }
+}
+```
+
+**Notes for Reviewers**: In App Store Connect, include:
+- Demo account credentials
+- Instructions for accessing specific features
+- Explanation of any required hardware or additional setup
+
+### 3. Privacy Violations (Guideline 5.1)
+
+**The Problem**: Apps must request permission before accessing sensitive data and explain why they need it.
+
+**How to Prevent**: Add usage descriptions to your `Info.plist` and request permissions properly.
+
+```swift
+// Info.plist keys (add these to your Info.plist file)
+// NSCameraUsageDescription: "We need camera access to let you take profile photos"
+// NSPhotoLibraryUsageDescription: "We need photo library access to let you choose profile photos"
+// NSLocationWhenInUseUsageDescription: "We use your location to show nearby restaurants"
+
+// GOOD: Request permission with context
+import Photos
+
+class PhotoManager {
+    func requestPhotoLibraryAccess(completion: @escaping (Bool) -> Void) {
+        let status = PHPhotoLibrary.authorizationStatus()
+        
+        switch status {
+        case .authorized, .limited:
+            completion(true)
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization { newStatus in
+                DispatchQueue.main.async {
+                    completion(newStatus == .authorized || newStatus == .limited)
+                }
+            }
+        case .denied, .restricted:
+            completion(false)
+        @unknown default:
+            completion(false)
+        }
+    }
+}
+```
+
+**Common Mistake**: Requesting location permission with "always" access when "when in use" would suffice:
+
+```swift
+import CoreLocation
+
+class LocationManager: NSObject, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+    
+    func requestLocationPermission() {
+        // PREFER: Request only what you need
+        locationManager.requestWhenInUseAuthorization()
+        
+        // AVOID unless absolutely necessary:
+        // locationManager.requestAlwaysAuthorization()
+    }
+}
+```
+
+### 4. In-App Purchase Issues (Guideline 3.1)
+
+**The Problem**: Apple requires using In-App Purchase for digital goods sold within the app. Using external payment systems for digital content leads to rejection.
+
+**What Requires IAP**:
+- Unlocking app features
+- Subscriptions for digital content
+- Virtual currency or items
+
+**What Doesn't Require IAP**:
+- Physical goods or services
+- Content consumed outside the app
+
+```swift
+import StoreKit
+
+// GOOD: Using StoreKit for premium features
+class PremiumManager: NSObject, SKProductsRequestDelegate, SKPaymentTransactionObserver {
+    static let premiumFeatureID = "com.yourapp.premium"
+    
+    func purchasePremiumFeature() {
+        let productIDs: Set<String> = [Self.premiumFeatureID]
+        let request = SKProductsRequest(productIdentifiers: productIDs)
+        request.delegate = self
+        request.start()
+    }
+    
+    func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
+        guard let product = response.products.first else {
+            print("Product not found")
+            return
+        }
+        
+        let payment = SKPayment(product: product)
+        SKPaymentQueue.default().add(payment)
+    }
+    
+    func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
+        for transaction in transactions {
+            switch transaction.transactionState {
+            case .purchased:
+                // Unlock feature
+                unlockPremiumFeatures()
+                SKPaymentQueue.default().finishTransaction(transaction)
+            case .failed:
+                if let error = transaction.error {
+                    print("Transaction failed: \(error.localizedDescription)")
+                }
+                SKPaymentQueue.default().finishTransaction(transaction)
+            case .restored:
+                unlockPremiumFeatures()
+                SKPaymentQueue.default().finishTransaction(transaction)
+            default:
+                break
+            }
+        }
+    }
+    
+    private func unlockPremiumFeatures() {
+        UserDefaults.standard.set(true, forKey: "isPremiumUser")
+    }
+}
+```
+
+**BAD Example** (Will be rejected):
+
+```swift
+// DON'T: External payment for digital content
+func purchasePremiumWithStripe() {
+    // This violates guidelines if unlocking app features
+    let stripePayment = StripePayment()
+    stripePayment.process(amount: 9.99) { success in
+        if success {
+            self.unlockPremiumFeatures() // REJECTED
+        }
+    }
+}
+```
+
+### 5. Design Guidelines (Guideline 4.0)
+
+**The Problem**: Apps that look like poor-quality websites or don't follow iOS design patterns get rejected.
+
+**How to Prevent**: Use native iOS components and follow Human Interface Guidelines.
+
+```swift
+// GOOD: Native iOS design
+class SettingsViewController: UITableViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Use standard iOS components
+        navigationItem.title = "Settings"
+        navigationController?.navigationBar.prefersLargeTitles = true
+        
+        // Standard table view styling
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
+    }
+    
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        
+        // Use SF Symbols for consistency
+        var config = cell.defaultContentConfiguration()
+        config.image = UIImage(systemName: "gear")
+        config.text = "Account Settings"
+        cell.contentConfiguration = config
+        cell.accessoryType = .disclosureIndicator
+        
+        return cell
+    }
+}
+```
+
+**BAD Example**: Using a web view for the entire app:
+
+```swift
+// DON'T: This appears as a wrapped website
+class WebAppViewController: UIViewController {
+    let webView = WKWebView()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addSubview(webView)
+        webView.load(URLRequest(url: URL(string: "https://yoursite.com")!))
+        // This may be rejected as a low-effort port
+    }
+}
+```
+
+### 6. Minimum Functionality (Guideline 4.2)
+
+**The Problem**: Apps that are just catalogs, single web pages, or provide minimal utility.
+
+**How to Prevent**: Ensure your app provides substantial value:
+
+```swift
+// BAD: Just a catalog with links
+class CatalogApp: UITableViewController {
+    let websites = ["https://site1.com", "https://site2.com"]
+    
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Just opening Safari - not enough functionality
+        UIApplication.shared.open(URL(string: websites[indexPath.row])!)
+    }
+}
+
+// GOOD: Provides actual functionality
+class RecipeApp: UIViewController {
+    func viewRecipe(_ recipe: Recipe) {
+        // Parse and display content natively
+        titleLabel.text = recipe.title
+        ingredientsTextView.text = recipe.ingredients.joined(separator: "\n")
+        stepsTextView.text = recipe.steps.joined(separator: "\n\n")
+        recipeImageView.loadImage(from: recipe.imageURL)
+        
+        // Add useful features
+        favoriteButton.isSelected = FavoritesManager.shared.isFavorite(recipe)
+        timerButton.isEnabled = recipe.hasTimerSteps
+    }
+    
+    @IBAction func startCookingTimer() {
+        // Native timer functionality
+        TimerViewController.present(with: currentRecipe)
+    }
+}
+```
+
+### 7. Kids Category (Guideline 1.3)
+
+**The Problem**: Apps in the Kids category have stricter requirements around ads, tracking, and external links.
+
+**How to Prevent**: If targeting children, disable behavioral advertising and tracking:
+
+```swift
+import AppTrackingTransparency
+import AdSupport
+
+class AdsManager {
+    func setupAdsForKidsApp() {
+        // DON'T request tracking for kids apps
+        // ATTrackingManager.requestTrackingAuthorization() // Not allowed
+        
+        // DO use contextual (non-personalized) ads only
+        setupContextualAds()
+    }
+    
+    private func setupContextualAds() {
+        // Configure ad SDK for non-personalized ads
+        // Check your ad network's documentation for kids-safe mode
+    }
+    
+    func openExternalLink(_ url: URL) {
+        // Require parental gate for external links in kids apps
+        showParentalGate { [weak self] success in
+            if success {
+                UIApplication.shared.open(url)
+            }
+        }
+    }
+    
+    private func showParentalGate(completion: @escaping (Bool) -> Void) {
+        // Simple math problem to prevent accidental taps by children
+        let num1 = Int.random(in: 1...10)
+        let num2 = Int.random(in: 1...10)
+        let answer = num1 + num2
+        
+        let alert = UIAlertController(
+            title: "Parent Verification",
+            message: "What is \(num1) + \(num2)?",
+            preferredStyle: .alert
+        )
+        
+        alert.addTextField { textField in
+            textField.keyboardType = .numberPad
+        }
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            completion(false)
+        })
+        
+        alert.addAction(UIAlertAction(title: "Submit", style: .default) { _ in
+            let userAnswer = Int(alert.textFields?.first?.text ?? "") ?? 0
+            completion(userAnswer == answer)
+        })
+        
+        // Present alert (implementation depends on your view hierarchy)
+    }
+}
+```
+
+### 8. Accurate Metadata (Guideline 2.3)
+
+**The Problem**: Keywords, descriptions, or screenshots that don't match actual functionality.
+
+**How to Prevent**: Ensure your screenshots show actual app content:
+
+```swift
+// Create a screenshot helper for App Store Connect
+class AppStoreScreenshotHelper {
+    static func configureForScreenshot() {
+        #if DEBUG
+        // Populate with attractive but realistic sample data
+        UserDefaults.standard.set(true, forKey: "isScreenshotMode")
+        #endif
+    }
+    
+    static var isScreenshotMode: Bool {
+        UserDefaults.standard.bool(forKey: "isScreenshotMode")
+    }
+}
+
+class DashboardViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        if AppStoreScreenshotHelper.isScreenshotMode {
+            // Load polished sample data for screenshots
+            loadSampleData()
+        } else {
+            // Load real user data
+            loadUserData()
+        }
+    }
+}
+```
+
+**Common Mistake**: Using competitor names or trademarked terms in keywords:
+
+```swift
+// In App Store Connect metadata:
+// BAD: "Instagram alternative, Facebook replacement, better than WhatsApp"
+// GOOD: "Photo sharing social network, private messaging"
+```
+
+## Edge Cases and Special Situations
+
+### Beta Testing Apps
+
+If your app is still in beta or has incomplete features:
+
+```swift
+// Hide unfinished features behind compile-time flags
+class FeatureFlags {
+    #if RELEASE
+    static let showBetaFeatures = false
+    #else
+    static let showBetaFeatures = true
+    #endif
+}
+
+class MenuViewController: UITableViewController {
+    var menuItems: [MenuItem] {
+        var items = standardMenuItems
+        
+        if FeatureFlags.showBetaFeatures {
+            items.append(contentsOf: betaMenuItems)
+        }
+        
+        return items
+    }
+}
+```
+
+### Location-Specific Features
+
+If your app only works in certain regions:
+
+```swift
+import CoreLocation
+
+class RegionValidator {
+    static func isAppAvailableInCurrentRegion() -> Bool {
+        let locale = Locale.current
+        let regionCode = locale.regionCode ?? ""
+        
+        // Define supported regions
+        let supportedRegions = ["US", "CA", "GB", "AU"]
+        
+        return supportedRegions.contains(regionCode)
+    }
+    
+    static func showUnavailableMessage() {
+        // Show a user-friendly message explaining
+        // the app isn't available in their region
+        print("This app is not available in your region.")
+    }
+}
+
+// Usage before accessing region-specific features
+if !RegionValidator.isAppAvailableInCurrentRegion() {
+    RegionValidator.showUnavailableMessage()
+}
+```
+
+### Edge Case 4: Subscription and In-App Purchase Compliance
+
+Apple scrutinizes IAP implementations closely. Always use StoreKit for digital goods:
+
+```swift
+import StoreKit
+
+class SubscriptionManager {
+    // ✅ Use StoreKit for all digital purchases
+    func purchasePremium() async throws {
+        let product = try await Product.products(for: ["com.app.premium"]).first
+        guard let product else { return }
+
+        let result = try await product.purchase()
+
+        switch result {
+        case .success(let verification):
+            let transaction = try checkVerified(verification)
+            await transaction.finish()
+        case .userCancelled:
+            break
+        case .pending:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .verified(let value):
+            return value
+        case .unverified(_, let error):
+            throw error
+        }
+    }
+}
+```
+
+> **Review Guideline 3.1.1**: If your app allows users to purchase digital content, it must use In-App Purchase. Attempting to direct users to external purchase methods for digital goods will result in rejection.
+
+### Edge Case 5: Login and Account Deletion Requirements
+
+Since 2022, apps that offer account creation must also offer account deletion:
+
+```swift
+struct AccountSettingsView: View {
+    @State private var showDeleteConfirmation = false
+
+    var body: some View {
+        List {
+            // Other settings...
+
+            Section {
+                Button("Delete Account", role: .destructive) {
+                    showDeleteConfirmation = true
+                }
+            } footer: {
+                Text("This will permanently delete your account and all associated data.")
+            }
+        }
+        .confirmationDialog(
+            "Delete Account?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task { await deleteAccount() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+    }
+
+    private func deleteAccount() async {
+        // 1. Delete server-side data
+        // 2. Revoke tokens
+        // 3. Clear local data
+        // 4. Sign out
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Guideline 2.1** | App completeness | No crashes, broken links, or placeholder content |
+| **Guideline 2.3** | Accurate metadata | Screenshots and descriptions must match functionality |
+| **Guideline 3.1.1** | In-App Purchase required | All digital goods must use StoreKit |
+| **Guideline 4.0-4.7** | Design guidelines | Follow HIG, support standard gestures |
+| **Guideline 5.1** | Privacy and data collection | Accurate privacy labels, clear permission usage |
+| **Account deletion** | Required since 2022 | Apps with sign-up must offer account deletion |
+| **Privacy manifest** | `PrivacyInfo.xcprivacy` | Declare API usage and data collection |
+| **Region compliance** | Check availability | Handle region-locked features gracefully |
+| **Appeal process** | Resolution Center | Respond to rejections with evidence |
+| **Pre-submission checklist** | Test all features | Verify compliance before submitting |
+
+## Official Resources
+
+- [Apple: App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [Apple: Common App Rejections](https://developer.apple.com/app-store/review/rejections/)
+- [Apple: App Review Process](https://developer.apple.com/app-store/review/)
+- [Apple Documentation: Privacy Manifest Files](https://developer.apple.com/documentation/bundleresources/privacy_manifest_files)
+- [Apple: Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/)

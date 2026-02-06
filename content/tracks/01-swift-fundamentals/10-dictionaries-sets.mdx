@@ -1,0 +1,451 @@
+---
+title: "Dictionaries & Sets"
+description: "Key-value pairs and unique unordered collections"
+sectionId: "1.4-collections"
+sectionTitle: "Collection Types"
+order: 10
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Dictionaries & Sets in Swift
+
+Dictionaries and sets are two fundamental collection types in Swift that complement arrays. While arrays maintain ordered lists of items, **dictionaries store key-value pairs** for fast lookups, and **sets store unique values** without a specific order. Understanding when and how to use these collections is essential for writing efficient Swift code.
+
+## Dictionaries: Key-Value Storage
+
+A dictionary stores associations between keys and values. Think of it like a real dictionary where you look up a word (key) to find its definition (value), or a contact list where names map to phone numbers.
+
+### Creating Dictionaries
+
+```swift
+// Explicit type annotation
+var airports: [String: String] = ["YYZ": "Toronto Pearson", "DUB": "Dublin"]
+
+// Type inference
+var statusCodes = [200: "OK", 404: "Not Found", 500: "Server Error"]
+
+// Empty dictionary
+var emptyDict: [String: Int] = [:]
+var anotherEmpty = [String: Int]()
+
+// Using Dictionary initializer
+var dict = Dictionary<String, Int>()
+```
+
+The syntax `[KeyType: ValueType]` defines the dictionary type. Both keys and values must be of consistent types within a single dictionary.
+
+### Accessing and Modifying Dictionary Values
+
+```swift
+var userScores = ["Alice": 95, "Bob": 87, "Charlie": 92]
+
+// Accessing values returns an optional
+let aliceScore = userScores["Alice"]  // Optional(95)
+let davidScore = userScores["David"]  // nil
+
+// Safe unwrapping
+if let score = userScores["Alice"] {
+    print("Alice scored \(score)")
+}
+
+// Providing a default value
+let score = userScores["David", default: 0]  // 0
+
+// Adding or updating values
+userScores["David"] = 88  // Adds new key-value pair
+userScores["Alice"] = 98  // Updates existing value
+
+// Using updateValue (returns old value)
+if let oldValue = userScores.updateValue(90, forKey: "Bob") {
+    print("Bob's old score was \(oldValue)")  // 87
+}
+
+// Removing values
+userScores["Charlie"] = nil  // Removes key-value pair
+let removed = userScores.removeValue(forKey: "Bob")  // Returns Optional(90)
+```
+
+**Common Mistake:** Forgetting that dictionary access returns an optional. Always unwrap safely or provide a default value.
+
+### Iterating Over Dictionaries
+
+```swift
+let movieRatings = ["Inception": 8.8, "Interstellar": 8.6, "Dunkirk": 7.9]
+
+// Iterate over key-value pairs
+for (movie, rating) in movieRatings {
+    print("\(movie): \(rating)")
+}
+
+// Iterate over keys only
+for movie in movieRatings.keys {
+    print(movie)
+}
+
+// Iterate over values only
+for rating in movieRatings.values {
+    print(rating)
+}
+
+// Convert keys or values to an array
+let movieList = Array(movieRatings.keys)
+let sortedMovies = movieRatings.keys.sorted()
+```
+
+**Important:** Dictionaries are unordered collections. The iteration order is not guaranteed, even if it appears consistent during testing.
+
+### Practical Dictionary Example
+
+```swift
+// Building a character frequency counter
+func characterFrequency(in text: String) -> [Character: Int] {
+    var frequency: [Character: Int] = [:]
+    
+    for char in text.lowercased() where char.isLetter {
+        frequency[char, default: 0] += 1
+    }
+    
+    return frequency
+}
+
+let result = characterFrequency(in: "Hello World")
+// ["h": 1, "e": 1, "l": 3, "o": 2, "w": 1, "r": 1, "d": 1]
+```
+
+## Sets: Unique Unordered Collections
+
+Sets store unique values of the same type without any defined order. They're ideal when you need to ensure uniqueness or perform mathematical set operations.
+
+### Creating Sets
+
+```swift
+// Explicit type annotation
+var favoriteGenres: Set<String> = ["Rock", "Classical", "Hip Hop"]
+
+// Type inference requires Set<>
+var numbers: Set = [1, 2, 3, 4, 5]
+
+// Empty set
+var emptySet = Set<String>()
+var anotherEmpty: Set<Int> = []
+
+// From an array (duplicates removed automatically)
+let numbersWithDuplicates = [1, 2, 2, 3, 3, 3, 4]
+let uniqueNumbers = Set(numbersWithDuplicates)  // {1, 2, 3, 4}
+```
+
+**Common Mistake:** Writing `var genres = ["Rock", "Jazz"]` creates an array, not a set. You must explicitly specify `Set` in the type annotation.
+
+### Set Operations
+
+```swift
+var fruits: Set = ["Apple", "Banana", "Orange"]
+
+// Adding elements
+fruits.insert("Mango")  // Returns (inserted: true, memberAfterInsert: "Mango")
+fruits.insert("Apple")  // Returns (inserted: false, memberAfterInsert: "Apple")
+
+// Removing elements
+fruits.remove("Banana")  // Returns Optional("Banana")
+fruits.remove("Grape")   // Returns nil
+
+// Checking membership (O(1) average complexity)
+if fruits.contains("Apple") {
+    print("We have apples!")
+}
+
+// Count and emptiness
+print(fruits.count)     // 3
+print(fruits.isEmpty)   // false
+
+// Iterating (order not guaranteed)
+for fruit in fruits {
+    print(fruit)
+}
+
+// Sorted iteration
+for fruit in fruits.sorted() {
+    print(fruit)
+}
+```
+
+### Mathematical Set Operations
+
+Sets shine when performing mathematical operations like unions, intersections, and differences.
+
+```swift
+let evens: Set = [2, 4, 6, 8, 10]
+let primes: Set = [2, 3, 5, 7]
+let odds: Set = [1, 3, 5, 7, 9]
+
+// Union: all unique elements from both sets
+let unionSet = evens.union(primes)  // {2, 3, 4, 5, 6, 7, 8, 10}
+
+// Intersection: elements common to both sets
+let intersection = primes.intersection(evens)  // {2}
+
+// Subtraction: elements in first set but not in second
+let difference = primes.subtracting(evens)  // {3, 5, 7}
+
+// Symmetric difference: elements in either set but not both
+let symmetricDiff = primes.symmetricDifference(evens)  // {3, 4, 5, 6, 7, 8, 10}
+
+// Set relationships
+odds.isDisjoint(with: evens)        // true (no common elements)
+primes.isSubset(of: evens)          // false
+Set([2, 4]).isSubset(of: evens)     // true
+evens.isSuperset(of: [2, 4])        // true
+```
+
+### Practical Set Example
+
+```swift
+// Remove duplicate usernames from multiple sources
+func consolidateUsers(from sources: [[String]]) -> [String] {
+    var uniqueUsers = Set<String>()
+    
+    for source in sources {
+        uniqueUsers.formUnion(source)
+    }
+    
+    return uniqueUsers.sorted()
+}
+
+let source1 = ["alice", "bob", "charlie"]
+let source2 = ["bob", "david", "alice"]
+let source3 = ["eve", "charlie", "frank"]
+
+let allUsers = consolidateUsers(from: [source1, source2, source3])
+// ["alice", "bob", "charlie", "david", "eve", "frank"]
+```
+
+## Performance Characteristics
+
+Understanding performance helps you choose the right collection:
+
+```swift
+var dictionary = ["key": "value"]
+var set: Set = [1, 2, 3]
+var array = [1, 2, 3]
+
+// Dictionary lookup: O(1) average
+let value = dictionary["key"]
+
+// Set membership: O(1) average
+let exists = set.contains(2)
+
+// Array search: O(n)
+let found = array.contains(2)
+
+// This is why sets are preferred for membership testing
+let largeSet: Set = Set(1...1_000_000)
+let largeArray = Array(1...1_000_000)
+
+// Much faster
+largeSet.contains(999_999)  // O(1)
+
+// Much slower
+largeArray.contains(999_999)  // O(n)
+```
+
+## Hashable Requirement
+
+Both dictionary keys and set elements must conform to the `Hashable` protocol (which inherits from `Equatable`). Most Swift standard types are already `Hashable`.
+
+```swift
+// Custom types need Hashable conformance
+struct Person: Hashable {
+    let name: String
+    let age: Int
+}
+
+var people: Set<Person> = [
+    Person(name: "Alice", age: 30),
+    Person(name: "Bob", age: 25)
+]
+
+var personDict = [
+    Person(name: "Charlie", age: 35): "Engineer"
+]
+
+// For classes, you often need to implement hash(into:) manually
+class Employee: Hashable {
+    let id: Int
+    let name: String
+    
+    init(id: Int, name: String) {
+        self.id = id
+        self.name = name
+    }
+    
+    static func == (lhs: Employee, rhs: Employee) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+```
+
+## Common Edge Cases and Pitfalls
+
+### Dictionary Edge Cases
+
+```swift
+var dict = ["a": 1, "b": 2]
+
+// Accessing non-existent keys returns nil, doesn't crash
+let value = dict["c"]  // nil
+
+// Nil assignment removes the key
+dict["a"] = nil
+print(dict)  // ["b": 2]
+
+// Be careful with value types that can be nil
+var optionalValues: [String: Int?] = ["a": 1, "b": nil, "c": 3]
+optionalValues["b"] = nil   // Removes "b" entirely
+optionalValues["c"] = .some(nil)  // Sets "c" to nil but keeps the key
+
+// Check if key exists vs. if value is nil
+if dict["b"] != nil {
+    print("Key exists")
+}
+
+if dict.keys.contains("b") {
+    print("Alternative check")
+}
+```
+
+### Set Edge Cases
+
+```swift
+var set: Set = [1, 2, 3]
+
+// Insert returns tuple indicating success
+let result1 = set.insert(4)  // (inserted: true, memberAfterInsert: 4)
+let result2 = set.insert(4)  // (inserted: false, memberAfterInsert: 4)
+
+// Remove returns optional
+let removed1 = set.remove(4)  // Optional(4)
+let removed2 = set.remove(10) // nil
+
+// Empty sets of different types are different
+let intSet = Set<Int>()
+let stringSet = Set<String>()
+// Can't compare: intSet == stringSet  // Error: different types
+```
+
+## When to Use Each Collection
+
+### Use Dictionaries When:
+- You need fast lookups by a unique identifier
+- Modeling relationships (user ID to user profile, product code to product)
+- Counting occurrences (word frequency, character counts)
+- Caching computed values
+
+### Use Sets When:
+- Uniqueness is required (no duplicates)
+- Order doesn't matter
+- You need mathematical set operations
+- Fast membership testing is crucial
+- Removing duplicates from a collection
+
+### Use Arrays When:
+- Order matters
+- You need indexed access
+- Duplicates are meaningful
+- You're working with sequential data
+
+## Advanced Dictionary Patterns
+
+### Grouping with Dictionary
+
+```swift
+struct Student {
+    let name: String
+    let grade: Int
+}
+
+let students = [
+    Student(name: "Alice", grade: 10),
+    Student(name: "Bob", grade: 9),
+    Student(name: "Charlie", grade: 10),
+    Student(name: "David", grade: 9)
+]
+
+// Group by grade using Dictionary(grouping:by:)
+let studentsByGrade = Dictionary(grouping: students) { $0.grade }
+// [10: [Alice, Charlie], 9: [Bob, David]]
+```
+
+### Merging Dictionaries
+
+```swift
+var defaults = ["theme": "light", "fontSize": "12"]
+let userPrefs = ["theme": "dark", "language": "en"]
+
+// merge(_:uniquingKeysWith:)
+defaults.merge(userPrefs) { (_, new) in new }
+// ["theme": "dark", "fontSize": "12", "language": "en"]
+
+// Using + operator extension (requires custom implementation)
+// Or using merging initializer
+let combined = defaults.merging(userPrefs) { (_, new) in new }
+```
+
+### Filtering and Mapping
+
+```swift
+let scores = ["Alice": 95, "Bob": 67, "Charlie": 88, "David": 72]
+
+// Filter dictionary
+let passing = scores.filter { $0.value >= 70 }
+// ["Alice": 95, "Charlie": 88, "David": 72]
+
+// MapValues (transform values, keep keys)
+let curved = scores.mapValues { $0 + 5 }
+// ["Alice": 100, "Bob": 72, "Charlie": 93, "David": 77]
+
+// CompactMapValues (remove nil results)
+let grades = scores.compactMapValues { score -> String? in
+    score >= 90 ? "A" : score >= 80 ? "B" : nil
+}
+// ["Alice": "A", "Charlie": "B"]
+```
+
+## Summary Reference Table
+
+| Feature | Dictionary | Set | Array |
+|---------|-----------|-----|-------|
+| **Syntax** | `[Key: Value]` | `Set<Element>` | `[Element]` |
+| **Order** | Unordered | Unordered | Ordered |
+| **Duplicates** | Unique keys, duplicate values OK | No duplicates | Duplicates allowed |
+| **Access Method** | By key | Membership test | By index |
+| **Lookup Time** | O(1) average | O(1) average | O(n) |
+| **Insert Time** | O(1) average | O(1) average | O(1) append, O(n) insert |
+| **Use Case** | Key-value associations | Unique collections, set math | Sequential data |
+| **Element Requirement** | Key must be Hashable | Must be Hashable | No special requirement |
+| **Common Operations** | `dict[key]`, `updateValue`, `removeValue` | `insert`, `remove`, `contains`, `union` | `append`, `insert`, `remove(at:)` |
+
+## Best Practices
+
+1. **Always handle optionals** when accessing dictionary values
+2. **Use `default:` subscript** for cleaner code when appropriate
+3. **Choose sets over arrays** for membership testing in large collections
+4. **Make custom types Hashable** properly for use in sets and as dictionary keys
+5. **Use type inference** where it improves readability, but be explicit with sets
+6. **Consider capacity** when creating large collections: `Dictionary(minimumCapacity:)`
+7. **Use `mapValues`** instead of `map` when transforming only dictionary values
+
+## Official Documentation
+
+For more detailed information, refer to:
+- [Swift Collection Types - Apple Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/)
+- [Dictionary - Swift Standard Library](https://developer.apple.com/documentation/swift/dictionary)
+- [Set - Swift Standard Library](https://developer.apple.com/documentation/swift/set)
+- [Hashable Protocol](https://developer.apple.com/documentation/swift/hashable)
+
+Understanding dictionaries and sets will make your Swift code more efficient and expressive. Practice using them in real scenarios to internalize when each collection type provides the best solution.

@@ -1,0 +1,638 @@
+---
+title: "Dark Mode & Dynamic Type"
+description: "Color scheme adaptation, accessibility, and dynamic type support"
+sectionId: "2.6-styling"
+sectionTitle: "Styling & Theming"
+order: 18
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Dark Mode & Dynamic Type
+
+Dark Mode and Dynamic Type are two critical accessibility and user experience features in iOS. Dark Mode allows your app to adapt its appearance to the user's system-wide color scheme preference, while Dynamic Type enables users to adjust text sizes according to their visual needs. Supporting both features properly is essential for creating inclusive, modern iOS applications.
+
+## Why These Features Matter
+
+**Dark Mode** reduces eye strain in low-light environments and can save battery life on OLED displays. Since iOS 13, users expect apps to respect their system-wide appearance preference.
+
+**Dynamic Type** ensures your app is accessible to users with visual impairments. When users adjust their preferred text size in Settings, your app should respond appropriately. This is not just good practice—it's essential for accessibility compliance.
+
+## Understanding Dark Mode
+
+### How Dark Mode Works
+
+iOS uses a trait collection system to communicate the current interface style to your app. The `userInterfaceStyle` property can be `.light`, `.dark`, or `.unspecified`.
+
+### Semantic Colors
+
+The most important concept for Dark Mode support is **semantic colors**. Instead of using fixed colors like `UIColor.white` or hardcoded RGB values, use semantic colors that automatically adapt to the current appearance.
+
+```swift
+import UIKit
+
+class DarkModeViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // ✅ CORRECT: Semantic colors adapt automatically
+        view.backgroundColor = .systemBackground
+        
+        let label = UILabel()
+        label.textColor = .label
+        label.text = "This adapts to Dark Mode"
+        
+        let secondaryLabel = UILabel()
+        secondaryLabel.textColor = .secondaryLabel
+        
+        // ❌ WRONG: Fixed colors don't adapt
+        // view.backgroundColor = .white  // Will be white in both modes
+        // label.textColor = .black      // Will be black in both modes
+    }
+}
+```
+
+### Key Semantic Colors
+
+```swift
+// Background colors
+.systemBackground        // Primary background (white/black)
+.secondarySystemBackground  // Slightly different shade
+.tertiarySystemBackground   // Even more subtle
+
+// Label colors
+.label                   // Primary text (black/white)
+.secondaryLabel         // Less prominent text
+.tertiaryLabel          // Even less prominent
+.quaternaryLabel        // Lowest prominence
+
+// Fill colors for UI elements
+.systemFill
+.secondarySystemFill
+.tertiarySystemFill
+.quaternarySystemFill
+
+// Grouped backgrounds (for table views)
+.systemGroupedBackground
+.secondarySystemGroupedBackground
+.tertiarySystemGroupedBackground
+
+// Tint colors
+.tintColor              // Accent color for interactive elements
+```
+
+### Custom Colors with Dark Mode Support
+
+When you need custom colors, create them with both light and dark variants:
+
+```swift
+extension UIColor {
+    static let customBackground = UIColor { traitCollection in
+        switch traitCollection.userInterfaceStyle {
+        case .dark:
+            return UIColor(red: 0.1, green: 0.1, blue: 0.15, alpha: 1.0)
+        default:
+            return UIColor(red: 0.95, green: 0.95, blue: 0.98, alpha: 1.0)
+        }
+    }
+    
+    static let customAccent = UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 1.0)
+            : UIColor(red: 0.0, green: 0.3, blue: 0.8, alpha: 1.0)
+    }
+}
+
+// Usage
+view.backgroundColor = .customBackground
+button.backgroundColor = .customAccent
+```
+
+### Asset Catalog Colors
+
+The preferred approach is defining colors in your Asset Catalog, which provides a visual interface for managing light/dark variants:
+
+```swift
+// In your Asset Catalog, create a Color Set named "CustomPrimary"
+// Set appearances: Any (light mode) and Dark
+
+// Usage in code
+let color = UIColor(named: "CustomPrimary")
+label.textColor = color
+```
+
+### Detecting Appearance Changes
+
+Your app should respond when users switch between light and dark mode:
+
+```swift
+class ResponsiveViewController: UIViewController {
+    private let imageView = UIImageView()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        updateForCurrentAppearance()
+    }
+    
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        
+        // Check if the user interface style actually changed
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            updateForCurrentAppearance()
+        }
+    }
+    
+    private func updateForCurrentAppearance() {
+        if traitCollection.userInterfaceStyle == .dark {
+            imageView.image = UIImage(named: "logo-dark")
+        } else {
+            imageView.image = UIImage(named: "logo-light")
+        }
+    }
+}
+```
+
+### Images with Dark Mode Variants
+
+Define image variants in your Asset Catalog:
+
+```swift
+// In Asset Catalog, add images with "Any Appearance" and "Dark" variants
+
+// Automatic selection
+let icon = UIImage(named: "icon")  // iOS picks the right variant
+imageView.image = icon
+
+// SF Symbols automatically adapt
+let symbolImage = UIImage(systemName: "star.fill")
+imageView.image = symbolImage
+```
+
+### Forcing a Specific Appearance
+
+Sometimes you need to override the system appearance for a specific view controller or view:
+
+```swift
+// Force dark mode for this view controller
+override func viewDidLoad() {
+    super.viewDidLoad()
+    overrideUserInterfaceStyle = .dark
+}
+
+// Force light mode for a specific view
+let specialView = UIView()
+specialView.overrideUserInterfaceStyle = .light
+```
+
+**Warning:** Only override appearance when absolutely necessary (e.g., for specific content types or branding requirements). Respecting user preferences is best practice.
+
+## Understanding Dynamic Type
+
+Dynamic Type allows users to set their preferred text size system-wide. Your app should honor these preferences by using scalable text styles.
+
+### Text Styles
+
+iOS provides predefined text styles that automatically scale:
+
+```swift
+import UIKit
+
+class DynamicTypeViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .title1)
+        titleLabel.text = "Title"
+        
+        let headlineLabel = UILabel()
+        headlineLabel.font = .preferredFont(forTextStyle: .headline)
+        headlineLabel.text = "Headline"
+        
+        let bodyLabel = UILabel()
+        bodyLabel.font = .preferredFont(forTextStyle: .body)
+        bodyLabel.text = "Body text that scales with user preferences"
+        bodyLabel.numberOfLines = 0  // Important: Allow multiple lines
+        
+        let captionLabel = UILabel()
+        captionLabel.font = .preferredFont(forTextStyle: .caption1)
+        captionLabel.text = "Caption"
+        
+        // Stack them vertically
+        let stackView = UIStackView(arrangedSubviews: [
+            titleLabel, headlineLabel, bodyLabel, captionLabel
+        ])
+        stackView.axis = .vertical
+        stackView.spacing = 8
+        
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+}
+```
+
+### Available Text Styles
+
+```swift
+// Display styles (largest)
+.largeTitle
+.title1
+.title2
+.title3
+
+// Content styles
+.headline
+.body
+.callout
+.subheadline
+.footnote
+.caption1
+.caption2
+```
+
+### Automatic Updates When User Changes Text Size
+
+To make labels update automatically when the user changes their preferred text size:
+
+```swift
+class AutoUpdatingLabel: UIViewController {
+    private let label = UILabel()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true  // ✅ Auto-update enabled
+        label.numberOfLines = 0  // Allow wrapping
+        label.text = "This text will update automatically when the user changes their text size preference in Settings."
+        
+        view.addSubview(label)
+        
+        // Setup Auto Layout constraints
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            label.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20)
+        ])
+    }
+}
+```
+
+### Custom Fonts with Dynamic Type
+
+If you use custom fonts, you must manually scale them to respect Dynamic Type:
+
+```swift
+extension UIFont {
+    static func customFont(forTextStyle style: UIFont.TextStyle, weight: UIFont.Weight = .regular) -> UIFont {
+        // Get the preferred size for the text style
+        let preferredFont = UIFont.preferredFont(forTextStyle: style)
+        let fontSize = preferredFont.pointSize
+        
+        // Create custom font at the scaled size
+        let customFont = UIFont(name: "YourCustomFont-Regular", size: fontSize) ?? preferredFont
+        
+        // Create a font metrics object to scale the font
+        let fontMetrics = UIFontMetrics(forTextStyle: style)
+        return fontMetrics.scaledFont(for: customFont)
+    }
+}
+
+// Usage
+let label = UILabel()
+label.font = .customFont(forTextStyle: .body)
+label.adjustsFontForContentSizeCategory = true
+```
+
+### Scaling with Maximum Sizes
+
+Sometimes you need to limit how large text can grow (e.g., for design constraints):
+
+```swift
+let label = UILabel()
+label.font = .preferredFont(forTextStyle: .body)
+label.adjustsFontForContentSizeCategory = true
+
+// Limit maximum size
+if let font = label.font {
+    label.font = UIFont(
+        descriptor: font.fontDescriptor,
+        size: min(font.pointSize, 28.0)  // Cap at 28 points
+    )
+}
+```
+
+A better approach using `UIFontMetrics`:
+
+```swift
+let bodyFont = UIFont.preferredFont(forTextStyle: .body)
+let fontMetrics = UIFontMetrics(forTextStyle: .body)
+
+// Scale but with a maximum size
+let scaledFont = fontMetrics.scaledFont(
+    for: bodyFont,
+    maximumPointSize: 28.0
+)
+
+label.font = scaledFont
+label.adjustsFontForContentSizeCategory = true
+```
+
+### Responding to Content Size Changes
+
+Listen for system notifications when the user changes their text size:
+
+```swift
+class DynamicTypeObserver: UIViewController {
+    private let label = UILabel()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Register for notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(contentSizeCategoryDidChange),
+            name: UIContentSizeCategory.didChangeNotification,
+            object: nil
+        )
+        
+        updateFonts()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func contentSizeCategoryDidChange() {
+        updateFonts()
+        // Trigger layout updates if needed
+        view.setNeedsLayout()
+    }
+    
+    private func updateFonts() {
+        label.font = .preferredFont(forTextStyle: .body)
+        // Update other UI elements that don't auto-adjust
+    }
+}
+```
+
+### Accessibility Content Sizes
+
+iOS supports five additional "accessibility" content size categories for users with more severe visual impairments:
+
+```swift
+// Check if user is using accessibility sizes
+if traitCollection.preferredContentSizeCategory.isAccessibilityCategory {
+    // Adjust layout for very large text
+    stackView.axis = .vertical  // Switch from horizontal to vertical
+    imageView.isHidden = true   // Hide less critical UI
+}
+
+// All content size categories:
+// .extraSmall, .small, .medium, .large (default)
+// .extraLarge, .extraExtraLarge, .extraExtraExtraLarge
+// .accessibilityMedium, .accessibilityLarge
+// .accessibilityExtraLarge, .accessibilityExtraExtraLarge
+// .accessibilityExtraExtraExtraLarge
+```
+
+### Table Views and Collection Views
+
+Dynamic Type requires special attention with table and collection views:
+
+```swift
+class DynamicTypeTableViewController: UITableViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Enable automatic cell height
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 80
+        
+        tableView.register(DynamicCell.self, forCellReuseIdentifier: "cell")
+    }
+    
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath) as! DynamicCell
+        cell.configure(with: "Dynamic text content")
+        return cell
+    }
+}
+
+class DynamicCell: UITableViewCell {
+    private let titleLabel = UILabel()
+    private let bodyLabel = UILabel()
+    
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 0
+        
+        bodyLabel.font = .preferredFont(forTextStyle: .body)
+        bodyLabel.adjustsFontForContentSizeCategory = true
+        bodyLabel.numberOfLines = 0
+        
+        let stackView = UIStackView(arrangedSubviews: [titleLabel, bodyLabel])
+        stackView.axis = .vertical
+        stackView.spacing = 4
+        
+        contentView.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    func configure(with text: String) {
+        titleLabel.text = "Title"
+        bodyLabel.text = text
+    }
+}
+```
+
+## SwiftUI Support
+
+SwiftUI provides excellent built-in support for both features:
+
+### Dark Mode in SwiftUI
+
+```swift
+import SwiftUI
+
+struct DarkModeView: View {
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        VStack {
+            Text("Automatic Dark Mode Support")
+                .foregroundColor(.primary)  // Adapts automatically
+            
+            Text("Secondary text")
+                .foregroundColor(.secondary)
+            
+            Rectangle()
+                .fill(Color(.systemBackground))
+            
+            // Conditional styling based on appearance
+            Text(colorScheme == .dark ? "Dark Mode Active" : "Light Mode Active")
+                .padding()
+                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
+                .cornerRadius(8)
+        }
+    }
+}
+```
+
+### Dynamic Type in SwiftUI
+
+SwiftUI handles Dynamic Type automatically when using system font styles:
+
+```swift
+struct DynamicTypeSwiftUIView: View {
+    @Environment(\.sizeCategory) var sizeCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Large Title").font(.largeTitle)
+            Text("Title").font(.title)
+            Text("Headline").font(.headline)
+            Text("Body").font(.body)
+            Text("Caption").font(.caption)
+
+            // Custom font with Dynamic Type scaling
+            Text("Custom Scaled Font")
+                .font(.custom("Helvetica Neue", size: 18, relativeTo: .body))
+
+            // Adapt layout for accessibility sizes
+            if sizeCategory.isAccessibilityCategory {
+                Text("Layout adjusted for accessibility text sizes")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+    }
+}
+```
+
+### Forcing Appearance in SwiftUI
+
+```swift
+struct ForcedAppearanceView: View {
+    var body: some View {
+        VStack {
+            Text("Always Dark")
+                .padding()
+        }
+        .preferredColorScheme(.dark) // Force dark mode for this view hierarchy
+    }
+}
+```
+
+### Preview with Different Appearances
+
+```swift
+#Preview("Light Mode") {
+    DarkModeView()
+        .preferredColorScheme(.light)
+}
+
+#Preview("Dark Mode") {
+    DarkModeView()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Large Text") {
+    DynamicTypeSwiftUIView()
+        .environment(\.sizeCategory, .accessibilityExtraLarge)
+}
+```
+
+## Common Mistakes
+
+### 1. Hardcoded Colors
+
+```swift
+// ❌ Wrong - won't adapt to Dark Mode
+Text("Hello")
+    .foregroundColor(.black)
+    .background(Color.white)
+
+// ✅ Correct - uses semantic colors
+Text("Hello")
+    .foregroundColor(.primary)
+    .background(Color(.systemBackground))
+```
+
+### 2. Fixed Font Sizes Without Scaling
+
+```swift
+// ❌ Wrong - ignores Dynamic Type
+Text("Hello")
+    .font(.system(size: 16))
+
+// ✅ Correct - scales with user preference
+Text("Hello")
+    .font(.body)
+
+// ✅ Also correct - custom font that scales
+Text("Hello")
+    .font(.custom("MyFont", size: 16, relativeTo: .body))
+```
+
+### 3. Not Testing with Extreme Sizes
+
+Always test your app with the smallest and largest Dynamic Type sizes, and with accessibility sizes enabled. Use the Accessibility Inspector in Xcode or the Environment Overrides panel in the debugger.
+
+### 4. Ignoring Color Contrast
+
+```swift
+// ❌ Poor contrast in Dark Mode
+Text("Important")
+    .foregroundColor(.gray) // May be invisible on dark backgrounds
+
+// ✅ Use semantic colors that maintain contrast
+Text("Important")
+    .foregroundColor(.secondary) // Adapts to both modes
+```
+
+## Summary Table
+
+| Feature | UIKit | SwiftUI | Purpose |
+|---------|-------|---------|---------|
+| **System Background** | `.systemBackground` | `Color(.systemBackground)` | Primary background color |
+| **Primary Text** | `.label` | `.primary` | Main text color |
+| **Secondary Text** | `.secondaryLabel` | `.secondary` | Less prominent text |
+| **Detect Dark Mode** | `traitCollection.userInterfaceStyle` | `@Environment(\.colorScheme)` | Check current appearance |
+| **Force Appearance** | `overrideUserInterfaceStyle` | `.preferredColorScheme()` | Override system setting |
+| **System Font** | `.preferredFont(forTextStyle:)` | `.font(.body)` | Scaled text style |
+| **Custom Scaled Font** | `UIFontMetrics.scaledFont(for:)` | `.font(.custom(_, size:, relativeTo:))` | Custom font with scaling |
+| **Auto-update** | `.adjustsFontForContentSizeCategory = true` | Automatic | Respond to size changes |
+| **Check Accessibility** | `isAccessibilityCategory` | `sizeCategory.isAccessibilityCategory` | Detect large text sizes |
+| **Asset Colors** | `UIColor(named:)` | `Color("ColorName")` | Colors from Asset Catalog |
+
+## Official Resources
+
+- [Apple Documentation: Supporting Dark Mode](https://developer.apple.com/documentation/uikit/appearance_customization/supporting_dark_mode_in_your_interface)
+- [Apple Documentation: Dynamic Type](https://developer.apple.com/documentation/uikit/uifont/scaling_fonts_automatically)
+- [Human Interface Guidelines: Dark Mode](https://developer.apple.com/design/human-interface-guidelines/dark-mode)
+- [Human Interface Guidelines: Typography](https://developer.apple.com/design/human-interface-guidelines/typography)
+- [WWDC 2019: Implementing Dark Mode on iOS](https://developer.apple.com/videos/play/wwdc2019/214/)

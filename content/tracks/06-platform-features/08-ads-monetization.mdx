@@ -1,0 +1,651 @@
+---
+title: "Ad Integration"
+description: "AdMob, SKAdNetwork, and monetization strategies"
+sectionId: "6.3-monetization"
+sectionTitle: "Monetization"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Ad Integration in iOS: AdMob, SKAdNetwork, and Monetization Strategies
+
+Ad integration is the process of incorporating advertisements into your iOS application to generate revenue. Whether you're building a free app or using a freemium model, understanding how to properly implement ads is essential for monetization. This guide covers Google AdMob (the most popular mobile ad network), Apple's SKAdNetwork (for privacy-compliant attribution), and best practices for monetization strategies.
+
+## Why Ad Integration Matters
+
+For many developers, especially indies and small teams, ad revenue is the primary income source. However, poor ad implementation can:
+
+- Violate Apple's App Store Review Guidelines and lead to rejection
+- Breach user privacy regulations (GDPR, CCPA)
+- Create a poor user experience that drives uninstalls
+- Result in low fill rates and minimal revenue
+
+Done correctly, ad integration provides sustainable income while maintaining user satisfaction.
+
+## Understanding Ad Types
+
+Before implementing ads, you should understand the main formats:
+
+- **Banner Ads**: Small rectangular ads typically at top or bottom of screen
+- **Interstitial Ads**: Full-screen ads shown at natural transition points
+- **Rewarded Ads**: Users watch video ads to earn in-app rewards
+- **Native Ads**: Ads that match your app's design and layout
+- **Rewarded Interstitial Ads**: Full-screen ads that offer rewards
+
+## Setting Up AdMob
+
+Google AdMob is the most widely used mobile ad platform. Let's start with basic setup.
+
+### Step 1: Install the SDK
+
+Add the Google Mobile Ads SDK to your project using CocoaPods:
+
+```swift
+// Podfile
+platform :ios, '12.0'
+use_frameworks!
+
+target 'YourApp' do
+  pod 'Google-Mobile-Ads-SDK'
+end
+```
+
+Then run `pod install` in your terminal.
+
+### Step 2: Update Info.plist
+
+Add your AdMob App ID to your `Info.plist`:
+
+```xml
+<key>GADApplicationIdentifier</key>
+<string>ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY</string>
+```
+
+**Common Mistake**: Forgetting to add the App ID will cause crashes at runtime. Always add this before initializing the SDK.
+
+### Step 3: Configure App Tracking Transparency (ATT)
+
+As of iOS 14.5, you must request permission to track users. Add the ATT description to `Info.plist`:
+
+```xml
+<key>NSUserTrackingUsageDescription</key>
+<string>This identifier will be used to deliver personalized ads to you.</string>
+```
+
+### Step 4: Initialize the SDK
+
+In your `AppDelegate.swift` or App struct:
+
+```swift
+import UIKit
+import GoogleMobileAds
+import AppTrackingTransparency
+import AdSupport
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    
+    func application(_ application: UIApplication, 
+                    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        
+        // Initialize Google Mobile Ads SDK
+        GADMobileAds.sharedInstance().start(completionHandler: nil)
+        
+        return true
+    }
+    
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        // Request ATT permission when app becomes active
+        requestTrackingPermission()
+    }
+    
+    private func requestTrackingPermission() {
+        if #available(iOS 14, *) {
+            ATTrackingManager.requestTrackingAuthorization { status in
+                switch status {
+                case .authorized:
+                    print("Tracking authorized")
+                case .denied:
+                    print("Tracking denied")
+                case .restricted:
+                    print("Tracking restricted")
+                case .notDetermined:
+                    print("Tracking not determined")
+                @unknown default:
+                    break
+                }
+            }
+        }
+    }
+}
+```
+
+**Edge Case**: Always check iOS version before calling ATT APIs. On iOS versions before 14, `ATTrackingManager` doesn't exist.
+
+## Implementing Banner Ads
+
+Banner ads are the simplest to implement. Here's a complete example:
+
+```swift
+import UIKit
+import GoogleMobileAds
+
+class BannerViewController: UIViewController {
+    
+    private var bannerView: GADBannerView!
+    
+    // Use test ad unit ID during development
+    // Real ID format: "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
+    private let adUnitID = "ca-app-pub-3940256099942544/2934735716" // Test ID
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        setupBannerAd()
+    }
+    
+    private func setupBannerAd() {
+        // Create banner with adaptive size
+        let frame = view.frame.inset(by: view.safeAreaInsets)
+        let viewWidth = frame.size.width
+        
+        bannerView = GADBannerView(adSize: GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(viewWidth))
+        
+        bannerView.adUnitID = adUnitID
+        bannerView.rootViewController = self
+        bannerView.delegate = self
+        
+        // Position banner at bottom of safe area
+        view.addSubview(bannerView)
+        bannerView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            bannerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            bannerView.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+        
+        // Load ad
+        let request = GADRequest()
+        bannerView.load(request)
+    }
+}
+
+// MARK: - GADBannerViewDelegate
+extension BannerViewController: GADBannerViewDelegate {
+    
+    func bannerViewDidReceiveAd(_ bannerView: GADBannerView) {
+        print("Banner ad loaded successfully")
+        // Optionally animate banner in
+        bannerView.alpha = 0
+        UIView.animate(withDuration: 0.3) {
+            bannerView.alpha = 1
+        }
+    }
+    
+    func bannerView(_ bannerView: GADBannerView, didFailToReceiveAdWithError error: Error) {
+        print("Banner ad failed to load: \(error.localizedDescription)")
+        // Handle error - maybe hide banner container
+    }
+    
+    func bannerViewDidRecordClick(_ bannerView: GADBannerView) {
+        print("Banner ad was clicked")
+    }
+}
+```
+
+**Common Mistakes**:
+- Using production ad IDs during development (can get your account banned)
+- Not setting `rootViewController` (ads won't display properly)
+- Hardcoding banner sizes instead of using adaptive sizes (looks bad on different devices)
+
+## Implementing Interstitial Ads
+
+Interstitial ads should appear at natural breaks in your app flow:
+
+```swift
+import UIKit
+import GoogleMobileAds
+
+class InterstitialAdManager: NSObject {
+    
+    static let shared = InterstitialAdManager()
+    
+    private var interstitial: GADInterstitialAd?
+    private let adUnitID = "ca-app-pub-3940256099942544/4411468910" // Test ID
+    
+    private override init() {
+        super.init()
+    }
+    
+    func loadAd() {
+        let request = GADRequest()
+        
+        GADInterstitialAd.load(withAdUnitID: adUnitID, request: request) { [weak self] ad, error in
+            if let error = error {
+                print("Failed to load interstitial ad: \(error.localizedDescription)")
+                return
+            }
+            
+            self?.interstitial = ad
+            self?.interstitial?.fullScreenContentDelegate = self
+            print("Interstitial ad loaded successfully")
+        }
+    }
+    
+    func showAd(from viewController: UIViewController) {
+        guard let interstitial = interstitial else {
+            print("Interstitial ad not ready")
+            // Load a new one for next time
+            loadAd()
+            return
+        }
+        
+        interstitial.present(fromRootViewController: viewController)
+    }
+}
+
+// MARK: - GADFullScreenContentDelegate
+extension InterstitialAdManager: GADFullScreenContentDelegate {
+    
+    func adDidRecordImpression(_ ad: GADFullScreenPresentingAd) {
+        print("Interstitial ad recorded impression")
+    }
+    
+    func ad(_ ad: GADFullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
+        print("Failed to present interstitial ad: \(error.localizedDescription)")
+        // Load a new ad
+        loadAd()
+    }
+    
+    func adWillPresentFullScreenContent(_ ad: GADFullScreenPresentingAd) {
+        print("Interstitial ad will be presented")
+    }
+    
+    func adDidDismissFullScreenContent(_ ad: GADFullScreenPresentingAd) {
+        print("Interstitial ad was dismissed")
+        // Load a new ad for next time
+        interstitial = nil
+        loadAd()
+    }
+}
+```
+
+Usage in your view controller:
+
+```swift
+class GameViewController: UIViewController {
+    
+    private var gameCount = 0
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Preload interstitial ad
+        InterstitialAdManager.shared.loadAd()
+    }
+    
+    func gameDidEnd() {
+        gameCount += 1
+        
+        // Show ad every 3 games (don't overwhelm users)
+        if gameCount % 3 == 0 {
+            InterstitialAdManager.shared.showAd(from: self)
+        }
+    }
+}
+```
+
+**Best Practices**:
+- Preload interstitial ads before you need them
+- Always load a new ad after showing one (they're single-use)
+- Don't show interstitials too frequently (every 3-5 actions is reasonable)
+- Show them at natural breaks (level complete, game over, etc.)
+
+## Implementing Rewarded Ads
+
+Rewarded ads are the most user-friendly format because users opt-in:
+
+```swift
+import UIKit
+import GoogleMobileAds
+
+class RewardedAdManager: NSObject {
+    
+    static let shared = RewardedAdManager()
+    
+    private var rewardedAd: GADRewardedAd?
+    private let adUnitID = "ca-app-pub-3940256099942544/1712485313" // Test ID
+    
+    // Callback for when user earns reward
+    var onRewardEarned: ((Int) -> Void)?
+    
+    private override init() {
+        super.init()
+    }
+    
+    func loadAd(completion: ((Bool) -> Void)? = nil) {
+        let request = GADRequest()
+        
+        GADRewardedAd.load(withAdUnitID: adUnitID, request: request) { [weak self] ad, error in
+            if let error = error {
+                print("Failed to load rewarded ad: \(error.localizedDescription)")
+                completion?(false)
+                return
+            }
+            
+            self?.rewardedAd = ad
+            self?.rewardedAd?.fullScreenContentDelegate = self
+            print("Rewarded ad loaded successfully")
+            completion?(true)
+        }
+    }
+    
+    func showAd(from viewController: UIViewController) {
+        guard let rewardedAd = rewardedAd else {
+            print("Rewarded ad not ready")
+            return
+        }
+        
+        rewardedAd.present(fromRootViewController: viewController) { [weak self] in
+            let reward = rewardedAd.adReward
+            print("User earned reward: \(reward.amount) \(reward.type)")
+            
+            // Award the user
+            let amount = reward.amount.intValue
+            self?.onRewardEarned?(amount)
+        }
+    }
+    
+    var isReady: Bool {
+        return rewardedAd != nil
+    }
+}
+
+// MARK: - GADFullScreenContentDelegate
+extension RewardedAdManager: GADFullScreenContentDelegate {
+    
+    func ad(_ ad: GADFullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
+        print("Failed to present rewarded ad: \(error.localizedDescription)")
+        loadAd()
+    }
+    
+    func adDidDismissFullScreenContent(_ ad: GADFullScreenPresentingAd) {
+        print("Rewarded ad dismissed")
+        rewardedAd = nil
+        // Preload next ad
+        loadAd()
+    }
+}
+```
+
+Using rewarded ads in your UI:
+
+```swift
+class StoreViewController: UIViewController {
+    
+    @IBOutlet weak var watchAdButton: UIButton!
+    @IBOutlet weak var coinsLabel: UILabel!
+    
+    private var coins = 0 {
+        didSet {
+            coinsLabel.text = "Coins: \(coins)"
+            UserDefaults.standard.set(coins, forKey: "coins")
+        }
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        coins = UserDefaults.standard.integer(forKey: "coins")
+        
+        // Load rewarded ad
+        RewardedAdManager.shared.loadAd { [weak self] success in
+            self?.updateWatchAdButton()
+        }
+        
+        // Setup reward callback
+        RewardedAdManager.shared.onRewardEarned = { [weak self] amount in
+            self?.awardCoins(amount)
+        }
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateWatchAdButton()
+    }
+    
+    @IBAction func watchAdButtonTapped(_ sender: UIButton) {
+        guard RewardedAdManager.shared.isReady else {
+            showAlert(message: "Ad not ready yet, please try again in a moment")
+            return
+        }
+        
+        RewardedAdManager.shared.showAd(from: self)
+    }
+    
+    private func updateWatchAdButton() {
+        watchAdButton.isEnabled = RewardedAdManager.shared.isReady
+        watchAdButton.alpha = watchAdButton.isEnabled ? 1.0 : 0.5
+    }
+    
+    private func awardCoins(_ amount: Int) {
+        coins += amount
+        
+        // Show success animation
+        let alert = UIAlertController(title: "Reward Earned!", 
+                                     message: "You earned \(amount) coins!", 
+                                     preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    private func showAlert(message: String) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+```
+
+**Edge Cases**:
+- User dismisses ad before completion (no reward given)
+- Ad fails to load (disable button and show message)
+- User has no internet connection (handle gracefully)
+
+## SKAdNetwork: Privacy-Safe Attribution
+
+SKAdNetwork is Apple's framework for measuring ad campaign effectiveness without compromising user privacy. As of iOS 14, it's the primary attribution method for apps that don't have ATT permission.
+
+### Configuring SKAdNetwork
+
+Add supported ad network identifiers to your `Info.plist`:
+
+```xml
+<key>SKAdNetworkItems</key>
+<array>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>cstr6suwn9.skadnetwork</string>
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>4fzdc2evr5.skadnetwork</string>
+    </dict>
+    <!-- Add all networks you use -->
+</array>
+```
+
+Google provides a list of AdMob's SKAdNetwork IDs in their documentation. You can also get this list programmatically:
+
+```swift
+import GoogleMobileAds
+
+func configureSKAdNetwork() {
+    // Google provides this list, add it to your Info.plist
+    // Download the latest list from:
+    // https://developers.google.com/admob/ios/3p-skadnetworks
+    if let path = Bundle.main.path(forResource: "Info", ofType: "plist"),
+       let dict = NSDictionary(contentsOfFile: path),
+       let items = dict["SKAdNetworkItems"] as? [[String: String]] {
+        print("SKAdNetwork IDs configured: \(items.count)")
+    } else {
+        print("Warning: No SKAdNetwork items configured in Info.plist")
+    }
+}
+```
+
+### SKAdNetwork 4.0 (iOS 16.1+)
+
+SKAdNetwork 4.0 introduces hierarchical source identifiers and multiple postback windows for better attribution:
+
+```swift
+import StoreKit
+
+class SKAdNetworkManager {
+    func updateConversionValue() {
+        if #available(iOS 16.1, *) {
+            // SKAdNetwork 4.0 — use fine and coarse conversion values
+            SKAdNetwork.updatePostbackConversionValue(3, coarseValue: .high) { error in
+                if let error = error {
+                    print("Failed to update conversion: \(error)")
+                }
+            }
+        } else if #available(iOS 15.4, *) {
+            SKAdNetwork.updatePostbackConversionValue(3) { error in
+                if let error = error {
+                    print("Failed to update conversion: \(error)")
+                }
+            }
+        }
+    }
+}
+```
+
+## Monetization Strategies
+
+### Choosing the Right Ad Format
+
+```
+Best practices by app type:
+
+Games:
+  - Rewarded ads (primary) — players trade attention for rewards
+  - Interstitial ads (secondary) — between levels or on game over
+  - Banner ads (avoid) — distract from gameplay
+
+Utility Apps:
+  - Banner ads (primary) — non-intrusive
+  - Interstitial ads (sparingly) — on natural transitions
+  - Offer ad-free upgrade via IAP
+
+Content Apps (news, social):
+  - Native ads (primary) — blend with content feed
+  - Banner ads (secondary) — top or bottom of screen
+  - Interstitial ads (sparingly) — between articles
+```
+
+### Ad Frequency Capping
+
+Don't overwhelm users with ads:
+
+```swift
+class AdFrequencyManager {
+    private let defaults = UserDefaults.standard
+
+    private let maxInterstitialsPerHour = 3
+    private let minSecondsBetweenAds = 120.0 // 2 minutes
+
+    func canShowInterstitial() -> Bool {
+        let now = Date()
+
+        // Check minimum interval
+        if let lastShown = defaults.object(forKey: "lastAdShown") as? Date {
+            if now.timeIntervalSince(lastShown) < minSecondsBetweenAds {
+                return false
+            }
+        }
+
+        // Check hourly limit
+        let hourlyCount = defaults.integer(forKey: "hourlyAdCount")
+        let lastReset = defaults.object(forKey: "hourlyReset") as? Date ?? .distantPast
+
+        if now.timeIntervalSince(lastReset) > 3600 {
+            // Reset hourly counter
+            defaults.set(0, forKey: "hourlyAdCount")
+            defaults.set(now, forKey: "hourlyReset")
+            return true
+        }
+
+        return hourlyCount < maxInterstitialsPerHour
+    }
+
+    func recordAdShown() {
+        defaults.set(Date(), forKey: "lastAdShown")
+        let count = defaults.integer(forKey: "hourlyAdCount")
+        defaults.set(count + 1, forKey: "hourlyAdCount")
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Using Production Ad IDs in Development
+
+```swift
+// ❌ NEVER use real ad IDs during development
+let adUnitID = "ca-app-pub-YOUR_REAL_ID/1234567890"
+
+// ✅ Always use test IDs during development
+#if DEBUG
+let adUnitID = "ca-app-pub-3940256099942544/2934735716" // Test banner
+#else
+let adUnitID = "ca-app-pub-YOUR_REAL_ID/1234567890"
+#endif
+```
+
+### Mistake 2: Showing Ads Before Content Loads
+
+```swift
+// ❌ Bad — ads appear before user sees content
+override func viewDidLoad() {
+    super.viewDidLoad()
+    showInterstitialAd()
+    loadContent()
+}
+
+// ✅ Good — let user engage with content first
+override func viewDidLoad() {
+    super.viewDidLoad()
+    loadContent()
+    preloadInterstitialAd() // Preload for later
+}
+```
+
+### Mistake 3: Not Handling GDPR/ATT Consent
+
+Always request consent before showing personalized ads, especially for users in the EU.
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Banner ads** | `GADBannerView` | Non-intrusive, always visible |
+| **Interstitial ads** | `GADInterstitialAd` | Full-screen at natural breaks |
+| **Rewarded ads** | `GADRewardedAd` | User opts in for rewards |
+| **ATT permission** | `ATTrackingManager` | Required for personalized ads (iOS 14.5+) |
+| **SKAdNetwork** | `Info.plist` identifiers | Privacy-safe ad attribution |
+| **Test ad IDs** | Google's test IDs | Safe development testing |
+| **Ad frequency** | Custom rate limiting | Prevent ad fatigue |
+| **Adaptive banners** | `GADCurrentOrientationAnchoredAdaptiveBannerAdSize` | Device-appropriate sizing |
+| **Preloading** | `loadAd()` before showing | Reduce latency |
+| **Delegate callbacks** | `GADFullScreenContentDelegate` | Track ad lifecycle events |
+
+## Official Resources
+
+- [Google AdMob Documentation](https://developers.google.com/admob/ios/quick-start)
+- [Apple Documentation: SKAdNetwork](https://developer.apple.com/documentation/storekit/skadnetwork)
+- [Apple Documentation: App Tracking Transparency](https://developer.apple.com/documentation/apptrackingtransparency)
+- [Google: AdMob Test Ad IDs](https://developers.google.com/admob/ios/test-ads)
+- [Apple: App Store Review Guidelines — Advertising](https://developer.apple.com/app-store/review/guidelines/#advertising)

@@ -1,0 +1,568 @@
+---
+title: "Closures"
+description: "Closure expressions, trailing closures, capturing values, and escaping closures"
+sectionId: "1.6-functions-closures"
+sectionTitle: "Functions & Closures"
+order: 15
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Closures in Swift
+
+Closures are self-contained blocks of functionality that you can pass around and use in your code. If you're coming from other languages, they're similar to lambdas, anonymous functions, or blocks. In Swift, closures are first-class citizens—you can store them in variables, pass them as arguments, and return them from functions.
+
+Why do closures matter? They're everywhere in iOS development. Network requests, UI animations, collection operations, and asynchronous tasks all rely heavily on closures. Understanding them is essential for writing idiomatic Swift code.
+
+## What Makes Something a Closure?
+
+In Swift, there are three types of closures:
+
+1. **Global functions** - have a name but don't capture any values
+2. **Nested functions** - have a name and can capture values from their enclosing function
+3. **Closure expressions** - unnamed closures written in lightweight syntax that can capture values
+
+This article focuses primarily on closure expressions, which is what most people mean when they say "closures."
+
+## Basic Closure Syntax
+
+Here's the general form of a closure expression:
+
+```swift
+{ (parameters) -> ReturnType in
+    // body
+}
+```
+
+Let's see a practical example using the `sorted(by:)` method:
+
+```swift
+let names = ["Chris", "Alex", "Ewa", "Barry", "Daniella"]
+
+// Using a regular function
+func backward(_ s1: String, _ s2: String) -> Bool {
+    return s1 > s2
+}
+let reversedNames = names.sorted(by: backward)
+
+// Using a closure expression
+let reversedNames = names.sorted(by: { (s1: String, s2: String) -> Bool in
+    return s1 > s2
+})
+
+print(reversedNames) // ["Ewa", "Daniella", "Chris", "Barry", "Alex"]
+```
+
+Both approaches produce the same result, but the closure is defined inline.
+
+## Closure Syntax Optimization
+
+Swift provides several ways to shorten closure syntax. Understanding these progressions will help you read and write Swift code more effectively.
+
+### Type Inference
+
+Since Swift can infer types from context, you can omit parameter types and return type:
+
+```swift
+let reversedNames = names.sorted(by: { s1, s2 in
+    return s1 > s2
+})
+```
+
+### Implicit Returns
+
+Single-expression closures can omit the `return` keyword:
+
+```swift
+let reversedNames = names.sorted(by: { s1, s2 in s1 > s2 })
+```
+
+### Shorthand Argument Names
+
+Swift provides automatic names for closure parameters: `$0`, `$1`, `$2`, etc.:
+
+```swift
+let reversedNames = names.sorted(by: { $0 > $1 })
+```
+
+When using shorthand arguments, you can omit the parameter list and `in` keyword entirely.
+
+### Operator Methods
+
+When an operator matches the required signature, you can pass it directly:
+
+```swift
+let reversedNames = names.sorted(by: >)
+```
+
+This works because `>` is defined as a function that takes two comparable values.
+
+## Trailing Closures
+
+When a closure is the last parameter of a function, you can write it outside the parentheses. This is called **trailing closure syntax**:
+
+```swift
+// Standard syntax
+let reversedNames = names.sorted(by: { $0 > $1 })
+
+// Trailing closure syntax
+let reversedNames = names.sorted { $0 > $1 }
+```
+
+If the closure is the *only* argument, you can omit the parentheses entirely.
+
+Trailing closures shine with longer closure bodies:
+
+```swift
+func performAsyncTask(completion: () -> Void) {
+    // Do some work
+    completion()
+}
+
+// Trailing closure makes this much more readable
+performAsyncTask {
+    print("Task completed!")
+    print("Performing cleanup...")
+}
+```
+
+### Multiple Trailing Closures
+
+Swift 5.3+ supports multiple trailing closures for functions with several closure parameters:
+
+```swift
+func loadData(
+    onSuccess: (String) -> Void,
+    onFailure: (Error) -> Void
+) {
+    // Implementation
+}
+
+// Multiple trailing closures
+loadData {
+    print("Success: \($0)")
+} onFailure: {
+    print("Error: \($0)")
+}
+```
+
+The first closure omits its label, while subsequent closures keep their labels.
+
+## Capturing Values
+
+Closures can capture and store references to variables and constants from their surrounding context. This is one of their most powerful features—and a common source of confusion.
+
+```swift
+func makeIncrementer(incrementAmount: Int) -> () -> Int {
+    var total = 0
+    
+    let incrementer: () -> Int = {
+        total += incrementAmount
+        return total
+    }
+    
+    return incrementer
+}
+
+let incrementByTwo = makeIncrementer(incrementAmount: 2)
+print(incrementByTwo()) // 2
+print(incrementByTwo()) // 4
+print(incrementByTwo()) // 6
+
+let incrementByTen = makeIncrementer(incrementAmount: 10)
+print(incrementByTen()) // 10
+print(incrementByTen()) // 20
+
+print(incrementByTwo()) // 8 - still has its own captured state
+```
+
+Key points about value capturing:
+
+- Closures capture references to variables, not copies
+- Each closure instance maintains its own captured environment
+- Captured values persist as long as the closure exists
+
+### Common Mistake: Capturing Loop Variables
+
+```swift
+var closures: [() -> Int] = []
+
+// ❌ Problematic: all closures capture the same 'i'
+for i in 0..<5 {
+    closures.append({ i }) // This might not do what you expect in older patterns
+}
+
+// ✅ Correct: capture each value explicitly
+for i in 0..<5 {
+    closures.append({ [i] in i }) // Capture list creates a copy
+}
+
+for closure in closures {
+    print(closure()) // Prints 0, 1, 2, 3, 4
+}
+```
+
+## Escaping Closures
+
+A closure is said to **escape** a function when it's called after the function returns. This typically happens with:
+
+- Asynchronous operations
+- Completion handlers
+- Stored properties
+
+Mark escaping closures with the `@escaping` attribute:
+
+```swift
+var completionHandlers: [() -> Void] = []
+
+func addCompletionHandler(handler: @escaping () -> Void) {
+    completionHandlers.append(handler) // Stored for later use
+}
+
+func doAsyncWork(completion: @escaping (String) -> Void) {
+    DispatchQueue.global().async {
+        // This closure escapes because it executes after doAsyncWork returns
+        let result = "Work completed"
+        completion(result)
+    }
+}
+```
+
+### Non-escaping vs Escaping
+
+```swift
+// Non-escaping: closure is called before function returns
+func processNumbers(_ numbers: [Int], using operation: (Int) -> Int) -> [Int] {
+    return numbers.map(operation)
+}
+
+let results = processNumbers([1, 2, 3]) { $0 * 2 }
+
+// Escaping: closure is called after function returns
+func fetchData(completion: @escaping (Data?) -> Void) {
+    URLSession.shared.dataTask(with: URL(string: "...")!) { data, _, _ in
+        completion(data) // Called after fetchData returns
+    }.resume()
+}
+```
+
+### Why It Matters: Self References
+
+Escaping closures that reference `self` in a class create potential retain cycles:
+
+```swift
+class DataManager {
+    var data: String = ""
+    
+    func fetchData() {
+        doAsyncWork { result in
+            // ❌ Creates strong reference cycle
+            self.data = result
+        }
+    }
+}
+```
+
+Use capture lists to break retain cycles:
+
+```swift
+class DataManager {
+    var data: String = ""
+    
+    func fetchData() {
+        doAsyncWork { [weak self] result in
+            // ✅ Weak reference prevents cycle
+            self?.data = result
+        }
+    }
+    
+    func fetchDataRequired() {
+        doAsyncWork { [unowned self] result in
+            // ✅ Unowned when self definitely exists
+            self.data = result
+        }
+    }
+}
+```
+
+**`weak` vs `unowned`:**
+- Use `weak` when the captured reference might become `nil` (returns optional)
+- Use `unowned` when you're certain the reference won't be deallocated (forced unwrap behavior)
+- When in doubt, use `weak`—it's safer
+
+## Capture Lists
+
+Capture lists let you control how closures capture values. The syntax appears in square brackets before the parameter list:
+
+```swift
+{ [captureSpecifier value, ...] (parameters) -> ReturnType in
+    // body
+}
+```
+
+### Common Capture Patterns
+
+```swift
+class ViewController {
+    var label: String = "Hello"
+    
+    func setupCallbacks() {
+        // Strong capture (default)
+        someAsync {
+            print(self.label) // self is captured strongly
+        }
+        
+        // Weak capture
+        someAsync { [weak self] in
+            print(self?.label ?? "nil") // self is optional
+        }
+        
+        // Weak capture with guard
+        someAsync { [weak self] in
+            guard let self = self else { return }
+            print(self.label) // self is unwrapped once
+        }
+        
+        // Capture specific properties
+        someAsync { [weak self, label = self.label] in
+            // label is captured by value
+            print(label)
+        }
+        
+        // Create a copy
+        var counter = 0
+        let closure = { [counter] in // Captures value, not reference
+            print(counter)
+        }
+        counter = 10
+        closure() // Prints 0, not 10
+    }
+}
+```
+
+## Autoclosures
+
+An `@autoclosure` automatically wraps an expression in a closure. This is an advanced feature used sparingly:
+
+```swift
+// Without autoclosure
+func logIfTrue(_ predicate: () -> Bool, _ message: String) {
+    if predicate() {
+        print(message)
+    }
+}
+logIfTrue({ 2 > 1 }, "Math works!")
+
+// With autoclosure
+func logIfTrue(_ predicate: @autoclosure () -> Bool, _ message: String) {
+    if predicate() {
+        print(message)
+    }
+}
+logIfTrue(2 > 1, "Math works!") // Expression automatically wrapped
+
+// Autoclosure delays evaluation
+var numbers = [1, 2, 3, 4, 5]
+var index = 0
+
+func getNextNumber() -> Int {
+    index += 1
+    return numbers[index - 1]
+}
+
+// Without autoclosure: evaluated immediately
+let value = index < numbers.count ? getNextNumber() : 0
+
+// With autoclosure: evaluated only if needed
+func firstValue(_ value: @autoclosure () -> Int) -> Int {
+    return index < numbers.count ? value() : 0
+}
+```
+
+**Warning:** Overuse of `@autoclosure` makes code harder to understand. Use it primarily for performance optimization or when creating DSLs.
+
+## Common Patterns in iOS Development
+
+### Completion Handlers
+
+```swift
+func fetchUser(id: String, completion: @escaping (Result<User, Error>) -> Void) {
+    URLSession.shared.dataTask(with: URL(string: "api/users/\(id)")!) { data, response, error in
+        if let error = error {
+            completion(.failure(error))
+            return
+        }
+        
+        guard let data = data else {
+            completion(.failure(NetworkError.noData))
+            return
+        }
+        
+        do {
+            let user = try JSONDecoder().decode(User.self, from: data)
+            completion(.success(user))
+        } catch {
+            completion(.failure(error))
+        }
+    }.resume()
+}
+
+// Usage
+fetchUser(id: "123") { result in
+    switch result {
+    case .success(let user):
+        print("Fetched: \(user.name)")
+    case .failure(let error):
+        print("Error: \(error)")
+    }
+}
+```
+
+### Animation Blocks
+
+```swift
+UIView.animate(withDuration: 0.3) {
+    view.alpha = 0.0
+} completion: { finished in
+    if finished {
+        view.removeFromSuperview()
+    }
+}
+```
+
+### Lazy Properties
+
+```swift
+class ImageProcessor {
+    lazy var processor: (UIImage) -> UIImage = { image in
+        // Expensive processing
+        return image.withRenderingMode(.alwaysTemplate)
+    }
+    
+    // The closure is only called once, when processor is first accessed
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### 1. Forgetting @escaping
+
+```swift
+// ❌ Compile error: closure is stored but not marked @escaping
+func register(callback: () -> Void) {
+    completionHandlers.append(callback)
+}
+
+// ✅ Correct
+func register(callback: @escaping () -> Void) {
+    completionHandlers.append(callback)
+}
+```
+
+### 2. Reference Cycles
+
+```swift
+class NetworkManager {
+    var onComplete: (() -> Void)?
+    
+    func fetch() {
+        doAsyncWork {
+            // ❌ Retain cycle: self -> onComplete -> closure -> self
+            self.onComplete?()
+        }
+    }
+}
+
+// ✅ Break the cycle
+func fetch() {
+    doAsyncWork { [weak self] in
+        self?.onComplete?()
+    }
+}
+```
+
+### 3. Capturing Mutating Values
+
+```swift
+var value = 0
+let closures = (0..<5).map { _ in
+    return { value } // All closures reference the same variable
+}
+value = 10
+print(closures[0]()) // Prints 10, not 0
+
+// Use capture list to capture current value
+let closures = (0..<5).map { _ in
+    return { [value] in value } // Each closure captures current value
+}
+```
+
+### 4. Implicit Strong Self in Structures
+
+```swift
+struct DataHandler {
+    var data: String = ""
+    
+    func process() {
+        doAsyncWork { result in
+            // ✅ No retain cycle concern with structs (value types)
+            // But mutation won't affect the original struct!
+            self.data = result
+        }
+    }
+}
+```
+
+Structs are value types, so `self` is copied into the closure. Changes won't affect the original instance.
+
+### 5. Threading Issues
+
+```swift
+doAsyncWork { result in
+    // ❌ Updating UI on background thread
+    self.label.text = result
+}
+
+// ✅ Dispatch to main thread
+doAsyncWork { result in
+    DispatchQueue.main.async {
+        self.label.text = result
+    }
+}
+```
+
+## Performance Considerations
+
+Closures have minimal performance overhead in most cases, but be aware of:
+
+1. **Heap allocation**: Escaping closures are allocated on the heap
+2. **Reference counting**: Captured references require memory management
+3. **Capture overhead**: Large capture lists increase memory usage
+
+For performance-critical code:
+- Minimize captured variables
+- Use `unowned` instead of `weak` when safe (avoids optional unwrapping)
+- Consider passing values as parameters instead of capturing
+
+## Summary Table
+
+| Concept | Syntax | Use Case |
+|---------|--------|----------|
+| **Basic closure** | `{ (params) -> Type in body }` | Anonymous function definition |
+| **Type inference** | `{ params in body }` | Let Swift infer types from context |
+| **Implicit return** | `{ params in expression }` | Single-expression closures |
+| **Shorthand arguments** | `{ $0 + $1 }` | Quick, simple operations |
+| **Trailing closure** | `function { closure }` | Last parameter is a closure |
+| **Multiple trailing** | `func { first } label: { second }` | Multiple closure parameters (Swift 5.3+) |
+| **Escaping** | `@escaping () -> Void` | Closure outlives function call |
+| **Weak capture** | `[weak self] in` | Avoid retain cycles with optional self |
+| **Unowned capture** | `[unowned self] in` | Avoid retain cycles when self can't be nil |
+| **Value capture** | `[value] in` | Capture copy instead of reference |
+| **Autoclosure** | `@autoclosure () -> Type` | Automatic closure wrapping (use sparingly) |
+
+## Additional Resources
+
+- [The Swift Programming Language - Closures](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/)
+- [Apple Documentation: Escaping Closures](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/#Escaping-Closures)
+- [WWDC 2016: Understanding Swift Performance](https://developer.apple.com/videos/play/wwdc2016/416/)

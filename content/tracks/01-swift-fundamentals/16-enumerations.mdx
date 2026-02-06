@@ -1,0 +1,546 @@
+---
+title: "Enumerations"
+description: "Defining enums, associated values, raw values, and recursive enums"
+sectionId: "1.7-enums-structs-classes"
+sectionTitle: "Enumerations, Structures & Classes"
+order: 16
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Enumerations in Swift
+
+Enumerations (enums) in Swift are far more powerful than their counterparts in many other languages. While C or Java enums are essentially named integer constants, Swift enums are first-class types that can have methods, computed properties, associated values, and even conform to protocols. They're the go-to choice when you need to represent a fixed set of related values in a type-safe way.
+
+## Why Enumerations Matter
+
+Enumerations help you:
+
+- **Model finite states**: Network request states, UI modes, or game levels
+- **Eliminate magic strings/numbers**: Replace error-prone string comparisons with compiler-checked types
+- **Enable exhaustive switching**: The compiler ensures you handle all cases
+- **Create self-documenting code**: `Status.loading` is clearer than `status == 2`
+
+## Basic Enum Definition
+
+The simplest enum defines a group of related values:
+
+```swift
+enum CompassDirection {
+    case north
+    case south
+    case east
+    case west
+}
+
+// Shorthand: define multiple cases on one line
+enum Planet {
+    case mercury, venus, earth, mars, jupiter, saturn, uranus, neptune
+}
+```
+
+Using an enum:
+
+```swift
+var direction = CompassDirection.north
+direction = .south // Type inference allows shorthand after first assignment
+
+func navigate(to direction: CompassDirection) {
+    switch direction {
+    case .north:
+        print("Heading north")
+    case .south:
+        print("Heading south")
+    case .east:
+        print("Heading east")
+    case .west:
+        print("Heading west")
+    }
+}
+```
+
+**Key point**: Swift's `switch` statements must be exhaustive when working with enums. If you don't cover all cases, you'll get a compiler error.
+
+## Raw Values
+
+Raw values are pre-populated constant values associated with each case. They must all be the same type and unique.
+
+### Integer Raw Values
+
+```swift
+enum HTTPStatus: Int {
+    case ok = 200
+    case created = 201
+    case badRequest = 400
+    case unauthorized = 401
+    case notFound = 404
+}
+
+let status = HTTPStatus.ok
+print(status.rawValue) // 200
+
+// Initialize from raw value (returns optional)
+if let status = HTTPStatus(rawValue: 404) {
+    print("Status: \(status)") // Status: notFound
+}
+
+let invalid = HTTPStatus(rawValue: 999) // nil
+```
+
+### Auto-Incrementing Raw Values
+
+If you specify the first integer raw value, Swift auto-increments the rest:
+
+```swift
+enum Priority: Int {
+    case low = 1    // 1
+    case medium     // 2
+    case high       // 3
+    case critical   // 4
+}
+```
+
+### String Raw Values
+
+By default, string raw values match the case name:
+
+```swift
+enum FileType: String {
+    case jpeg
+    case png
+    case gif
+    case pdf = "PDF" // Override default
+}
+
+print(FileType.jpeg.rawValue) // "jpeg"
+print(FileType.pdf.rawValue)  // "PDF"
+```
+
+This is particularly useful for JSON parsing or API communication:
+
+```swift
+enum UserRole: String, Codable {
+    case admin
+    case moderator
+    case user
+}
+
+// Works seamlessly with Codable
+struct User: Codable {
+    let name: String
+    let role: UserRole
+}
+```
+
+### Common Mistake: Raw Values vs Associated Values
+
+You **cannot** use both raw values and associated values in the same enum. This is a compile-time error:
+
+```swift
+// ❌ This won't compile
+enum Result: Int {
+    case success(String) = 0
+    case failure(Error) = 1
+}
+```
+
+## Associated Values
+
+Associated values let you store additional data with each enum case. Unlike raw values, associated values can differ each time you create an enum instance.
+
+```swift
+enum Barcode {
+    case upc(Int, Int, Int, Int)
+    case qrCode(String)
+}
+
+var product = Barcode.upc(8, 85909, 51226, 3)
+product = .qrCode("ABCDEFGHIJKLMNOP")
+```
+
+### Extracting Associated Values
+
+Use pattern matching in `switch` statements:
+
+```swift
+switch product {
+case .upc(let numberSystem, let manufacturer, let product, let check):
+    print("UPC: \(numberSystem), \(manufacturer), \(product), \(check)")
+case .qrCode(let code):
+    print("QR Code: \(code)")
+}
+
+// Shorthand when all values are constants or variables
+switch product {
+case let .upc(numberSystem, manufacturer, product, check):
+    print("UPC: \(numberSystem), \(manufacturer), \(product), \(check)")
+case let .qrCode(code):
+    print("QR Code: \(code)")
+}
+```
+
+### Practical Example: Network Result
+
+```swift
+enum NetworkResult {
+    case success(data: Data, statusCode: Int)
+    case failure(error: Error)
+    case loading
+}
+
+func handleResponse(_ result: NetworkResult) {
+    switch result {
+    case .success(let data, let statusCode):
+        print("Received \(data.count) bytes with status \(statusCode)")
+    case .failure(let error):
+        print("Error: \(error.localizedDescription)")
+    case .loading:
+        print("Loading...")
+    }
+}
+```
+
+### Labeled Associated Values
+
+You can name associated values for clarity:
+
+```swift
+enum Vehicle {
+    case car(make: String, model: String, year: Int)
+    case bicycle(type: String)
+}
+
+let myCar = Vehicle.car(make: "Toyota", model: "Camry", year: 2020)
+
+// Labels make extraction more readable
+switch myCar {
+case .car(let make, let model, let year):
+    print("\(year) \(make) \(model)")
+case .bicycle(let type):
+    print("\(type) bicycle")
+}
+```
+
+## Recursive Enumerations
+
+Recursive enums have associated values that reference the enum type itself. Mark cases with `indirect` or the entire enum:
+
+```swift
+// Individual case marked as indirect
+enum ArithmeticExpression {
+    case number(Int)
+    indirect case addition(ArithmeticExpression, ArithmeticExpression)
+    indirect case multiplication(ArithmeticExpression, ArithmeticExpression)
+}
+
+// Entire enum marked as indirect
+indirect enum BinaryTree<T> {
+    case empty
+    case node(value: T, left: BinaryTree, right: BinaryTree)
+}
+```
+
+### Evaluating Recursive Enums
+
+```swift
+indirect enum ArithmeticExpression {
+    case number(Int)
+    case addition(ArithmeticExpression, ArithmeticExpression)
+    case multiplication(ArithmeticExpression, ArithmeticExpression)
+}
+
+func evaluate(_ expression: ArithmeticExpression) -> Int {
+    switch expression {
+    case .number(let value):
+        return value
+    case .addition(let left, let right):
+        return evaluate(left) + evaluate(right)
+    case .multiplication(let left, let right):
+        return evaluate(left) * evaluate(right)
+    }
+}
+
+// (5 + 4) * 2
+let five = ArithmeticExpression.number(5)
+let four = ArithmeticExpression.number(4)
+let sum = ArithmeticExpression.addition(five, four)
+let product = ArithmeticExpression.multiplication(sum, .number(2))
+
+print(evaluate(product)) // 18
+```
+
+### Binary Tree Example
+
+```swift
+indirect enum BinaryTree<T> {
+    case empty
+    case node(value: T, left: BinaryTree, right: BinaryTree)
+}
+
+let tree: BinaryTree<Int> = .node(
+    value: 10,
+    left: .node(
+        value: 5,
+        left: .empty,
+        right: .empty
+    ),
+    right: .node(
+        value: 15,
+        left: .empty,
+        right: .empty
+    )
+)
+
+func count<T>(_ tree: BinaryTree<T>) -> Int {
+    switch tree {
+    case .empty:
+        return 0
+    case .node(_, let left, let right):
+        return 1 + count(left) + count(right)
+    }
+}
+
+print(count(tree)) // 3
+```
+
+**Important**: The `indirect` keyword is necessary because it tells Swift to add a layer of indirection (storing a reference instead of the value directly). Without it, the compiler can't determine the enum's size.
+
+## Methods and Computed Properties
+
+Enums can have methods and computed properties:
+
+```swift
+enum TrafficLight {
+    case red, yellow, green
+    
+    var duration: TimeInterval {
+        switch self {
+        case .red: return 30
+        case .yellow: return 3
+        case .green: return 25
+        }
+    }
+    
+    func next() -> TrafficLight {
+        switch self {
+        case .red: return .green
+        case .yellow: return .red
+        case .green: return .yellow
+        }
+    }
+    
+    mutating func advance() {
+        self = self.next()
+    }
+}
+
+var light = TrafficLight.red
+print(light.duration) // 30
+light.advance()
+print(light) // green
+```
+
+## CaseIterable Protocol
+
+For enums without associated values, conform to `CaseIterable` to get an array of all cases:
+
+```swift
+enum Direction: CaseIterable {
+    case north, south, east, west
+}
+
+print(Direction.allCases.count) // 4
+
+for direction in Direction.allCases {
+    print(direction)
+}
+
+// north
+// south
+// east
+// west
+```
+
+**Common mistake**: This doesn't work with enums that have associated values:
+
+```swift
+// ❌ CaseIterable doesn't work here
+enum Result: CaseIterable {
+    case success(String)
+    case failure(Error)
+}
+```
+
+## Comparing Enums
+
+Enums are equatable by default if they don't have associated values:
+
+```swift
+enum Status {
+    case active, inactive
+}
+
+let status1 = Status.active
+let status2 = Status.active
+print(status1 == status2) // true
+```
+
+For enums with associated values, conform to `Equatable`:
+
+```swift
+enum LoadingState: Equatable {
+    case idle
+    case loading(progress: Double)
+    case loaded(data: String)
+    case failed(error: String)
+}
+
+let state1 = LoadingState.loading(progress: 0.5)
+let state2 = LoadingState.loading(progress: 0.5)
+print(state1 == state2) // true
+```
+
+## Common Patterns and Best Practices
+
+### Option Sets vs Enums
+
+Use enums for mutually exclusive states. For combinable options, use `OptionSet`:
+
+```swift
+// ✅ Good: mutually exclusive
+enum NetworkStatus {
+    case connected, disconnected, connecting
+}
+
+// ❌ Bad: need multiple simultaneous options
+enum Permission {
+    case read, write, delete
+}
+
+// ✅ Better: use OptionSet for combinable options
+struct Permission: OptionSet {
+    let rawValue: Int
+    static let read = Permission(rawValue: 1 << 0)
+    static let write = Permission(rawValue: 1 << 1)
+    static let delete = Permission(rawValue: 1 << 2)
+}
+
+let permissions: Permission = [.read, .write]
+```
+
+### Organizing Complex Enums
+
+For enums with many cases, group related functionality:
+
+```swift
+enum AppState {
+    case launching
+    case onboarding
+    case authenticated(user: User)
+    case unauthenticated
+    
+    var isAuthenticated: Bool {
+        if case .authenticated = self {
+            return true
+        }
+        return false
+    }
+    
+    var currentUser: User? {
+        if case .authenticated(let user) = self {
+            return user
+        }
+        return nil
+    }
+}
+```
+
+### Namespace Enums
+
+Use case-less enums as namespaces:
+
+```swift
+enum API {
+    enum Endpoint {
+        static let users = "/api/users"
+        static let posts = "/api/posts"
+    }
+    
+    enum Method: String {
+        case get = "GET"
+        case post = "POST"
+    }
+}
+
+let endpoint = API.Endpoint.users
+let method = API.Method.get
+```
+
+## Edge Cases and Gotchas
+
+### Memory Layout
+
+Enums without associated values are memory-efficient (typically 1 byte for up to 256 cases). Enums with associated values use the size of the largest case plus a discriminator.
+
+### Exhaustive Switching
+
+Always handle all cases or use `default`:
+
+```swift
+enum Color {
+    case red, green, blue
+}
+
+func describe(_ color: Color) -> String {
+    switch color {
+    case .red:
+        return "Red"
+    case .green:
+        return "Green"
+    // ❌ Missing .blue case - won't compile
+    }
+}
+```
+
+### Unknown Cases with @unknown default
+
+When switching on enums from external frameworks (especially C/Objective-C), use `@unknown default`:
+
+```swift
+import UIKit
+
+func describe(_ style: UIUserInterfaceStyle) -> String {
+    switch style {
+    case .light:
+        return "Light mode"
+    case .dark:
+        return "Dark mode"
+    case .unspecified:
+        return "Unspecified"
+    @unknown default:
+        return "Unknown future case"
+    }
+}
+```
+
+This triggers a warning (not an error) if new cases are added, prompting you to update your code.
+
+## Summary Table
+
+| Feature | Description | Key Characteristics |
+|---------|-------------|---------------------|
+| **Basic Enum** | Group of related named values | Type-safe, exhaustive switching, no storage overhead |
+| **Raw Values** | Pre-populated constant values | All cases share same type, must be unique, initialized from raw value returns optional |
+| **Associated Values** | Store additional data with each case | Different data per instance, extracted via pattern matching, cannot coexist with raw values |
+| **Recursive Enum** | Enum case references itself | Requires `indirect` keyword, useful for tree structures, adds memory indirection |
+| **Methods & Properties** | Behavior attached to enum | Can be instance or static, can mutate `self`, computed properties only |
+| **CaseIterable** | Auto-generates array of all cases | Only works without associated values, provides `allCases` property |
+| **Equatable** | Compare enum instances | Automatic without associated values, requires conformance with associated values |
+
+## Further Reading
+
+- [Swift Language Guide - Enumerations](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/)
+- [Swift Evolution - SE-0192: Handling Future Enum Cases](https://github.com/apple/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md)
+
+Enumerations are one of Swift's most versatile features. Master them early—you'll use them constantly in iOS development for modeling state, handling results, and creating clean, type-safe APIs.

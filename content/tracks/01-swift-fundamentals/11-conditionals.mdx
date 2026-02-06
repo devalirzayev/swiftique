@@ -1,0 +1,486 @@
+---
+title: "Conditionals"
+description: "if, else, switch statements and pattern matching"
+sectionId: "1.5-control-flow"
+sectionTitle: "Control Flow"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Conditionals in Swift
+
+Conditionals are the decision-making structures that allow your code to execute different paths based on specific conditions. If you're coming from other languages, you'll find Swift's conditionals familiar yet distinctly more powerful—particularly with pattern matching and its type-safe approach.
+
+Swift provides three primary conditional constructs: `if`/`else` statements, `switch` statements, and ternary operators. What sets Swift apart is its lack of implicit fallthrough in switch cases, mandatory exhaustiveness checking, and sophisticated pattern matching capabilities that go far beyond simple value comparison.
+
+## If Statements
+
+The `if` statement is your basic branching mechanism. Swift doesn't require parentheses around conditions (though you can use them), but braces are always mandatory—even for single-line statements.
+
+```swift
+let temperature = 72
+
+if temperature > 75 {
+    print("It's warm outside")
+}
+
+// Multiple conditions
+if temperature > 85 {
+    print("It's hot!")
+} else if temperature > 65 {
+    print("It's comfortable")
+} else {
+    print("It's cool")
+}
+```
+
+### Conditions Must Be Boolean
+
+Unlike some languages, Swift requires conditions to explicitly evaluate to `Bool`. You cannot use integers or optionals directly:
+
+```swift
+let count = 5
+
+// ❌ This won't compile
+// if count {
+//     print("Has items")
+// }
+
+// ✅ Correct: explicit boolean comparison
+if count > 0 {
+    print("Has items")
+}
+
+// ❌ This won't compile either
+let name: String? = "John"
+// if name {
+//     print(name)
+// }
+
+// ✅ Correct: use optional binding
+if let unwrappedName = name {
+    print(unwrappedName)
+}
+```
+
+### Optional Binding
+
+Swift's `if let` and `if var` syntax allows you to safely unwrap optionals while creating a conditional scope:
+
+```swift
+let optionalEmail: String? = "user@example.com"
+
+if let email = optionalEmail {
+    print("Email is: \(email)")
+    // email is available as a non-optional String here
+} else {
+    print("No email provided")
+}
+
+// Multiple bindings (comma-separated)
+let optionalUsername: String? = "johndoe"
+let optionalAge: Int? = 25
+
+if let username = optionalUsername, let age = optionalAge {
+    print("\(username) is \(age) years old")
+}
+
+// Combining optional binding with conditions
+if let age = optionalAge, age >= 18 {
+    print("Adult user")
+}
+```
+
+Starting with Swift 5.7, you can use shorthand syntax for optional binding:
+
+```swift
+let optionalName: String? = "Alice"
+
+// Instead of: if let optionalName = optionalName
+if let optionalName {
+    print(optionalName)
+}
+```
+
+### Guard Statements
+
+The `guard` statement is the inverse of `if`—it's designed for early exit patterns. It's particularly useful for reducing nesting and improving readability:
+
+```swift
+func processUser(name: String?, age: Int?) {
+    guard let name = name else {
+        print("Name is required")
+        return
+    }
+    
+    guard let age = age, age >= 13 else {
+        print("Must be 13 or older")
+        return
+    }
+    
+    // name and age remain in scope for the rest of the function
+    print("\(name) is \(age) years old")
+    // More processing here...
+}
+```
+
+**Key difference**: Variables unwrapped with `guard let` remain available in the outer scope, while `if let` variables are only available within the `if` block.
+
+## Switch Statements
+
+Swift's `switch` statement is far more powerful than in C-family languages. It must be exhaustive (cover all possible cases), has no implicit fallthrough, and supports pattern matching.
+
+### Basic Switch
+
+```swift
+let character = "a"
+
+switch character {
+case "a":
+    print("The first letter")
+case "z":
+    print("The last letter")
+default:
+    print("Some other letter")
+}
+```
+
+### No Implicit Fallthrough
+
+Unlike C or JavaScript, Swift doesn't fall through to the next case automatically. Each case needs a body:
+
+```swift
+let number = 2
+
+switch number {
+case 1:
+    print("One")
+case 2:
+    print("Two")
+    // Execution stops here—no fallthrough
+case 3:
+    print("Three")
+default:
+    print("Other")
+}
+
+// If you WANT fallthrough, use the fallthrough keyword explicitly
+switch number {
+case 1:
+    print("One")
+    fallthrough
+case 2:
+    print("Two or less")
+default:
+    print("Greater than two")
+}
+```
+
+### Interval Matching
+
+You can match against ranges:
+
+```swift
+let score = 85
+
+switch score {
+case 0..<60:
+    print("F")
+case 60..<70:
+    print("D")
+case 70..<80:
+    print("C")
+case 80..<90:
+    print("B")
+case 90...100:
+    print("A")
+default:
+    print("Invalid score")
+}
+```
+
+### Multiple Values
+
+Use commas to match multiple values in a single case:
+
+```swift
+let character = "e"
+
+switch character {
+case "a", "e", "i", "o", "u":
+    print("Vowel")
+default:
+    print("Consonant")
+}
+```
+
+### Value Binding
+
+You can bind matched values to constants or variables:
+
+```swift
+let point = (2, 0)
+
+switch point {
+case (0, 0):
+    print("Origin")
+case (let x, 0):
+    print("On the x-axis at \(x)")
+case (0, let y):
+    print("On the y-axis at \(y)")
+case let (x, y):
+    print("At (\(x), \(y))")
+}
+```
+
+### Where Clauses
+
+Add additional conditions with `where`:
+
+```swift
+let temperature = 82
+let humidity = 75
+
+switch temperature {
+case 70...85 where humidity < 50:
+    print("Perfect weather")
+case 70...85 where humidity >= 50:
+    print("Warm but humid")
+case let temp where temp > 85:
+    print("Too hot: \(temp)°F")
+default:
+    print("Cold")
+}
+```
+
+### Switching on Enums
+
+Switching on enums is particularly elegant and type-safe:
+
+```swift
+enum NetworkResponse {
+    case success(data: Data)
+    case failure(error: Error)
+    case loading
+}
+
+let response = NetworkResponse.loading
+
+switch response {
+case .success(let data):
+    print("Received \(data.count) bytes")
+case .failure(let error):
+    print("Error: \(error)")
+case .loading:
+    print("Loading...")
+}
+```
+
+When switching on enums, if you handle all cases, you don't need a `default`:
+
+```swift
+enum Direction {
+    case north, south, east, west
+}
+
+let direction = Direction.north
+
+switch direction {
+case .north:
+    print("Going north")
+case .south:
+    print("Going south")
+case .east:
+    print("Going east")
+case .west:
+    print("Going west")
+// No default needed—all cases covered
+}
+```
+
+**Warning**: If you add a new case to an enum later, the compiler will force you to handle it in all exhaustive switches. This is a feature—it prevents bugs.
+
+## Ternary Operator
+
+For simple conditions, the ternary operator provides a concise alternative:
+
+```swift
+let age = 20
+let canVote = age >= 18 ? "Yes" : "No"
+
+// Equivalent to:
+let canVote2: String
+if age >= 18 {
+    canVote2 = "Yes"
+} else {
+    canVote2 = "No"
+}
+```
+
+**Best practice**: Use ternary operators for simple conditions only. Complex logic should use `if`/`else` for readability.
+
+## Pattern Matching Beyond Switch
+
+Swift's pattern matching capabilities extend to other contexts:
+
+### If Case
+
+Use `if case` to match a single pattern without a full switch:
+
+```swift
+enum Result {
+    case success(Int)
+    case failure(String)
+}
+
+let result = Result.success(42)
+
+if case .success(let value) = result {
+    print("Success with value: \(value)")
+}
+
+// Particularly useful with ranges
+let number = 15
+if case 10...20 = number {
+    print("Number is between 10 and 20")
+}
+```
+
+### For-In with Pattern Matching
+
+You can use patterns in for-in loops:
+
+```swift
+let points = [(1, 2), (3, 0), (0, 4), (0, 0)]
+
+for case (0, let y) in points {
+    print("Point on y-axis at \(y)")
+}
+// Prints: Point on y-axis at 4
+//         Point on y-axis at 0
+```
+
+## Common Mistakes and Edge Cases
+
+### Forgetting the Default Case
+
+```swift
+let value = 5
+
+// ❌ Won't compile - not exhaustive
+// switch value {
+// case 1:
+//     print("One")
+// case 5:
+//     print("Five")
+// }
+
+// ✅ Add default to handle all other cases
+switch value {
+case 1:
+    print("One")
+case 5:
+    print("Five")
+default:
+    break // Or handle other values
+}
+```
+
+### Empty Case Bodies
+
+Every case needs a statement. Use `break` for intentionally empty cases:
+
+```swift
+let input = "test"
+
+switch input {
+case "skip":
+    break // Intentionally do nothing
+case "test":
+    print("Testing")
+default:
+    print("Other")
+}
+```
+
+### Overlapping Ranges
+
+Be careful with overlapping patterns—the first match wins:
+
+```swift
+let score = 85
+
+switch score {
+case 80...100:
+    print("High score") // This executes
+case 85...95:
+    print("Very high") // Never reached for 85-95
+default:
+    break
+}
+```
+
+### Optional Comparison Pitfall
+
+Comparing optionals can be subtle:
+
+```swift
+let optionalValue: Int? = 5
+
+// ❌ This compares the optional itself, not its value
+// if optionalValue == 5 { // This works but is comparing Optional(5) == 5
+//     print("Five")
+// }
+
+// ✅ Better: unwrap first
+if let value = optionalValue, value == 5 {
+    print("Five")
+}
+
+// Or use optional chaining with comparison
+if optionalValue == Optional(5) { // Explicit, but verbose
+    print("Five")
+}
+```
+
+### Switch with Mixed Types
+
+You can't switch on mixed types without casting:
+
+```swift
+let mixedValue: Any = 42
+
+switch mixedValue {
+case let intValue as Int:
+    print("Integer: \(intValue)")
+case let stringValue as String:
+    print("String: \(stringValue)")
+default:
+    print("Unknown type")
+}
+```
+
+## Performance Considerations
+
+Swift optimizes switch statements heavily. For integer switching, it often uses jump tables for O(1) performance. Range matching is also optimized, making switch preferable to long if-else chains for discrete value checking.
+
+## Summary Table
+
+| Construct | Use Case | Key Features | Common Pitfalls |
+|-----------|----------|--------------|-----------------|
+| `if`/`else` | Simple branching, optional unwrapping | Optional binding, compound conditions | Forgetting type-safe boolean requirement |
+| `guard` | Early exit, reducing nesting | Unwrapped values stay in scope | Must exit scope (return, break, continue, throw) |
+| `switch` | Multiple distinct conditions, pattern matching | No fallthrough, exhaustive, powerful patterns | Forgetting default case, overlapping patterns |
+| Ternary `?:` | Simple value assignment | Concise for binary choices | Reduced readability with complexity |
+| `if case` | Single pattern match | Simpler than full switch | Less familiar syntax for newcomers |
+| `where` | Additional constraints | Fine-grained control in patterns | Can make code harder to follow if overused |
+
+## References
+
+- [Swift Language Guide - Control Flow](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/)
+- [Swift Language Guide - Patterns](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/)
+- [Swift Evolution - SE-0099: Restructuring Condition Clauses](https://github.com/apple/swift-evolution/blob/main/proposals/0099-conditionclauses.md)
+
+Mastering conditionals in Swift means embracing pattern matching and the type system. The compiler is your friend—use exhaustive switching and optional binding to catch errors at compile time rather than runtime. As you become more comfortable, you'll find that Swift's conditional constructs lead to safer, more expressive code than traditional if-else chains.

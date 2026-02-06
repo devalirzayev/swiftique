@@ -1,0 +1,620 @@
+---
+title: "Share & Action Extensions"
+description: "Building share sheets and action extensions"
+sectionId: "6.2-extensions-widgets"
+sectionTitle: "Extensions & Widgets"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Share & Action Extensions
+
+Share and Action Extensions allow your app to extend its functionality into other apps through iOS's share sheet. When users tap the share button in Safari, Photos, or any other app, your extension can appear as an option to process or share that content. This is how apps like Pocket add "Save to Pocket" options, or how photo editors appear in the Photos share sheet.
+
+## Why Extensions Matter
+
+Extensions increase your app's visibility and utility without requiring users to open your app directly. They create seamless workflows where users can invoke your app's features from wherever they're working. This is crucial for apps focused on content processing, sharing, or workflows.
+
+## Extension Types: Share vs Action
+
+**Share Extensions** are designed for sending content to another location or service. Think: posting to social media, saving to a read-later service, or sharing via messaging.
+
+**Action Extensions** perform transformations or actions on content. Think: editing images, translating text, or converting file formats.
+
+Both use similar underlying technology but signal different user intents to iOS.
+
+## Setting Up Your First Extension
+
+### Creating the Extension Target
+
+1. In Xcode, go to File → New → Target
+2. Choose "Share Extension" or "Action Extension" from the iOS Application Extension section
+3. Name it (e.g., "MyAppShare")
+4. Xcode creates a new folder with a view controller and Info.plist
+
+### Understanding the Generated Files
+
+Xcode generates a `ShareViewController` (or `ActionViewController`). This is the UI users see when they invoke your extension.
+
+```swift
+import UIKit
+import Social
+
+class ShareViewController: SLComposeServiceViewController {
+    
+    override func isContentValid() -> Bool {
+        // Validate before allowing the user to post
+        return true
+    }
+    
+    override func didSelectPost() {
+        // This is called after the user selects Post
+        // Process the shared content here
+        
+        // Inform the host we're done
+        self.extensionContext!.completeRequest(
+            returningItems: [],
+            completionHandler: nil
+        )
+    }
+    
+    override func configurationItems() -> [Any]! {
+        // To add configuration options via table cells
+        return []
+    }
+}
+```
+
+This default template uses `SLComposeServiceViewController`, which provides a Twitter-like compose interface. For more control, you'll want to use a regular `UIViewController`.
+
+## Building a Custom Share Extension
+
+Let's build a share extension that saves URLs and text to your app.
+
+### Step 1: Custom View Controller
+
+Replace `SLComposeServiceViewController` with `UIViewController`:
+
+```swift
+import UIKit
+import Social
+import MobileCoreServices
+import UniformTypeIdentifiers
+
+class ShareViewController: UIViewController {
+    
+    private let contentTextView: UITextView = {
+        let textView = UITextView()
+        textView.font = .systemFont(ofSize: 16)
+        textView.isEditable = false
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        return textView
+    }()
+    
+    private let saveButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Save to MyApp", for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+    
+    private let cancelButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Cancel", for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+        extractSharedContent()
+    }
+    
+    private func setupUI() {
+        view.backgroundColor = .systemBackground
+        
+        view.addSubview(contentTextView)
+        view.addSubview(saveButton)
+        view.addSubview(cancelButton)
+        
+        NSLayoutConstraint.activate([
+            contentTextView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 20
+            ),
+            contentTextView.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor,
+                constant: 20
+            ),
+            contentTextView.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -20
+            ),
+            contentTextView.heightAnchor.constraint(equalToConstant: 200),
+            
+            saveButton.topAnchor.constraint(
+                equalTo: contentTextView.bottomAnchor,
+                constant: 20
+            ),
+            saveButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
+            cancelButton.topAnchor.constraint(
+                equalTo: saveButton.bottomAnchor,
+                constant: 10
+            ),
+            cancelButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+        
+        saveButton.addTarget(
+            self,
+            action: #selector(saveContent),
+            for: .touchUpInside
+        )
+        cancelButton.addTarget(
+            self,
+            action: #selector(cancelExtension),
+            for: .touchUpInside
+        )
+    }
+    
+    @objc private func saveContent() {
+        // Process and save content
+        // We'll implement this next
+        completeRequest()
+    }
+    
+    @objc private func cancelExtension() {
+        let error = NSError(
+            domain: "com.yourapp.share",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: "User cancelled"]
+        )
+        extensionContext?.cancelRequest(withError: error)
+    }
+    
+    private func completeRequest() {
+        extensionContext?.completeRequest(
+            returningItems: nil,
+            completionHandler: nil
+        )
+    }
+}
+```
+
+### Step 2: Extracting Shared Content
+
+The `extensionContext` provides access to shared content through `inputItems`. Each item contains attachments with the actual data.
+
+```swift
+private func extractSharedContent() {
+    guard let extensionContext = extensionContext,
+          let inputItems = extensionContext.inputItems as? [NSExtensionItem]
+    else {
+        contentTextView.text = "No content available"
+        return
+    }
+    
+    for item in inputItems {
+        guard let attachments = item.attachments else { continue }
+        
+        for attachment in attachments {
+            handleAttachment(attachment)
+        }
+    }
+}
+
+private func handleAttachment(_ attachment: NSItemProvider) {
+    // Check for URL
+    if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+        attachment.loadItem(
+            forTypeIdentifier: UTType.url.identifier,
+            options: nil
+        ) { [weak self] (item, error) in
+            if let error = error {
+                print("Error loading URL: \(error)")
+                return
+            }
+            
+            if let url = item as? URL {
+                DispatchQueue.main.async {
+                    self?.handleURL(url)
+                }
+            } else if let data = item as? Data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil) {
+                DispatchQueue.main.async {
+                    self?.handleURL(url)
+                }
+            }
+        }
+    }
+    
+    // Check for plain text
+    if attachment.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+        attachment.loadItem(
+            forTypeIdentifier: UTType.plainText.identifier,
+            options: nil
+        ) { [weak self] (item, error) in
+            if let error = error {
+                print("Error loading text: \(error)")
+                return
+            }
+            
+            if let text = item as? String {
+                DispatchQueue.main.async {
+                    self?.handleText(text)
+                }
+            }
+        }
+    }
+    
+    // Check for images
+    if attachment.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+        attachment.loadItem(
+            forTypeIdentifier: UTType.image.identifier,
+            options: nil
+        ) { [weak self] (item, error) in
+            if let error = error {
+                print("Error loading image: \(error)")
+                return
+            }
+            
+            if let url = item as? URL {
+                self?.handleImageURL(url)
+            } else if let data = item as? Data {
+                self?.handleImageData(data)
+            }
+        }
+    }
+}
+
+private func handleURL(_ url: URL) {
+    contentTextView.text = "URL: \(url.absoluteString)"
+    // Save URL to your app's storage
+}
+
+private func handleText(_ text: String) {
+    contentTextView.text = "Text: \(text)"
+    // Save text to your app's storage
+}
+
+private func handleImageURL(_ url: URL) {
+    contentTextView.text = "Image: \(url.lastPathComponent)"
+    // Process image
+}
+
+private func handleImageData(_ data: Data) {
+    contentTextView.text = "Image data received: \(data.count) bytes"
+    // Process image data
+}
+```
+
+### Step 3: Configuring Info.plist
+
+The extension's Info.plist controls which content types your extension handles and where it appears.
+
+```xml
+<key>NSExtension</key>
+<dict>
+    <key>NSExtensionAttributes</key>
+    <dict>
+        <key>NSExtensionActivationRule</key>
+        <dict>
+            <!-- Accept URLs -->
+            <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+            <integer>1</integer>
+            
+            <!-- Accept plain text -->
+            <key>NSExtensionActivationSupportsText</key>
+            <true/>
+            
+            <!-- Accept images -->
+            <key>NSExtensionActivationSupportsImageWithMaxCount</key>
+            <integer>5</integer>
+            
+            <!-- Accept files -->
+            <key>NSExtensionActivationSupportsFileWithMaxCount</key>
+            <integer>1</integer>
+        </dict>
+    </dict>
+    <key>NSExtensionMainStoryboard</key>
+    <string>MainInterface</string>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.share-services</string>
+</dict>
+```
+
+For Action Extensions, use `com.apple.ui-services` instead of `com.apple.share-services`.
+
+## Advanced: Sharing Data Between App and Extension
+
+Extensions run in separate processes from your main app. Use App Groups to share data.
+
+### Step 1: Enable App Groups
+
+1. In your main app target, go to Signing & Capabilities
+2. Add "App Groups" capability
+3. Create a new group: `group.com.yourcompany.yourapp`
+4. Repeat for your extension target
+
+### Step 2: Shared UserDefaults
+
+```swift
+// In both app and extension
+extension UserDefaults {
+    static var shared: UserDefaults {
+        return UserDefaults(suiteName: "group.com.yourcompany.yourapp")!
+    }
+}
+
+// Saving from extension
+UserDefaults.shared.set(urlString, forKey: "lastSharedURL")
+UserDefaults.shared.synchronize()
+
+// Reading in main app
+if let urlString = UserDefaults.shared.string(forKey: "lastSharedURL") {
+    // Process the shared URL
+}
+```
+
+### Step 3: Shared File Storage
+
+```swift
+extension FileManager {
+    static var sharedContainerURL: URL? {
+        return FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.yourcompany.yourapp"
+        )
+    }
+}
+
+// Saving data from extension
+func saveSharedItem(_ text: String) {
+    guard let containerURL = FileManager.sharedContainerURL else {
+        print("No shared container available")
+        return
+    }
+    
+    let fileURL = containerURL
+        .appendingPathComponent("shared.txt")
+    
+    do {
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+    } catch {
+        print("Error saving: \(error)")
+    }
+}
+
+// Reading in main app
+func loadSharedItem() -> String? {
+    guard let containerURL = FileManager.sharedContainerURL else {
+        return nil
+    }
+    
+    let fileURL = containerURL
+        .appendingPathComponent("shared.txt")
+    
+    return try? String(contentsOf: fileURL, encoding: .utf8)
+}
+```
+
+## Using Core Data with App Groups
+
+If your app uses Core Data, you can share the database:
+
+```swift
+lazy var persistentContainer: NSPersistentContainer = {
+    let container = NSPersistentContainer(name: "YourModel")
+    
+    guard let containerURL = FileManager.sharedContainerURL else {
+        fatalError("Shared container not available")
+    }
+    
+    let storeURL = containerURL
+        .appendingPathComponent("YourApp.sqlite")
+    
+    let description = NSPersistentStoreDescription(url: storeURL)
+    container.persistentStoreDescriptions = [description]
+    
+    container.loadPersistentStores { description, error in
+        if let error = error {
+            fatalError("Unable to load persistent stores: \(error)")
+        }
+    }
+    
+    return container
+}()
+```
+
+## Action Extensions with Returned Content
+
+Action extensions can modify content and return it to the host app:
+
+```swift
+class ActionViewController: UIViewController {
+    
+    @objc func done() {
+        // Create modified content
+        let modifiedText = "Modified: \(originalText)"
+        
+        let extensionItem = NSExtensionItem()
+        extensionItem.attachments = [
+            NSItemProvider(
+                item: modifiedText as NSString,
+                typeIdentifier: UTType.plainText.identifier
+            )
+        ]
+        
+        // Return the modified content
+        extensionContext?.completeRequest(
+            returningItems: [extensionItem],
+            completionHandler: nil
+        )
+    }
+}
+```
+
+## Custom Activation Rules
+
+For complex requirements, use predicate-based activation rules:
+
+```xml
+<key>NSExtensionActivationRule</key>
+<string>SUBQUERY (
+    extensionItems,
+    $extensionItem,
+    SUBQUERY (
+        $extensionItem.attachments,
+        $attachment,
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url"
+    ).@count >= 1
+).@count >= 1</string>
+```
+
+This NSPredicate format allows fine-grained control but is complex. For most cases, use the dictionary format.
+
+## Common Mistakes and Edge Cases
+
+### Memory Limits
+
+Extensions have strict memory limits (typically 120MB on newer devices, less on older ones). Exceeding this terminates your extension.
+
+```swift
+// Bad: Loading large images without constraints
+if let image = UIImage(contentsOfFile: imagePath) {
+    // Could crash on large images
+}
+
+// Good: Downsample large images
+func downsampledImage(from url: URL, maxSize: CGSize) -> UIImage? {
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: max(maxSize.width, maxSize.height)
+    ]
+    
+    guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
+    else {
+        return nil
+    }
+    
+    return UIImage(cgImage: image)
+}
+```
+
+### Async Operations Must Complete
+
+Always call `completeRequest` or `cancelRequest`, even if operations fail:
+
+```swift
+// Bad: Missing completion in error case
+func processContent() {
+    fetchDataFromAPI { result in
+        if case .success(let data) = result {
+            self.saveData(data)
+            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        }
+        // Extension hangs if error occurs!
+    }
+}
+
+// Good: Always complete
+func processContent() {
+    fetchDataFromAPI { [weak self] result in
+        defer {
+            self?.extensionContext?.completeRequest(
+                returningItems: nil,
+                completionHandler: nil
+            )
+        }
+
+        switch result {
+        case .success(let data):
+            self?.saveData(data)
+        case .failure(let error):
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+### Background Upload Limits
+
+Extensions have limited time to complete operations. For large uploads, use `NSURLSession` background tasks:
+
+```swift
+func scheduleBackgroundUpload(data: Data) {
+    let config = URLSessionConfiguration.background(
+        withIdentifier: "com.yourapp.share.upload"
+    )
+    config.sharedContainerIdentifier = "group.com.yourcompany.yourapp"
+
+    let session = URLSession(configuration: config)
+    let url = URL(string: "https://api.yourapp.com/upload")!
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+
+    // Write data to shared container
+    guard let containerURL = FileManager.sharedContainerURL else { return }
+    let tempFile = containerURL.appendingPathComponent(UUID().uuidString)
+    try? data.write(to: tempFile)
+
+    let task = session.uploadTask(with: request, fromFile: tempFile)
+    task.resume()
+
+    // Complete the extension request — upload continues in background
+    extensionContext?.completeRequest(
+        returningItems: nil,
+        completionHandler: nil
+    )
+}
+```
+
+### Opening the Main App from an Extension
+
+Extensions cannot directly open the main app. Use a URL scheme:
+
+```swift
+// In extension
+func openMainApp(with sharedItem: String) {
+    guard let url = URL(string: "yourapp://shared?item=\(sharedItem)") else { return }
+
+    // Use responder chain to open URL
+    var responder: UIResponder? = self
+    while let nextResponder = responder?.next {
+        if let application = nextResponder as? UIApplication {
+            application.open(url)
+            break
+        }
+        responder = nextResponder
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Key Detail | Purpose |
+|---------|-----------|---------|
+| **Share Extension** | `com.apple.share-services` | Send content to your app/service |
+| **Action Extension** | `com.apple.ui-services` | Transform or process content |
+| **Extension Context** | `extensionContext` | Access shared input items |
+| **NSItemProvider** | `loadItem(forTypeIdentifier:)` | Extract URLs, text, images |
+| **Activation Rules** | `NSExtensionActivationRule` | Control when extension appears |
+| **App Groups** | `group.com.company.app` | Share data between app and extension |
+| **Shared UserDefaults** | `UserDefaults(suiteName:)` | Simple shared key-value storage |
+| **Shared file storage** | `containerURL(forSecurityApplicationGroupIdentifier:)` | Shared file access |
+| **Memory limits** | ~120MB max | Downsample images, limit data |
+| **Complete request** | `completeRequest(returningItems:)` | Always call when done |
+| **Background upload** | `URLSessionConfiguration.background` | Continue uploads after extension closes |
+
+## Official Resources
+
+- [Apple Documentation: Share Extensions](https://developer.apple.com/documentation/foundation/app_extension_support)
+- [Apple Documentation: App Extension Programming Guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/)
+- [Apple Documentation: App Groups](https://developer.apple.com/documentation/security/app-groups)
+- [Apple Documentation: NSItemProvider](https://developer.apple.com/documentation/foundation/nsitemprovider)
+- [WWDC 2023: What's New in App Extensions](https://developer.apple.com/videos/play/wwdc2023/10053/)

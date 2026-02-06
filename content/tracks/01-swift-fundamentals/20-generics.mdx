@@ -1,0 +1,526 @@
+---
+title: "Generics"
+description: "Generic functions, types, constraints, and associated types"
+sectionId: "1.8-protocols-generics"
+sectionTitle: "Protocols & Generics"
+order: 20
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Generics in Swift
+
+Generics are one of Swift's most powerful features, allowing you to write flexible, reusable code that works with any type while maintaining type safety. Instead of writing separate functions or types for each specific type you need to work with, generics let you write code once that adapts to whatever type you provide.
+
+If you've used arrays or optionals in Swift, you've already been using generics—`Array<Int>`, `Optional<String>`, and `Dictionary<String, Int>` are all generic types.
+
+## Why Generics Matter
+
+Without generics, you'd need to write duplicate code for each type:
+
+```swift
+func swapTwoInts(_ a: inout Int, _ b: inout Int) {
+    let temp = a
+    a = b
+    b = a
+}
+
+func swapTwoStrings(_ a: inout String, _ b: inout String) {
+    let temp = a
+    a = b
+    b = a
+}
+```
+
+This violates the DRY (Don't Repeat Yourself) principle and becomes unmaintainable as you need more types. Generics solve this elegantly.
+
+## Generic Functions
+
+### Basic Generic Function
+
+Here's how to write a generic swap function that works with any type:
+
+```swift
+func swapTwoValues<T>(_ a: inout T, _ b: inout T) {
+    let temp = a
+    a = b
+    b = temp
+}
+
+var firstInt = 3
+var secondInt = 107
+swapTwoValues(&firstInt, &secondInt)
+// firstInt is now 107, secondInt is now 3
+
+var firstString = "hello"
+var secondString = "world"
+swapTwoValues(&firstString, &secondString)
+// firstString is now "world", secondString is now "hello"
+```
+
+The `<T>` syntax declares a type parameter. `T` is a placeholder that gets replaced with the actual type when you call the function. You can name it anything, but single uppercase letters (`T`, `U`, `V`) or descriptive names like `Element` are conventional.
+
+### Multiple Type Parameters
+
+Functions can have multiple generic type parameters:
+
+```swift
+func printPair<T, U>(_ first: T, _ second: U) {
+    print("First: \(first), Second: \(second)")
+}
+
+printPair(42, "answer")  // First: 42, Second: answer
+printPair("Swift", 5.0)  // First: Swift, Second: 5.0
+```
+
+## Generic Types
+
+You can create generic structs, classes, and enums.
+
+### Generic Stack Implementation
+
+```swift
+struct Stack<Element> {
+    private var items: [Element] = []
+    
+    mutating func push(_ item: Element) {
+        items.append(item)
+    }
+    
+    mutating func pop() -> Element? {
+        return items.isEmpty ? nil : items.removeLast()
+    }
+    
+    func peek() -> Element? {
+        return items.last
+    }
+    
+    var isEmpty: Bool {
+        return items.isEmpty
+    }
+    
+    var count: Int {
+        return items.count
+    }
+}
+
+var intStack = Stack<Int>()
+intStack.push(1)
+intStack.push(2)
+intStack.push(3)
+print(intStack.pop())  // Optional(3)
+
+var stringStack = Stack<String>()
+stringStack.push("A")
+stringStack.push("B")
+print(stringStack.peek())  // Optional("B")
+```
+
+### Generic Enums
+
+Swift's `Optional` is actually a generic enum:
+
+```swift
+enum Result<Success, Failure: Error> {
+    case success(Success)
+    case failure(Failure)
+}
+
+enum NetworkError: Error {
+    case timeout
+    case notFound
+}
+
+func fetchData() -> Result<String, NetworkError> {
+    // Simulate success
+    return .success("Data loaded")
+}
+
+let result = fetchData()
+switch result {
+case .success(let data):
+    print("Success: \(data)")
+case .failure(let error):
+    print("Failed: \(error)")
+}
+```
+
+## Type Constraints
+
+Sometimes you need your generic types to have certain capabilities. Type constraints specify that a type parameter must inherit from a specific class or conform to a protocol.
+
+### Protocol Constraints
+
+```swift
+func findIndex<T: Equatable>(of valueToFind: T, in array: [T]) -> Int? {
+    for (index, value) in array.enumerated() {
+        if value == valueToFind {
+            return index
+        }
+    }
+    return nil
+}
+
+let numbers = [1, 2, 3, 4, 5]
+if let index = findIndex(of: 3, in: numbers) {
+    print("Found at index \(index)")  // Found at index 2
+}
+```
+
+The `T: Equatable` constraint means `T` must conform to the `Equatable` protocol, which allows us to use the `==` operator.
+
+### Multiple Constraints
+
+Use `where` clauses for more complex constraints:
+
+```swift
+func allItemsMatch<C1: Collection, C2: Collection>(_ container1: C1, _ container2: C2) -> Bool
+    where C1.Element: Equatable, C1.Element == C2.Element {
+    
+    guard container1.count == container2.count else { return false }
+    
+    for (item1, item2) in zip(container1, container2) {
+        if item1 != item2 {
+            return false
+        }
+    }
+    return true
+}
+
+let array = [1, 2, 3]
+let set: Set = [1, 2, 3]
+print(allItemsMatch(array, set))  // true
+```
+
+This function requires:
+- Both parameters conform to `Collection`
+- Elements of `C1` conform to `Equatable`
+- Elements of both collections are the same type
+
+## Associated Types
+
+Associated types are used in protocols to create generic protocols. They're placeholders for types that will be specified by the conforming type.
+
+### Basic Associated Type
+
+```swift
+protocol Container {
+    associatedtype Item
+    
+    mutating func append(_ item: Item)
+    var count: Int { get }
+    subscript(i: Int) -> Item { get }
+}
+
+struct IntContainer: Container {
+    // Swift infers that Item is Int
+    typealias Item = Int  // Optional: explicit declaration
+    
+    private var items: [Int] = []
+    
+    mutating func append(_ item: Int) {
+        items.append(item)
+    }
+    
+    var count: Int {
+        return items.count
+    }
+    
+    subscript(i: Int) -> Int {
+        return items[i]
+    }
+}
+```
+
+Swift can infer the associated type based on your implementation, so the `typealias` is often optional.
+
+### Generic Type Conforming to Protocol with Associated Type
+
+```swift
+struct GenericContainer<T>: Container {
+    // Item is inferred to be T
+    private var items: [T] = []
+    
+    mutating func append(_ item: T) {
+        items.append(item)
+    }
+    
+    var count: Int {
+        return items.count
+    }
+    
+    subscript(i: Int) -> T {
+        return items[i]
+    }
+}
+
+var stringContainer = GenericContainer<String>()
+stringContainer.append("Hello")
+stringContainer.append("World")
+print(stringContainer[0])  // "Hello"
+```
+
+### Constraints on Associated Types
+
+You can add constraints to associated types:
+
+```swift
+protocol SortableContainer {
+    associatedtype Item: Comparable
+    
+    var items: [Item] { get }
+    func sorted() -> [Item]
+}
+
+struct NumberContainer: SortableContainer {
+    var items: [Int]
+    
+    func sorted() -> [Int] {
+        return items.sorted()
+    }
+}
+
+let container = NumberContainer(items: [3, 1, 4, 1, 5])
+print(container.sorted())  // [1, 1, 3, 4, 5]
+```
+
+## Generic Where Clauses
+
+`where` clauses provide more sophisticated constraints for generic code.
+
+### On Extensions
+
+```swift
+extension Stack where Element: Equatable {
+    func contains(_ item: Element) -> Bool {
+        return items.contains(item)
+    }
+}
+
+var intStack = Stack<Int>()
+intStack.push(1)
+intStack.push(2)
+print(intStack.contains(2))  // true
+
+// This method only exists when Element conforms to Equatable
+```
+
+### On Functions
+
+```swift
+func isEqual<C1: Container, C2: Container>(_ container1: C1, _ container2: C2) -> Bool
+    where C1.Item == C2.Item, C1.Item: Equatable {
+    
+    guard container1.count == container2.count else { return false }
+    
+    for i in 0..<container1.count {
+        if container1[i] != container2[i] {
+            return false
+        }
+    }
+    return true
+}
+```
+
+### Contextual Where Clauses
+
+You can add `where` clauses to individual methods or properties:
+
+```swift
+extension Container {
+    func average() -> Double where Item == Int {
+        guard count > 0 else { return 0 }
+        let sum = (0..<count).reduce(0) { $0 + self[$1] }
+        return Double(sum) / Double(count)
+    }
+}
+```
+
+## Common Patterns and Real-World Examples
+
+### Generic Result Builder
+
+```swift
+struct Response<T: Codable> {
+    let data: T
+    let statusCode: Int
+    let headers: [String: String]
+}
+
+func fetchUser() -> Response<User> {
+    // Network call implementation
+    return Response(data: User(id: 1, name: "John"), statusCode: 200, headers: [:])
+}
+
+struct User: Codable {
+    let id: Int
+    let name: String
+}
+```
+
+### Generic Cache
+
+```swift
+class Cache<Key: Hashable, Value> {
+    private var storage: [Key: Value] = [:]
+    
+    func set(_ value: Value, forKey key: Key) {
+        storage[key] = value
+    }
+    
+    func get(_ key: Key) -> Value? {
+        return storage[key]
+    }
+    
+    func remove(_ key: Key) {
+        storage.removeValue(forKey: key)
+    }
+}
+
+let imageCache = Cache<String, UIImage>()
+// imageCache.set(someImage, forKey: "profile_pic")
+
+let dataCache = Cache<Int, Data>()
+// dataCache.set(someData, forKey: 42)
+```
+
+### Generic Wrapper Type
+
+```swift
+struct Weak<T: AnyObject> {
+    weak var value: T?
+    
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
+// Useful for avoiding retain cycles in arrays of delegates
+var delegates: [Weak<MyDelegate>] = []
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting Type Constraints
+
+```swift
+// ❌ Won't compile - can't compare T without Equatable
+func findFirst<T>(_ item: T, in array: [T]) -> Int? {
+    for (index, value) in array.enumerated() {
+        if value == item {  // Error: Binary operator '==' cannot be applied
+            return index
+        }
+    }
+    return nil
+}
+
+// ✅ Correct - add Equatable constraint
+func findFirst<T: Equatable>(_ item: T, in array: [T]) -> Int? {
+    for (index, value) in array.enumerated() {
+        if value == item {
+            return index
+        }
+    }
+    return nil
+}
+```
+
+### Mistake 2: Overusing Generics
+
+Not everything needs to be generic. If you're only ever using one type, don't make it generic:
+
+```swift
+// ❌ Unnecessary generics
+struct UserManager<T> where T == User {
+    func save(_ user: T) { }
+}
+
+// ✅ Just use the concrete type
+struct UserManager {
+    func save(_ user: User) { }
+}
+```
+
+### Mistake 3: Type Inference Confusion
+
+```swift
+func makeArray<T>() -> [T] {
+    return []
+}
+
+// ❌ Compiler can't infer T
+let array = makeArray()  // Error: Generic parameter 'T' could not be inferred
+
+// ✅ Provide type information
+let array: [Int] = makeArray()
+let array2 = makeArray() as [String]
+let array3 = makeArray<Double>()
+```
+
+### Edge Case: Generic Type Specialization
+
+Swift can optimize generics for specific types:
+
+```swift
+struct Container<T> {
+    var value: T
+}
+
+// When used with specific types, Swift may create specialized versions
+let intContainer = Container(value: 5)      // Specialized for Int
+let stringContainer = Container(value: "Hi") // Specialized for String
+```
+
+### Edge Case: Protocol with Self or Associated Type
+
+You can't use protocols with `Self` or associated types as regular types:
+
+```swift
+protocol Container {
+    associatedtype Item
+    func getItem() -> Item
+}
+
+// ❌ Won't compile
+// var containers: [Container] = []
+
+// ✅ Use type erasure or generic constraints
+func process<C: Container>(_ container: C) where C.Item == Int {
+    let item = container.getItem()
+    print(item)
+}
+```
+
+## Performance Considerations
+
+Generics in Swift are implemented using **static polymorphism**, meaning the compiler generates specialized code for each concrete type at compile time. This provides:
+
+- **Zero runtime overhead** for most cases
+- **Better performance** than Objective-C's runtime polymorphism
+- **Type safety** checked at compile time
+
+However, when using protocols with associated types or existentials, there may be some runtime indirection.
+
+## Summary Table
+
+| Concept | Syntax | Use Case | Example |
+|---------|--------|----------|---------|
+| **Generic Function** | `func name<T>(_ param: T)` | Reusable function for any type | `func swap<T>(_ a: inout T, _ b: inout T)` |
+| **Generic Type** | `struct Name<T>` | Container or wrapper for any type | `struct Stack<Element>` |
+| **Type Constraint** | `<T: Protocol>` | Require type to conform to protocol | `<T: Equatable>` |
+| **Multiple Constraints** | `where T: P1, T: P2` | Combine multiple requirements | `where T: Codable & Hashable` |
+| **Associated Type** | `associatedtype Name` | Placeholder type in protocols | `associatedtype Element` |
+| **Generic Where Clause** | `where` after declaration | Complex constraints | `where Element: Comparable` |
+| **Same-Type Constraint** | `C1.Item == C2.Item` | Require associated types match | `where C1.Element == C2.Element` |
+| **Conditional Conformance** | `extension Type where` | Add functionality conditionally | `extension Array where Element: Numeric` |
+
+## Further Reading
+
+For more information, consult the official Apple documentation:
+
+- [Swift Language Guide - Generics](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/)
+- [Swift Standard Library - Generic Types](https://developer.apple.com/documentation/swift/swift_standard_library)
+- [WWDC Sessions on Protocol-Oriented Programming](https://developer.apple.com/videos/)
+
+Generics are fundamental to writing idiomatic Swift. They appear throughout the standard library and are essential for building flexible, type-safe APIs. Master them, and you'll write more maintainable and reusable code.

@@ -1,0 +1,649 @@
+---
+title: "WidgetKit"
+description: "Building home screen widgets with timelines and configurations"
+sectionId: "6.2-extensions-widgets"
+sectionTitle: "Extensions & Widgets"
+order: 4
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Building Home Screen Widgets with WidgetKit
+
+WidgetKit is Apple's framework for creating widgets that appear on the iOS home screen, lock screen, and StandBy mode. Introduced in iOS 14, widgets provide users with at-a-glance information from your app without requiring them to open it. Unlike app extensions, widgets aren't interactive—they're read-only displays that deep-link into your app when tapped.
+
+Understanding WidgetKit is essential for modern iOS development because widgets significantly improve user engagement by surfacing your app's content directly on the home screen. They're also a key differentiator for iOS apps, and many users decide which apps to keep based on their widget experience.
+
+## Core Concepts
+
+WidgetKit widgets are built on three fundamental concepts:
+
+1. **Timelines**: A series of timeline entries that tell WidgetKit when to update your widget
+2. **TimelineProvider**: Supplies timeline entries to WidgetKit
+3. **Widget Configuration**: Defines your widget's properties, size families, and content
+
+## Creating Your First Widget
+
+When you add a Widget Extension to your Xcode project (File → New → Target → Widget Extension), Xcode generates a template. Let's build a simple counter widget from scratch to understand each component.
+
+### Widget Entry
+
+A timeline entry represents your widget at a specific point in time. It must conform to `TimelineEntry`:
+
+```swift
+import WidgetKit
+import SwiftUI
+
+struct CounterEntry: TimelineEntry {
+    let date: Date // Required by TimelineEntry protocol
+    let count: Int
+    let relevance: TimelineEntryRelevance? // Optional: helps iOS prioritize which widgets to show
+}
+```
+
+The `date` property tells WidgetKit when this entry should be displayed. The additional properties contain your widget's data.
+
+### Widget View
+
+The widget view is a standard SwiftUI view that displays your entry:
+
+```swift
+struct CounterWidgetView: View {
+    let entry: CounterEntry
+    
+    var body: some View {
+        VStack {
+            Text("Count")
+                .font(.headline)
+            Text("\(entry.count)")
+                .font(.system(size: 48, weight: .bold))
+            Text("Last updated:")
+                .font(.caption)
+            Text(entry.date, style: .time)
+                .font(.caption2)
+        }
+        .containerBackground(.fill.tertiary, for: .widget) // Required in iOS 17+
+    }
+}
+```
+
+**Important**: In iOS 17+, you must use `.containerBackground(_:for:)` instead of `.background()`. This is a common mistake that causes runtime warnings.
+
+### Timeline Provider
+
+The `TimelineProvider` protocol has three required methods that supply entries to WidgetKit:
+
+```swift
+struct CounterTimelineProvider: TimelineProvider {
+    // Provides a placeholder for when WidgetKit is rendering your widget for the first time
+    func placeholder(in context: Context) -> CounterEntry {
+        CounterEntry(date: Date(), count: 0, relevance: nil)
+    }
+    
+    // Provides a single entry for transient situations (widget gallery)
+    func getSnapshot(in context: Context, completion: @escaping (CounterEntry) -> Void) {
+        let entry = CounterEntry(date: Date(), count: 42, relevance: nil)
+        completion(entry)
+    }
+    
+    // Provides the timeline of entries
+    func getTimeline(in context: Context, completion: @escaping (Timeline<CounterEntry>) -> Void) {
+        var entries: [CounterEntry] = []
+        let currentDate = Date()
+        
+        // Generate 5 entries, one per hour
+        for hourOffset in 0..<5 {
+            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
+            let entry = CounterEntry(
+                date: entryDate,
+                count: hourOffset * 10,
+                relevance: TimelineEntryRelevance(score: Float(hourOffset))
+            )
+            entries.append(entry)
+        }
+        
+        // Tell WidgetKit when to request the next timeline
+        let timeline = Timeline(entries: entries, policy: .atEnd)
+        completion(timeline)
+    }
+}
+```
+
+### Timeline Reload Policies
+
+The `Timeline` initializer takes a `policy` parameter that determines when WidgetKit should request new entries:
+
+- `.atEnd`: Request a new timeline when all entries are exhausted
+- `.after(date)`: Request a new timeline after a specific date
+- `.never`: Never automatically reload (useful when you'll manually reload using `WidgetCenter`)
+
+```swift
+// Reload at a specific time
+let midnight = Calendar.current.startOfDay(for: Date().addingTimeInterval(86400))
+let timeline = Timeline(entries: entries, policy: .after(midnight))
+
+// Reload after all entries are shown
+let timeline = Timeline(entries: entries, policy: .atEnd)
+```
+
+### Widget Configuration
+
+Finally, the `Widget` struct ties everything together:
+
+```swift
+@main
+struct CounterWidget: Widget {
+    let kind: String = "CounterWidget" // Unique identifier
+    
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: CounterTimelineProvider()) { entry in
+            CounterWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Counter Widget")
+        .description("Displays a counter that updates hourly.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+```
+
+The `kind` identifier is crucial—it uniquely identifies your widget and is used when programmatically reloading widgets.
+
+## Widget Families and Size Adaptation
+
+Widgets come in different sizes. Design your views to adapt:
+
+```swift
+struct AdaptiveWidgetView: View {
+    let entry: CounterEntry
+    @Environment(\.widgetFamily) var widgetFamily
+    
+    var body: some View {
+        switch widgetFamily {
+        case .systemSmall:
+            SmallWidgetView(entry: entry)
+        case .systemMedium:
+            MediumWidgetView(entry: entry)
+        case .systemLarge:
+            LargeWidgetView(entry: entry)
+        case .accessoryCircular:
+            CircularAccessoryView(entry: entry)
+        @unknown default:
+            SmallWidgetView(entry: entry)
+        }
+    }
+}
+
+struct SmallWidgetView: View {
+    let entry: CounterEntry
+    
+    var body: some View {
+        Text("\(entry.count)")
+            .font(.system(size: 48, weight: .bold))
+            .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+```
+
+**Common mistake**: Forgetting the `@unknown default` case. Widget families may expand in future iOS versions, so always handle unknown cases.
+
+## Configurable Widgets with App Intents
+
+For widgets that users can configure, use `AppIntentConfiguration` instead of `StaticConfiguration`. Starting with iOS 16, App Intents replace the older Intent Definition system.
+
+### Define an App Intent
+
+```swift
+import AppIntents
+
+struct SelectColorIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Select Color"
+    static var description = IntentDescription("Choose a color for the widget")
+    
+    @Parameter(title: "Color")
+    var color: ColorOption
+    
+    init() {
+        self.color = .blue
+    }
+    
+    init(color: ColorOption) {
+        self.color = color
+    }
+}
+
+enum ColorOption: String, AppEnum {
+    case red, green, blue, purple
+    
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Color")
+    
+    static var caseDisplayRepresentations: [ColorOption: DisplayRepresentation] = [
+        .red: "Red",
+        .green: "Green",
+        .blue: "Blue",
+        .purple: "Purple"
+    ]
+}
+```
+
+### Update Timeline Provider
+
+Your timeline provider must accept the intent as a generic parameter:
+
+```swift
+struct ConfigurableTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> ColorEntry {
+        ColorEntry(date: Date(), color: .blue)
+    }
+    
+    func snapshot(for configuration: SelectColorIntent, in context: Context) async -> ColorEntry {
+        ColorEntry(date: Date(), color: configuration.color)
+    }
+    
+    func timeline(for configuration: SelectColorIntent, in context: Context) async -> Timeline<ColorEntry> {
+        let entries = [
+            ColorEntry(date: Date(), color: configuration.color)
+        ]
+        return Timeline(entries: entries, policy: .never)
+    }
+}
+
+struct ColorEntry: TimelineEntry {
+    let date: Date
+    let color: ColorOption
+}
+```
+
+**Note**: With App Intents, the methods are `async` rather than using completion handlers.
+
+### Widget Configuration with App Intents
+
+```swift
+struct ConfigurableColorWidget: Widget {
+    let kind: String = "ConfigurableColorWidget"
+    
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: kind,
+            intent: SelectColorIntent.self,
+            provider: ConfigurableTimelineProvider()
+        ) { entry in
+            ColorWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Color Widget")
+        .description("A widget with configurable colors.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+struct ColorWidgetView: View {
+    let entry: ColorEntry
+    
+    var body: some View {
+        ZStack {
+            switch entry.color {
+            case .red: Color.red
+            case .green: Color.green
+            case .blue: Color.blue
+            case .purple: Color.purple
+            }
+            
+            Text("Color Widget")
+                .foregroundColor(.white)
+                .font(.headline)
+        }
+        .containerBackground(for: .widget) { }
+    }
+}
+```
+
+## Deep Linking from Widgets
+
+Widgets use `widgetURL` (single tap target) or `Link` (multiple tap targets) to open your app:
+
+```swift
+struct DeepLinkWidgetView: View {
+    let entry: CounterEntry
+    
+    var body: some View {
+        VStack {
+            // Single URL for entire widget
+            Text("Tap anywhere")
+        }
+        .widgetURL(URL(string: "myapp://counter/\(entry.count)"))
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct MultipleLinkWidgetView: View {
+    let entry: CounterEntry
+    
+    var body: some View {
+        VStack {
+            Link(destination: URL(string: "myapp://action/increment")!) {
+                Text("Increment")
+            }
+            
+            Link(destination: URL(string: "myapp://action/reset")!) {
+                Text("Reset")
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+```
+
+Handle these URLs in your app's `onOpenURL` modifier or scene delegate:
+
+```swift
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .onOpenURL { url in
+                    handleWidgetURL(url)
+                }
+        }
+    }
+    
+    func handleWidgetURL(_ url: URL) {
+        guard url.scheme == "myapp" else { return }
+        
+        switch url.host {
+        case "counter":
+            // Navigate to counter detail
+            break
+        case "action":
+            // Handle action
+            break
+        default:
+            break
+        }
+    }
+}
+```
+
+## Refreshing Widgets Programmatically
+
+Update widgets from your main app using `WidgetCenter`:
+
+```swift
+import WidgetKit
+
+// Reload all widgets of a specific kind
+WidgetCenter.shared.reloadTimelines(ofKind: "CounterWidget")
+
+// Reload all widgets from your app
+WidgetCenter.shared.reloadAllTimelines()
+
+// Get current configurations
+WidgetCenter.shared.getCurrentConfigurations { result in
+    switch result {
+    case .success(let widgetInfo):
+        print("Active widgets: \(widgetInfo.count)")
+    case .failure(let error):
+        print("Error: \(error)")
+    }
+}
+```
+
+**Performance note**: Don't reload widgets excessively. iOS limits widget updates to preserve battery life. Widgets are typically updated every 15 minutes to an hour, depending on system conditions.
+
+## Sharing Data Between App and Widget
+
+Widgets run in a separate process and can't access your app's container directly. Use App Groups to share data:
+
+### 1. Enable App Groups
+
+In Xcode, go to your target's Signing & Capabilities and add the App Groups capability for both your app and widget extension. Use the same group identifier (e.g., `group.com.yourcompany.yourapp`).
+
+### 2. Share Data via UserDefaults
+
+```swift
+// In your main app
+let sharedDefaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")
+sharedDefaults?.set(42, forKey: "counterValue")
+sharedDefaults?.synchronize()
+
+// Reload the widget
+WidgetCenter.shared.reloadTimelines(ofKind: "CounterWidget")
+
+// In your widget's timeline provider
+func getTimeline(in context: Context, completion: @escaping (Timeline<CounterEntry>) -> Void) {
+    let sharedDefaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")
+    let count = sharedDefaults?.integer(forKey: "counterValue") ?? 0
+    
+    let entry = CounterEntry(date: Date(), count: count, relevance: nil)
+    let timeline = Timeline(entries: [entry], policy: .never)
+    completion(timeline)
+}
+```
+
+### 3. Share Complex Data with File Manager
+
+For complex data structures, write to a shared container:
+
+```swift
+// Helper to get shared container URL
+func sharedContainerURL() -> URL? {
+    FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: "group.com.yourcompany.yourapp"
+    )
+}
+
+// Write data in main app
+struct CounterData: Codable {
+    let count: Int
+    let lastUpdated: Date
+}
+
+func saveCounterData(_ data: CounterData) {
+    guard let containerURL = sharedContainerURL() else { return }
+    let fileURL = containerURL.appendingPathComponent("counter.json")
+    
+    do {
+        let encoded = try JSONEncoder().encode(data)
+        try encoded.write(to: fileURL)
+        WidgetCenter.shared.reloadTimelines(ofKind: "CounterWidget")
+    } catch {
+        print("Failed to save: \(error)")
+    }
+}
+
+// Read data in widget
+func loadCounterData() -> CounterData? {
+    guard let containerURL = sharedContainerURL() else { return nil }
+    let fileURL = containerURL.appendingPathComponent("counter.json")
+    
+    do {
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(CounterData.self, from: data)
+    } catch {
+        print("Failed to load: \(error)")
+        return nil
+    }
+}
+```
+
+## Previews for Widget Development
+
+Create previews to iterate quickly on widget designs:
+
+```swift
+#Preview(as: .systemSmall) {
+    CounterWidget()
+} timeline: {
+    CounterEntry(date: .now, count: 0, relevance: nil)
+    CounterEntry(date: .now, count: 50, relevance: nil)
+    CounterEntry(date: .now, count: 100, relevance: nil)
+}
+
+// Preview multiple families
+#Preview(as: .systemMedium) {
+    CounterWidget()
+} timeline: {
+    CounterEntry(date: .now, count: 42, relevance: nil)
+}
+```
+
+## Common Edge Cases and Mistakes
+
+### 1. Network Requests in Timelines
+
+Network requests in timeline providers must complete quickly (typically under 5 seconds). Use caching aggressively:
+
+```swift
+func getTimeline(in context: Context, completion: @escaping (Timeline<CounterEntry>) -> Void) {
+    Task {
+        do {
+            // Set a timeout
+            let data = try await fetchDataWithTimeout(seconds: 4)
+            let entry = CounterEntry(date: Date(), count: data.count, relevance: nil)
+            let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(3600)))
+            completion(timeline)
+        } catch {
+            // Provide fallback with cached data
+            let cachedCount = UserDefaults(suiteName: "group.com.yourcompany.yourapp")?
+                .integer(forKey: "counterValue") ?? 0
+            let fallbackEntry = CounterEntry(date: Date(), count: cachedCount, relevance: nil)
+            let timeline = Timeline(entries: [fallbackEntry], policy: .after(Date().addingTimeInterval(900)))
+            completion(timeline)
+        }
+    }
+}
+```
+
+### 2. Widget Rendering Limits
+
+Widgets have strict rendering budgets. Avoid complex view hierarchies and heavy animations:
+
+```swift
+// ❌ Bad — too complex for a widget
+struct OverlyComplexWidgetView: View {
+    var body: some View {
+        ScrollView { // ScrollView doesn't work in widgets
+            ForEach(0..<100) { i in
+                Text("Item \(i)")
+            }
+        }
+    }
+}
+
+// ✅ Good — simple, static layout
+struct SimpleWidgetView: View {
+    let entry: CounterEntry
+
+    var body: some View {
+        VStack {
+            Text("\(entry.count)")
+                .font(.largeTitle)
+            Text("Total")
+                .font(.caption)
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+```
+
+### 3. Missing containerBackground (iOS 17+)
+
+```swift
+// ❌ Bad — runtime warning on iOS 17+
+struct OldStyleWidget: View {
+    var body: some View {
+        Text("Hello")
+            .background(Color.blue) // Doesn't fill widget properly
+    }
+}
+
+// ✅ Good — use containerBackground
+struct ModernWidget: View {
+    var body: some View {
+        Text("Hello")
+            .containerBackground(.blue, for: .widget)
+    }
+}
+```
+
+### 4. Not Handling the Widget Gallery
+
+The `getSnapshot` / `snapshot` method is called when users browse the widget gallery. Always provide attractive, representative data:
+
+```swift
+func getSnapshot(in context: Context, completion: @escaping (CounterEntry) -> Void) {
+    if context.isPreview {
+        // Widget gallery — show sample data
+        let entry = CounterEntry(date: Date(), count: 42, relevance: nil)
+        completion(entry)
+    } else {
+        // Home screen — show real data
+        let count = loadActualCount()
+        let entry = CounterEntry(date: Date(), count: count, relevance: nil)
+        completion(entry)
+    }
+}
+```
+
+### 5. Interactive Widgets (iOS 17+)
+
+Starting in iOS 17, widgets support `Button` and `Toggle` for basic interactivity:
+
+```swift
+struct InteractiveWidgetView: View {
+    let entry: CounterEntry
+
+    var body: some View {
+        VStack {
+            Text("\(entry.count)")
+                .font(.largeTitle)
+
+            Button(intent: IncrementIntent()) {
+                Label("Add", systemImage: "plus")
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+// The intent that runs when button is tapped
+struct IncrementIntent: AppIntent {
+    static var title: LocalizedStringResource = "Increment Counter"
+
+    func perform() async throws -> some IntentResult {
+        let defaults = UserDefaults(suiteName: "group.com.yourcompany.yourapp")
+        let current = defaults?.integer(forKey: "counterValue") ?? 0
+        defaults?.set(current + 1, forKey: "counterValue")
+
+        // Reload the widget
+        WidgetCenter.shared.reloadTimelines(ofKind: "CounterWidget")
+
+        return .result()
+    }
+}
+```
+
+## Summary Table
+
+| Concept | Key API / Detail | Purpose |
+|---------|-----------------|---------|
+| **TimelineEntry** | `TimelineEntry` protocol | Data for widget at a point in time |
+| **TimelineProvider** | `placeholder`, `getSnapshot`, `getTimeline` | Supplies entries to WidgetKit |
+| **StaticConfiguration** | `StaticConfiguration` | Non-configurable widget |
+| **AppIntentConfiguration** | `AppIntentConfiguration` | User-configurable widget |
+| **Widget families** | `.systemSmall`, `.systemMedium`, `.systemLarge` | Different widget sizes |
+| **Reload policy** | `.atEnd`, `.after(date)`, `.never` | When to refresh timeline |
+| **WidgetCenter** | `reloadTimelines(ofKind:)` | Programmatic refresh from app |
+| **Deep linking** | `.widgetURL()`, `Link` | Open app from widget tap |
+| **App Groups** | `UserDefaults(suiteName:)` | Share data between app and widget |
+| **containerBackground** | `.containerBackground(_:for:)` | Required background (iOS 17+) |
+| **Interactive widgets** | `Button(intent:)`, `Toggle` | Tap actions (iOS 17+) |
+| **Lock screen widgets** | `.accessoryCircular`, `.accessoryRectangular` | Lock screen and StandBy |
+
+## Official Resources
+
+- [Apple Documentation: WidgetKit](https://developer.apple.com/documentation/widgetkit)
+- [Apple Documentation: Creating a Widget Extension](https://developer.apple.com/documentation/widgetkit/creating-a-widget-extension)
+- [Apple Documentation: Making a Configurable Widget](https://developer.apple.com/documentation/widgetkit/making-a-configurable-widget)
+- [Apple: Human Interface Guidelines — Widgets](https://developer.apple.com/design/human-interface-guidelines/widgets)
+- [WWDC 2023: Bring Widgets to New Places](https://developer.apple.com/videos/play/wwdc2023/10027/)

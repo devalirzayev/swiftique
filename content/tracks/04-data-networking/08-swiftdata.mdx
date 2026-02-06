@@ -1,0 +1,732 @@
+---
+title: "SwiftData"
+description: "Modern data persistence with @Model, ModelContainer, and queries"
+sectionId: "4.3-persistence"
+sectionTitle: "Data Persistence"
+order: 8
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# SwiftData: Modern Data Persistence in Swift
+
+SwiftData is Apple's declarative framework for data modeling and management, introduced in iOS 17. It replaces Core Data as the recommended approach for persisting data in Swift applications. Built on top of Core Data's proven storage engine, SwiftData uses modern Swift features like macros, property wrappers, and generics to provide a significantly simpler and more type-safe API.
+
+If you've worked with Core Data, you'll appreciate how SwiftData eliminates boilerplate code and `.xcdatamodeld` files. If you're new to iOS persistence, SwiftData is where you should start—it's designed from the ground up with Swift's language features in mind.
+
+## Why SwiftData Matters
+
+Before SwiftData, persisting structured data in iOS apps required either:
+- **Core Data**: Powerful but complex, with separate model files and an Objective-C heritage
+- **Third-party solutions**: Like Realm or custom solutions wrapping SQLite
+- **Manual serialization**: Using Codable with file storage or UserDefaults
+
+SwiftData provides:
+- **Type safety**: Your data models are regular Swift classes
+- **Declarative syntax**: Define models with simple macros
+- **SwiftUI integration**: Automatic view updates when data changes
+- **Zero boilerplate**: No need for separate model files or manual migration code
+- **Automatic persistence**: Changes are tracked and saved automatically
+
+## Core Concepts
+
+SwiftData has three fundamental components:
+
+1. **@Model**: A macro that transforms regular Swift classes into persistent data models
+2. **ModelContainer**: Manages the storage and configuration for your models
+3. **ModelContext**: Tracks changes and handles fetch requests (similar to Core Data's managed object context)
+
+## Creating Your First Model
+
+A SwiftData model is simply a Swift class annotated with the `@Model` macro:
+
+```swift
+import SwiftData
+
+@Model
+final class Book {
+    var title: String
+    var author: String
+    var publishedYear: Int
+    var rating: Double?
+    var dateAdded: Date
+    
+    init(title: String, author: String, publishedYear: Int, rating: Double? = nil) {
+        self.title = title
+        self.author = author
+        self.publishedYear = publishedYear
+        self.rating = rating
+        self.dateAdded = Date()
+    }
+}
+```
+
+The `@Model` macro automatically:
+- Makes the class observable (it conforms to `Observable`)
+- Adds persistence capabilities
+- Generates storage for properties
+- Creates unique identifiers for each instance
+
+### Supported Property Types
+
+SwiftData supports most common Swift types out of the box:
+
+```swift
+@Model
+final class Example {
+    // Basic types
+    var text: String
+    var number: Int
+    var decimal: Double
+    var flag: Bool
+    
+    // Foundation types
+    var date: Date
+    var url: URL
+    var uuid: UUID
+    var data: Data
+    
+    // Optional types
+    var optionalText: String?
+    var optionalNumber: Int?
+    
+    // Collections
+    var tags: [String]
+    var scores: [Int]
+    
+    // Enums (must be raw representable)
+    var status: Status
+    
+    init(text: String, number: Int, decimal: Double, flag: Bool, 
+         date: Date, url: URL, uuid: UUID, data: Data, status: Status) {
+        self.text = text
+        self.number = number
+        self.decimal = decimal
+        self.flag = flag
+        self.date = date
+        self.url = url
+        self.uuid = uuid
+        self.data = data
+        self.tags = []
+        self.scores = []
+        self.status = status
+    }
+}
+
+enum Status: String, Codable {
+    case active
+    case inactive
+    case pending
+}
+```
+
+### Property Customization
+
+SwiftData provides macros to customize property behavior:
+
+```swift
+import SwiftData
+
+@Model
+final class User {
+    // Unique constraint - no two users can have the same email
+    @Attribute(.unique) var email: String
+    
+    var name: String
+    
+    // Exclude from persistence (transient property)
+    @Transient var isOnline: Bool = false
+    
+    // Store large data externally (binary data optimization)
+    @Attribute(.externalStorage) var profileImage: Data?
+    
+    // Original property name for migration compatibility
+    @Attribute(originalName: "creationDate") var registeredAt: Date
+    
+    init(email: String, name: String) {
+        self.email = email
+        self.name = name
+        self.registeredAt = Date()
+    }
+}
+```
+
+**Common mistake**: Forgetting that `@Transient` properties won't be persisted. Initialize them with default values or in an initializer, because they'll reset to their default after fetching from storage.
+
+## Relationships Between Models
+
+SwiftData handles relationships between models automatically:
+
+```swift
+@Model
+final class Author {
+    var name: String
+    var books: [Book]
+    
+    init(name: String) {
+        self.name = name
+        self.books = []
+    }
+}
+
+@Model
+final class Book {
+    var title: String
+    var author: Author?
+    
+    init(title: String, author: Author? = nil) {
+        self.title = title
+        self.author = author
+    }
+}
+```
+
+### Relationship Types
+
+```swift
+// One-to-many relationship
+@Model
+final class Library {
+    var name: String
+    var books: [Book]  // One library has many books
+    
+    init(name: String) {
+        self.name = name
+        self.books = []
+    }
+}
+
+// Many-to-one relationship
+@Model
+final class Book {
+    var title: String
+    var library: Library?  // Many books belong to one library
+    
+    init(title: String) {
+        self.title = title
+    }
+}
+
+// Many-to-many relationship
+@Model
+final class Student {
+    var name: String
+    var courses: [Course]
+    
+    init(name: String) {
+        self.name = name
+        self.courses = []
+    }
+}
+
+@Model
+final class Course {
+    var title: String
+    var students: [Student]
+    
+    init(title: String) {
+        self.title = title
+        self.students = []
+    }
+}
+```
+
+### Cascade Delete Rules
+
+Control what happens when you delete an object with relationships:
+
+```swift
+@Model
+final class Author {
+    var name: String
+    
+    // When author is deleted, all their books are deleted too
+    @Relationship(deleteRule: .cascade) var books: [Book]
+    
+    init(name: String) {
+        self.name = name
+        self.books = []
+    }
+}
+
+@Model
+final class Publisher {
+    var name: String
+    
+    // When publisher is deleted, books become orphaned (author set to nil)
+    @Relationship(deleteRule: .nullify) var books: [Book]
+    
+    init(name: String) {
+        self.name = name
+        self.books = []
+    }
+}
+```
+
+Delete rules:
+- `.cascade`: Deletes related objects
+- `.nullify`: Sets the relationship to nil (default)
+- `.deny`: Prevents deletion if relationships exist
+- `.noAction`: No automatic action (advanced use cases)
+
+## Setting Up ModelContainer
+
+The `ModelContainer` manages the storage for your models. Set it up in your app's entry point:
+
+```swift
+import SwiftUI
+import SwiftData
+
+@main
+struct BookLibraryApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: Book.self)
+    }
+}
+```
+
+### Multiple Models
+
+When you have related models or multiple independent models:
+
+```swift
+@main
+struct BookLibraryApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: [Book.self, Author.self, Library.self])
+    }
+}
+```
+
+### Custom Configuration
+
+For more control over storage location and behavior:
+
+```swift
+@main
+struct BookLibraryApp: App {
+    let container: ModelContainer
+    
+    init() {
+        do {
+            let schema = Schema([Book.self, Author.self])
+            let configuration = ModelConfiguration(
+                schema: schema,
+                url: URL.documentsDirectory.appending(path: "library.store"),
+                cloudKitDatabase: .automatic  // Enable iCloud sync
+            )
+            container = try ModelContainer(for: schema, configurations: configuration)
+        } catch {
+            fatalError("Failed to configure SwiftData container: \(error)")
+        }
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(container)
+    }
+}
+```
+
+### In-Memory Storage (Testing)
+
+For unit tests or previews, use in-memory storage:
+
+```swift
+let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+let container = try ModelContainer(
+    for: Book.self,
+    configurations: configuration
+)
+```
+
+## Working with ModelContext
+
+`ModelContext` is your interface for CRUD operations (Create, Read, Update, Delete). In SwiftUI views, access it via the environment:
+
+```swift
+import SwiftUI
+import SwiftData
+
+struct BookListView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var books: [Book]
+    
+    var body: some View {
+        List(books) { book in
+            Text(book.title)
+        }
+        .toolbar {
+            Button("Add Book") {
+                addBook()
+            }
+        }
+    }
+    
+    private func addBook() {
+        let newBook = Book(
+            title: "The Swift Programming Language",
+            author: "Apple Inc.",
+            publishedYear: 2023
+        )
+        modelContext.insert(newBook)
+    }
+}
+```
+
+### CRUD Operations
+
+```swift
+struct BookManagerView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var books: [Book]
+    
+    // CREATE
+    func createBook() {
+        let book = Book(
+            title: "New Book",
+            author: "Author Name",
+            publishedYear: 2024
+        )
+        modelContext.insert(book)
+        // Save happens automatically, or call modelContext.save() explicitly
+    }
+    
+    // UPDATE
+    func updateBook(_ book: Book) {
+        book.title = "Updated Title"
+        // Changes are tracked automatically
+        // Save happens automatically on next run loop
+    }
+    
+    // DELETE
+    func deleteBook(_ book: Book) {
+        modelContext.delete(book)
+    }
+    
+    // Explicit save (usually not needed)
+    func saveChanges() {
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to save: \(error)")
+        }
+    }
+    
+    var body: some View {
+        List {
+            ForEach(books) { book in
+                Text(book.title)
+            }
+            .onDelete { indexSet in
+                for index in indexSet {
+                    deleteBook(books[index])
+                }
+            }
+        }
+    }
+}
+```
+
+**Important**: SwiftData uses autosave by default. Changes are typically saved automatically when the run loop cycles. You rarely need to call `save()` explicitly unless you need guaranteed persistence at a specific moment (e.g., before a background task).
+
+## Querying Data with @Query
+
+The `@Query` property wrapper automatically fetches and tracks data:
+
+```swift
+struct BookListView: View {
+    // Simple query - fetch all books
+    @Query private var books: [Book]
+    
+    var body: some View {
+        List(books) { book in
+            Text(book.title)
+        }
+    }
+}
+```
+
+### Filtering and Sorting
+
+```swift
+struct FilteredBookListView: View {
+    // Filter books by year and sort by title
+    @Query(
+        filter: #Predicate<Book> { book in
+            book.publishedYear >= 2020
+        },
+        sort: \Book.title
+    ) private var recentBooks: [Book]
+    
+    var body: some View {
+        List(recentBooks) { book in
+            VStack(alignment: .leading) {
+                Text(book.title)
+                Text("\(book.publishedYear)")
+                    .font(.caption)
+            }
+        }
+    }
+}
+```
+
+### Advanced Predicates
+
+Predicates use Swift's `#Predicate` macro for type-safe filtering:
+
+```swift
+struct AdvancedQueryView: View {
+    // Multiple conditions
+    @Query(
+        filter: #Predicate<Book> { book in
+            book.publishedYear >= 2020 && 
+            book.rating ?? 0 > 4.0
+        },
+        sort: [
+            SortDescriptor(\Book.rating, order: .reverse),
+            SortDescriptor(\Book.title)
+        ]
+    ) private var topRecentBooks: [Book]
+    
+    // String matching
+    @Query(
+        filter: #Predicate<Book> { book in
+            book.title.localizedStandardContains("Swift")
+        }
+    ) private var swiftBooks: [Book]
+    
+    // Relationship filtering
+    @Query(
+        filter: #Predicate<Book> { book in
+            book.author?.name == "Apple Inc."
+        }
+    ) private var appleBooks: [Book]
+    
+    var body: some View {
+        List(topRecentBooks) { book in
+            Text(book.title)
+        }
+    }
+}
+```
+
+### Dynamic Queries
+
+For queries that depend on user input or state:
+
+```swift
+struct SearchableBookListView: View {
+    @State private var searchText = ""
+    @State private var minimumYear = 2000
+    
+    var body: some View {
+        BookQueryView(searchText: searchText, minimumYear: minimumYear)
+            .searchable(text: $searchText)
+    }
+}
+
+struct BookQueryView: View {
+    let searchText: String
+    let minimumYear: Int
+    
+    @Query private var books: [Book]
+    
+    init(searchText: String, minimumYear: Int) {
+        self.searchText = searchText
+        self.minimumYear = minimumYear
+        
+        let predicate = #Predicate<Book> { book in
+            (searchText.isEmpty || book.title.localizedStandardContains(searchText)) &&
+            book.publishedYear >= minimumYear
+        }
+        
+        _books = Query(filter: predicate, sort: \Book.title)
+    }
+    
+    var body: some View {
+        List(books) { book in
+            VStack(alignment: .leading) {
+                Text(book.title)
+                Text("\(book.author) • \(book.publishedYear)")
+                    .font(.caption)
+            }
+        }
+    }
+}
+```
+
+**Common mistake**: Trying to change `@Query` parameters after initialization. The initializer pattern shown above is the correct approach for dynamic queries.
+
+### FetchDescriptor (Manual Fetching)
+
+For fetching outside of SwiftUI views or when you need more control:
+
+```swift
+import SwiftData
+
+func fetchHighRatedBooks(context: ModelContext) throws -> [Book] {
+    let predicate = #Predicate<Book> { book in
+        (book.rating ?? 0) >= 4.5
+    }
+    
+    var descriptor = FetchDescriptor<Book>(predicate: predicate)
+    descriptor.sortBy = [SortDescriptor(\Book.title)]
+    descriptor.fetchLimit = 10
+    
+    return try context.fetch(descriptor)
+}
+
+// Usage
+@Environment(\.modelContext) private var modelContext
+
+func loadTopBooks() {
+    do {
+        let topBooks = try fetchHighRatedBooks(context: modelContext)
+        // Process books...
+    } catch {
+        print("Fetch failed: \(error)")
+    }
+}
+```
+
+## Migrations and Schema Evolution
+
+SwiftData handles simple schema changes automatically:
+
+### Automatic Migrations
+
+These changes are handled automatically:
+- Adding new optional properties
+- Adding new models
+- Renaming properties (with `@Attribute(originalName:)`)
+
+```swift
+// Version 1
+@Model
+final class Book {
+    var title: String
+    var author: String
+    
+    init(title: String, author: String) {
+        self.title = title
+        self.author = author
+    }
+}
+
+// Version 2 - automatic migration
+@Model
+final class Book {
+    var title: String
+    var author: String
+    var isbn: String?  // New optional property - automatic migration
+
+    init(title: String, author: String, isbn: String? = nil) {
+        self.title = title
+        self.author = author
+        self.isbn = isbn
+    }
+}
+```
+
+### Manual Migrations
+
+For complex changes (renaming, data transformation), use `VersionedSchema` and `SchemaMigrationPlan`:
+
+```swift
+enum BookSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version = .init(1, 0, 0)
+    static var models: [any PersistentModel.Type] { [Book.self] }
+
+    @Model
+    final class Book {
+        var title: String
+        var author: String
+        init(title: String, author: String) {
+            self.title = title
+            self.author = author
+        }
+    }
+}
+
+enum BookSchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version = .init(2, 0, 0)
+    static var models: [any PersistentModel.Type] { [Book.self] }
+
+    @Model
+    final class Book {
+        var title: String
+        var authorName: String // Renamed from 'author'
+        var isbn: String?
+        init(title: String, authorName: String, isbn: String? = nil) {
+            self.title = title
+            self.authorName = authorName
+            self.isbn = isbn
+        }
+    }
+}
+
+enum BookMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [BookSchemaV1.self, BookSchemaV2.self]
+    }
+
+    static var stages: [MigrationStage] {
+        [migrateV1toV2]
+    }
+
+    static let migrateV1toV2 = MigrationStage.custom(
+        fromVersion: BookSchemaV1.self,
+        toVersion: BookSchemaV2.self,
+        willMigrate: nil,
+        didMigrate: { context in
+            // Perform data transformations after schema update
+            try context.save()
+        }
+    )
+}
+```
+
+## Common Mistakes
+
+**Forgetting `@Model` is class-only.** SwiftData models must be classes, not structs. The `@Model` macro doesn't work with value types.
+
+**Not providing default values for new properties.** When adding a non-optional property in a migration, existing records need a default value or they'll crash on fetch.
+
+**Using `@Transient` and expecting persistence.** Properties marked `@Transient` reset to their default value every time the object is loaded from storage.
+
+**Accessing `modelContext` before container setup.** Make sure `.modelContainer()` is applied to a parent view before any child tries to use `@Environment(\.modelContext)`.
+
+## Summary Table
+
+| Concept | API | Purpose | Example |
+|---------|-----|---------|---------|
+| **Define model** | `@Model` macro | Make class persistent | `@Model final class Book { ... }` |
+| **Unique constraint** | `@Attribute(.unique)` | Prevent duplicates | `@Attribute(.unique) var email: String` |
+| **External storage** | `@Attribute(.externalStorage)` | Store large data efficiently | `@Attribute(.externalStorage) var image: Data?` |
+| **Transient** | `@Transient` | Exclude from persistence | `@Transient var isOnline: Bool = false` |
+| **Relationships** | Array/optional properties | Connect models | `var books: [Book]`, `var author: Author?` |
+| **Delete rules** | `@Relationship(deleteRule:)` | Cascade, nullify, deny | `@Relationship(deleteRule: .cascade) var books: [Book]` |
+| **Container setup** | `.modelContainer(for:)` | Configure storage | `.modelContainer(for: Book.self)` |
+| **CRUD** | `modelContext.insert/delete` | Create and delete objects | `modelContext.insert(newBook)` |
+| **Query** | `@Query` property wrapper | Fetch and track data | `@Query(sort: \Book.title) var books: [Book]` |
+| **Predicate** | `#Predicate<T>` macro | Type-safe filtering | `#Predicate<Book> { $0.rating ?? 0 > 4.0 }` |
+| **FetchDescriptor** | `FetchDescriptor<T>` | Manual fetch with limits | `descriptor.fetchLimit = 10` |
+| **Migration** | `VersionedSchema` + `SchemaMigrationPlan` | Handle schema changes | Define version schemas and migration stages |
+
+## Official Resources
+
+- [Apple Documentation: SwiftData](https://developer.apple.com/documentation/swiftdata)
+- [Apple Documentation: Model Macro](https://developer.apple.com/documentation/swiftdata/model())
+- [Apple Documentation: ModelContainer](https://developer.apple.com/documentation/swiftdata/modelcontainer)
+- [WWDC23: Meet SwiftData](https://developer.apple.com/videos/play/wwdc2023/10187/)
+- [WWDC23: Model Your Schema with SwiftData](https://developer.apple.com/videos/play/wwdc2023/10195/)

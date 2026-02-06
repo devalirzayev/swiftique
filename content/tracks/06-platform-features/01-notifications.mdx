@@ -1,0 +1,752 @@
+---
+title: "Push & Local Notifications"
+description: "UNUserNotificationCenter, notification content, and scheduling"
+sectionId: "6.1-system-frameworks"
+sectionTitle: "System Frameworks"
+order: 1
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Push & Local Notifications in iOS
+
+Notifications are a critical way to re-engage users and deliver timely information, even when your app isn't actively running. iOS provides two types of notifications: **local notifications** (scheduled by your app locally on the device) and **push notifications** (sent from a remote server). Both use the same User Notifications framework and appear identically to users.
+
+In this guide, we'll focus on the `UNUserNotificationCenter`, which is the central hub for managing both types of notifications in iOS.
+
+## Why Notifications Matter
+
+Notifications allow you to:
+
+- Remind users about important tasks or events
+- Display time-sensitive information
+- Re-engage users who haven't opened your app recently
+- Provide updates without requiring the app to be open
+
+The User Notifications framework (`UserNotifications`) was introduced in iOS 10 and replaced the older notification APIs. It provides a unified, more powerful interface for scheduling, managing, and responding to notifications.
+
+## Setting Up Permissions
+
+Before you can send any notifications, you must request permission from the user. This is a one-time request, and users can later change permissions in Settings.
+
+```swift
+import UserNotifications
+
+func requestNotificationPermission() {
+    let center = UNUserNotificationCenter.current()
+    
+    center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        if let error = error {
+            print("Error requesting notification permission: \(error)")
+            return
+        }
+        
+        if granted {
+            print("Permission granted")
+        } else {
+            print("Permission denied")
+        }
+    }
+}
+```
+
+The `options` parameter specifies what types of notifications you want to display:
+
+- `.alert` - Shows the notification banner/alert
+- `.sound` - Plays a sound
+- `.badge` - Updates the app icon badge number
+- `.carPlay` - Displays notifications in CarPlay
+- `.criticalAlert` - Bypasses silent mode (requires special entitlement)
+- `.providesAppNotificationSettings` - Shows a button to open in-app notification settings
+- `.provisional` - Delivers notifications quietly without asking permission (iOS 12+)
+
+### Checking Authorization Status
+
+You should check the current authorization status before attempting to schedule notifications:
+
+```swift
+func checkNotificationPermission() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+        switch settings.authorizationStatus {
+        case .notDetermined:
+            // Permission hasn't been requested yet
+            self.requestNotificationPermission()
+        case .authorized:
+            print("Notifications authorized")
+        case .denied:
+            print("Notifications denied - user must enable in Settings")
+        case .provisional:
+            print("Provisional authorization granted")
+        case .ephemeral:
+            print("Ephemeral authorization (App Clips)")
+        @unknown default:
+            print("Unknown authorization status")
+        }
+    }
+}
+```
+
+## Creating Notification Content
+
+All notifications require a `UNMutableNotificationContent` object that defines what the user sees and hears.
+
+```swift
+func createNotificationContent() -> UNMutableNotificationContent {
+    let content = UNMutableNotificationContent()
+    
+    // Required: the main notification message
+    content.title = "Reminder"
+    content.subtitle = "Don't forget!"
+    content.body = "You have a meeting in 15 minutes"
+    
+    // Optional: badge number on app icon
+    content.badge = 1
+    
+    // Optional: sound to play
+    content.sound = .default
+    // Or use a custom sound:
+    // content.sound = UNNotificationSound(named: UNNotificationSoundName("custom_sound.wav"))
+    
+    // Optional: category for custom actions
+    content.categoryIdentifier = "MEETING_REMINDER"
+    
+    // Optional: custom data
+    content.userInfo = ["meetingId": "12345", "userId": "67890"]
+    
+    return content
+}
+```
+
+### Adding Attachments
+
+You can include images, audio, or video in notifications:
+
+```swift
+func createContentWithImage() -> UNMutableNotificationContent {
+    let content = UNMutableNotificationContent()
+    content.title = "New Photo"
+    content.body = "Check out this amazing sunset!"
+    
+    // Image must be in a location accessible by the system
+    if let imageURL = Bundle.main.url(forResource: "sunset", withExtension: "jpg") {
+        do {
+            let attachment = try UNNotificationAttachment(
+                identifier: "image",
+                url: imageURL,
+                options: nil
+            )
+            content.attachments = [attachment]
+        } catch {
+            print("Error creating attachment: \(error)")
+        }
+    }
+    
+    return content
+}
+```
+
+**Important**: The attachment file must be accessible by the system. For downloaded or generated content, you need to move it to a temporary directory first.
+
+## Local Notifications: Scheduling
+
+Local notifications are scheduled with triggers that determine when they fire. There are three main trigger types.
+
+### Time Interval Trigger
+
+Fires after a specific time interval:
+
+```swift
+func scheduleTimeIntervalNotification() {
+    let content = createNotificationContent()
+    
+    // Trigger after 60 seconds
+    let trigger = UNTimeIntervalNotificationTrigger(
+        timeInterval: 60,
+        repeats: false
+    )
+    
+    // Create the request with a unique identifier
+    let request = UNNotificationRequest(
+        identifier: "timeInterval-notification-001",
+        content: content,
+        trigger: trigger
+    )
+    
+    // Schedule the notification
+    UNUserNotificationCenter.current().add(request) { error in
+        if let error = error {
+            print("Error scheduling notification: \(error)")
+        } else {
+            print("Notification scheduled successfully")
+        }
+    }
+}
+```
+
+**Common Mistake**: If `repeats` is `true`, the `timeInterval` must be at least 60 seconds, or the system will reject it.
+
+### Calendar Trigger
+
+Fires at a specific date and time:
+
+```swift
+func scheduleCalendarNotification() {
+    let content = createNotificationContent()
+    
+    // Create date components for 9:00 AM tomorrow
+    var dateComponents = DateComponents()
+    dateComponents.hour = 9
+    dateComponents.minute = 0
+    
+    let trigger = UNCalendarNotificationTrigger(
+        dateMatching: dateComponents,
+        repeats: true // Will fire every day at 9:00 AM
+    )
+    
+    let request = UNNotificationRequest(
+        identifier: "daily-reminder",
+        content: content,
+        trigger: trigger
+    )
+    
+    UNUserNotificationCenter.current().add(request) { error in
+        if let error = error {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+You can be as specific as needed with date components:
+
+```swift
+func scheduleSpecificDateNotification() {
+    let content = createNotificationContent()
+    
+    // Every Monday at 10:30 AM
+    var dateComponents = DateComponents()
+    dateComponents.weekday = 2 // 1 = Sunday, 2 = Monday, etc.
+    dateComponents.hour = 10
+    dateComponents.minute = 30
+    
+    let trigger = UNCalendarNotificationTrigger(
+        dateMatching: dateComponents,
+        repeats: true
+    )
+    
+    let request = UNNotificationRequest(
+        identifier: "monday-reminder",
+        content: content,
+        trigger: trigger
+    )
+    
+    UNUserNotificationCenter.current().add(request) { error in
+        if let error = error {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+### Location Trigger
+
+Fires when entering or exiting a geographic region:
+
+```swift
+import CoreLocation
+
+func scheduleLocationNotification() {
+    let content = createNotificationContent()
+    content.title = "Welcome!"
+    content.body = "You've arrived at your destination"
+    
+    // Create a circular region (latitude, longitude, radius in meters)
+    let center = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+    let region = CLCircularRegion(
+        center: center,
+        radius: 100,
+        identifier: "destination"
+    )
+    
+    region.notifyOnEntry = true
+    region.notifyOnExit = false
+    
+    let trigger = UNLocationNotificationTrigger(
+        region: region,
+        repeats: false
+    )
+    
+    let request = UNNotificationRequest(
+        identifier: "location-notification",
+        content: content,
+        trigger: trigger
+    )
+    
+    UNUserNotificationCenter.current().add(request) { error in
+        if let error = error {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+**Note**: Location-based notifications require appropriate location permissions (`NSLocationWhenInUseUsageDescription` or `NSLocationAlwaysAndWhenInUseUsageDescription` in Info.plist).
+
+## Managing Pending and Delivered Notifications
+
+### Viewing Scheduled Notifications
+
+```swift
+func getPendingNotifications() {
+    UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+        print("Pending notifications: \(requests.count)")
+        for request in requests {
+            print("ID: \(request.identifier)")
+            print("Title: \(request.content.title)")
+            if let trigger = request.trigger as? UNCalendarNotificationTrigger,
+               let nextTriggerDate = trigger.nextTriggerDate() {
+                print("Next trigger: \(nextTriggerDate)")
+            }
+        }
+    }
+}
+```
+
+### Removing Scheduled Notifications
+
+```swift
+func removeNotifications() {
+    let center = UNUserNotificationCenter.current()
+    
+    // Remove specific notifications by identifier
+    center.removePendingNotificationRequests(withIdentifiers: ["notification-001"])
+    
+    // Remove all pending notifications
+    center.removeAllPendingNotificationRequests()
+    
+    // Remove delivered notifications from notification center
+    center.removeDeliveredNotifications(withIdentifiers: ["notification-001"])
+    
+    // Remove all delivered notifications
+    center.removeAllDeliveredNotifications()
+}
+```
+
+### Updating Notifications
+
+To update an existing notification, simply schedule a new one with the same identifier. The system will replace the old one:
+
+```swift
+func updateNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Updated Title"
+    content.body = "This notification has been updated"
+    
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)
+    
+    // Use the same identifier as the notification you want to update
+    let request = UNNotificationRequest(
+        identifier: "notification-001",
+        content: content,
+        trigger: trigger
+    )
+    
+    UNUserNotificationCenter.current().add(request)
+}
+```
+
+## Handling Notification Responses
+
+To respond when users tap on notifications, you need to implement the `UNUserNotificationCenterDelegate`.
+
+```swift
+import UserNotifications
+
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        // Set the delegate
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+    
+    // Called when notification arrives while app is in foreground
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Decide how to present the notification while app is active
+        // By default, notifications don't show when app is in foreground
+        
+        // iOS 14+
+        completionHandler([.banner, .sound, .badge])
+        
+        // iOS 10-13
+        // completionHandler([.alert, .sound, .badge])
+    }
+    
+    // Called when user interacts with notification
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        
+        switch response.actionIdentifier {
+        case UNNotificationDefaultActionIdentifier:
+            // User tapped the notification
+            print("User tapped notification")
+            if let meetingId = userInfo["meetingId"] as? String {
+                print("Opening meeting: \(meetingId)")
+                // Navigate to relevant screen
+            }
+            
+        case UNNotificationDismissActionIdentifier:
+            // User dismissed the notification
+            print("User dismissed notification")
+            
+        default:
+            // Custom action (see next section)
+            print("Action: \(response.actionIdentifier)")
+        }
+        
+        // Must call completion handler
+        completionHandler()
+    }
+}
+```
+
+**SwiftUI Note**: In SwiftUI apps without an AppDelegate, you can set the delegate in your App struct:
+
+```swift
+@main
+struct MyApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+    
+    // Implement delegate methods...
+}
+```
+
+## Custom Actions
+
+You can add custom action buttons to notifications:
+
+```swift
+func setupNotificationActions() {
+    // Define actions
+    let acceptAction = UNNotificationAction(
+        identifier: "ACCEPT_ACTION",
+        title: "Accept",
+        options: .foreground // Opens the app
+    )
+    
+    let declineAction = UNNotificationAction(
+        identifier: "DECLINE_ACTION",
+        title: "Decline",
+        options: .destructive // Shows in red
+    )
+    
+    let snoozeAction = UNNotificationAction(
+        identifier: "SNOOZE_ACTION",
+        title: "Snooze",
+        options: [] // Doesn't open the app
+    )
+    
+    // Create a category
+    let category = UNNotificationCategory(
+        identifier: "MEETING_INVITE",
+        actions: [acceptAction, declineAction, snoozeAction],
+        intentIdentifiers: [],
+        options: []
+    )
+    
+    // Register the category
+    UNUserNotificationCenter.current().setNotificationCategories([category])
+}
+```
+
+Use the category when creating notification content:
+
+```swift
+func scheduleNotificationWithActions() {
+    let content = UNMutableNotificationContent()
+    content.title = "Meeting Invitation"
+    content.body = "Team sync at 2:00 PM"
+    content.categoryIdentifier = "MEETING_INVITE" // Must match category identifier
+    
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+    let request = UNNotificationRequest(
+        identifier: UUID().uuidString,
+        content: content,
+        trigger: trigger
+    )
+    
+    UNUserNotificationCenter.current().add(request)
+}
+```
+
+Handle the actions in your delegate:
+
+```swift
+func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+) {
+    switch response.actionIdentifier {
+    case "ACCEPT_ACTION":
+        print("User accepted")
+        // Handle acceptance
+        
+    case "DECLINE_ACTION":
+        print("User declined")
+        // Handle decline
+        
+    case "SNOOZE_ACTION":
+        print("User snoozed")
+        // Reschedule notification
+        scheduleSnoozeNotification()
+        
+    default:
+        break
+    }
+    
+    completionHandler()
+}
+
+func scheduleSnoozeNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Meeting Reminder"
+    content.body = "Team sync in 10 minutes"
+
+    let trigger = UNTimeIntervalNotificationTrigger(
+        timeInterval: 600, // 10 minutes
+        repeats: false
+    )
+
+    let request = UNNotificationRequest(
+        identifier: "snooze-\(UUID().uuidString)",
+        content: content,
+        trigger: trigger
+    )
+
+    UNUserNotificationCenter.current().add(request)
+}
+```
+
+## Push Notifications
+
+Push notifications are sent from a remote server via Apple Push Notification service (APNs).
+
+### Registering for Remote Notifications
+
+```swift
+import UIKit
+
+class AppDelegate: UIResponder, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+
+        // Register for remote notifications
+        application.registerForRemoteNotifications()
+
+        return true
+    }
+
+    // Called when registration succeeds
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        // Convert token to string
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        print("Device Token: \(token)")
+
+        // Send this token to your server
+        sendTokenToServer(token)
+    }
+
+    // Called when registration fails
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("Failed to register: \(error.localizedDescription)")
+    }
+
+    private func sendTokenToServer(_ token: String) {
+        // Send the device token to your backend server
+        // Your server uses this token to send push notifications via APNs
+    }
+}
+```
+
+### Push Notification Payload
+
+Your server sends a JSON payload to APNs:
+
+```json
+{
+    "aps": {
+        "alert": {
+            "title": "New Message",
+            "subtitle": "From Alice",
+            "body": "Hey, are you coming to the party tonight?"
+        },
+        "sound": "default",
+        "badge": 3,
+        "category": "MESSAGE",
+        "mutable-content": 1
+    },
+    "messageId": "abc123",
+    "senderId": "user456"
+}
+```
+
+### Notification Service Extension
+
+For processing push notifications before display (e.g., decrypting content, downloading images):
+
+```swift
+import UserNotifications
+
+class NotificationService: UNNotificationServiceExtension {
+    var contentHandler: ((UNNotificationContent) -> Void)?
+    var bestAttemptContent: UNMutableNotificationContent?
+
+    override func didReceive(
+        _ request: UNNotificationRequest,
+        withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
+    ) {
+        self.contentHandler = contentHandler
+        bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent
+
+        guard let content = bestAttemptContent else {
+            contentHandler(request.content)
+            return
+        }
+
+        // Modify content before display
+        content.title = "[Modified] " + content.title
+
+        // Download and attach an image
+        if let imageURLString = content.userInfo["imageURL"] as? String,
+           let imageURL = URL(string: imageURLString) {
+            downloadImage(from: imageURL) { localURL in
+                if let localURL = localURL,
+                   let attachment = try? UNNotificationAttachment(
+                       identifier: "image",
+                       url: localURL,
+                       options: nil
+                   ) {
+                    content.attachments = [attachment]
+                }
+                contentHandler(content)
+            }
+        } else {
+            contentHandler(content)
+        }
+    }
+
+    override func serviceExtensionTimeWillExpire() {
+        // Called just before the extension will be terminated by the system
+        if let contentHandler = contentHandler,
+           let content = bestAttemptContent {
+            contentHandler(content)
+        }
+    }
+
+    private func downloadImage(from url: URL, completion: @escaping (URL?) -> Void) {
+        URLSession.shared.downloadTask(with: url) { localURL, _, _ in
+            completion(localURL)
+        }.resume()
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Assuming Permission Is Granted
+
+```swift
+// ❌ Bad — schedules notification without checking
+func scheduleNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Reminder"
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)
+    let request = UNNotificationRequest(identifier: "test", content: content, trigger: trigger)
+    UNUserNotificationCenter.current().add(request) // Silently fails if not authorized
+}
+
+// ✅ Good — check authorization first
+func scheduleNotification() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+        guard settings.authorizationStatus == .authorized else {
+            print("Notifications not authorized")
+            return
+        }
+        // Schedule notification...
+    }
+}
+```
+
+### Mistake 2: Not Clearing Badge Count
+
+```swift
+// In your app's scene delegate or SwiftUI App
+func sceneDidBecomeActive(_ scene: UIScene) {
+    // Reset badge when app becomes active
+    UNUserNotificationCenter.current().setBadgeCount(0)
+}
+```
+
+## Summary Table
+
+| Concept | Key API | Purpose |
+|---------|---------|---------|
+| **Request permission** | `requestAuthorization(options:)` | Ask user for notification access |
+| **Notification content** | `UNMutableNotificationContent` | Define title, body, sound, badge |
+| **Time trigger** | `UNTimeIntervalNotificationTrigger` | Fire after N seconds |
+| **Calendar trigger** | `UNCalendarNotificationTrigger` | Fire at specific date/time |
+| **Location trigger** | `UNLocationNotificationTrigger` | Fire on enter/exit region |
+| **Schedule** | `UNUserNotificationCenter.add()` | Add notification request |
+| **Cancel** | `removePendingNotificationRequests(withIdentifiers:)` | Remove scheduled notification |
+| **Foreground display** | `willPresent` delegate | Show notification while app is active |
+| **Handle tap** | `didReceive` delegate | Respond to user interaction |
+| **Custom actions** | `UNNotificationAction` / `UNNotificationCategory` | Add action buttons |
+| **Push registration** | `registerForRemoteNotifications()` | Register for APNs |
+| **Service extension** | `UNNotificationServiceExtension` | Modify push before display |
+
+## Official Resources
+
+- [Apple Documentation: User Notifications](https://developer.apple.com/documentation/usernotifications)
+- [Apple Documentation: UNUserNotificationCenter](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter)
+- [Apple Documentation: Setting Up a Remote Notification Server](https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server)
+- [Apple Documentation: Notification Service Extensions](https://developer.apple.com/documentation/usernotifications/unnotificationserviceextension)
+- [WWDC 2023: What's New in Notifications](https://developer.apple.com/videos/play/wwdc2023/10178/)

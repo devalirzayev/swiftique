@@ -1,0 +1,529 @@
+---
+title: "Canvas & Drawing"
+description: "Canvas view, Path drawing, and custom shape rendering"
+sectionId: "3.3-custom-views"
+sectionTitle: "Custom Views & Graphics"
+order: 6
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Canvas & Drawing in SwiftUI
+
+Drawing custom graphics in iOS apps allows you to create unique UI elements, charts, diagrams, and visual effects that go beyond standard SwiftUI views. The `Canvas` view, introduced in iOS 15, provides a high-performance way to draw 2D graphics using immediate mode rendering. Before Canvas, developers relied on the `Shape` protocol and GeometryReader—approaches that still have their place but offer less flexibility for complex drawing operations.
+
+## Why Canvas & Drawing Matter
+
+Understanding drawing in SwiftUI enables you to:
+
+- Create custom UI components that match your design requirements exactly
+- Build data visualizations, charts, and graphs
+- Render complex graphics with better performance than layering hundreds of views
+- Implement animations and effects that standard views can't achieve
+- Design unique app experiences that stand out
+
+## The Canvas View
+
+`Canvas` gives you a drawing context where you can issue drawing commands. Unlike declarative SwiftUI views that maintain state, Canvas uses immediate mode rendering—you draw everything from scratch each time the view updates.
+
+Here's a basic Canvas example:
+
+```swift
+import SwiftUI
+
+struct BasicCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            // Drawing code goes here
+            let rect = CGRect(origin: .zero, size: size)
+            context.fill(
+                Path(ellipseIn: rect),
+                with: .color(.blue)
+            )
+        }
+        .frame(width: 200, height: 200)
+    }
+}
+```
+
+The Canvas closure provides two parameters:
+- `context`: A `GraphicsContext` for drawing operations
+- `size`: The `CGSize` of the canvas area
+
+## Drawing Basic Shapes
+
+The `GraphicsContext` offers several methods for drawing primitives:
+
+```swift
+struct ShapesCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            // Draw a rectangle
+            let rect = CGRect(x: 10, y: 10, width: 100, height: 50)
+            context.fill(Path(rect), with: .color(.red))
+            
+            // Draw a circle
+            let circle = Path(ellipseIn: CGRect(x: 120, y: 10, width: 50, height: 50))
+            context.stroke(circle, with: .color(.green), lineWidth: 3)
+            
+            // Draw a line
+            var linePath = Path()
+            linePath.move(to: CGPoint(x: 10, y: 80))
+            linePath.addLine(to: CGPoint(x: 170, y: 80))
+            context.stroke(linePath, with: .color(.purple), lineWidth: 2)
+        }
+        .frame(width: 200, height: 100)
+        .border(Color.gray)
+    }
+}
+```
+
+## Working with Path
+
+`Path` is the fundamental building block for custom shapes. You construct paths by moving to points and adding lines, curves, and arcs:
+
+```swift
+struct CustomPathView: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            
+            // Start at top center
+            path.move(to: CGPoint(x: size.width / 2, y: 0))
+            
+            // Draw to bottom right
+            path.addLine(to: CGPoint(x: size.width, y: size.height))
+            
+            // Draw to bottom left
+            path.addLine(to: CGPoint(x: 0, y: size.height))
+            
+            // Close the path (draws back to start)
+            path.closeSubpath()
+            
+            context.fill(path, with: .color(.orange))
+        }
+        .frame(width: 150, height: 150)
+    }
+}
+```
+
+### Path Methods
+
+Key `Path` methods you'll use frequently:
+
+```swift
+struct PathMethodsExample: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            
+            // Move without drawing
+            path.move(to: CGPoint(x: 20, y: 20))
+            
+            // Draw straight lines
+            path.addLine(to: CGPoint(x: 100, y: 20))
+            
+            // Add a quadratic curve
+            path.addQuadCurve(
+                to: CGPoint(x: 100, y: 100),
+                control: CGPoint(x: 150, y: 60)
+            )
+            
+            // Add a cubic curve
+            path.addCurve(
+                to: CGPoint(x: 20, y: 100),
+                control1: CGPoint(x: 100, y: 140),
+                control2: CGPoint(x: 20, y: 140)
+            )
+            
+            path.closeSubpath()
+            
+            context.stroke(path, with: .color(.blue), lineWidth: 2)
+        }
+        .frame(width: 200, height: 150)
+    }
+}
+```
+
+## Creating Custom Shapes with the Shape Protocol
+
+For reusable shapes that integrate naturally with SwiftUI's modifier system, implement the `Shape` protocol:
+
+```swift
+struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        
+        return path
+    }
+}
+
+// Usage
+struct TriangleView: View {
+    var body: some View {
+        Triangle()
+            .fill(Color.blue)
+            .frame(width: 100, height: 100)
+    }
+}
+```
+
+Shapes can be filled, stroked, and modified like any SwiftUI view:
+
+```swift
+struct StyledShapesView: View {
+    var body: some View {
+        HStack(spacing: 20) {
+            Triangle()
+                .fill(Color.blue)
+                .frame(width: 80, height: 80)
+            
+            Triangle()
+                .stroke(Color.red, lineWidth: 3)
+                .frame(width: 80, height: 80)
+            
+            Triangle()
+                .fill(
+                    LinearGradient(
+                        colors: [.purple, .pink],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 80, height: 80)
+        }
+    }
+}
+```
+
+## Advanced Canvas Techniques
+
+### Drawing Text
+
+Canvas can render text with custom styling:
+
+```swift
+struct TextCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            let text = Text("Hello Canvas")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.white)
+            
+            context.draw(text, at: CGPoint(x: size.width / 2, y: size.height / 2))
+        }
+        .frame(width: 200, height: 100)
+        .background(Color.blue)
+    }
+}
+```
+
+**Important:** Text is positioned by its center point by default. To position by a different anchor, use `context.draw(text, at: point, anchor: .topLeading)`.
+
+### Transforms and Clipping
+
+Apply transformations to your drawing context:
+
+```swift
+struct TransformCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            let rect = CGRect(x: 0, y: 0, width: 50, height: 50)
+            
+            // Save the current context state
+            context.saveGState()
+            
+            // Translate to center
+            context.translateBy(x: size.width / 2, y: size.height / 2)
+            
+            // Rotate 45 degrees (radians)
+            context.rotate(by: .degrees(45))
+            
+            // Draw centered and rotated
+            context.fill(
+                Path(rect.offsetBy(dx: -25, dy: -25)),
+                with: .color(.green)
+            )
+            
+            // Restore the context state
+            context.restoreGState()
+        }
+        .frame(width: 200, height: 200)
+    }
+}
+```
+
+### Opacity and Blend Modes
+
+Control how drawing operations combine:
+
+```swift
+struct BlendModeCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            let circle1 = Path(ellipseIn: CGRect(x: 30, y: 50, width: 80, height: 80))
+            let circle2 = Path(ellipseIn: CGRect(x: 70, y: 50, width: 80, height: 80))
+            
+            context.fill(circle1, with: .color(.red.opacity(0.7)))
+            
+            context.blendMode = .multiply
+            context.fill(circle2, with: .color(.blue.opacity(0.7)))
+        }
+        .frame(width: 180, height: 180)
+    }
+}
+```
+
+## Drawing Images
+
+You can draw SwiftUI images within a Canvas:
+
+```swift
+struct ImageCanvasView: View {
+    var body: some View {
+        Canvas { context, size in
+            if let symbol = context.resolveSymbol(id: 0) {
+                context.draw(symbol, at: CGPoint(x: size.width / 2, y: size.height / 2))
+            }
+        } symbols: {
+            Image(systemName: "star.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.yellow)
+                .tag(0)
+        }
+        .frame(width: 100, height: 100)
+    }
+}
+```
+
+The `symbols` closure lets you provide SwiftUI views that Canvas can render. You reference them by their tag.
+
+## Performance Considerations
+
+### Canvas vs Shape
+
+**Use Canvas when:**
+- Drawing frequently changes (animations, real-time data)
+- You need immediate mode rendering
+- Drawing complex graphics that would require many view layers
+- You need fine control over drawing operations
+
+**Use Shape when:**
+- Creating reusable, static shapes
+- You want SwiftUI modifiers to work naturally
+- The shape doesn't change frequently
+
+### TimelineView for Animations
+
+Combine `Canvas` with `TimelineView` for smooth animations:
+
+```swift
+struct AnimatedCanvasView: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let timeInterval = timeline.date.timeIntervalSinceReferenceDate
+                let angle = Angle.degrees(timeInterval.truncatingRemainder(dividingBy: 360) * 360)
+                
+                context.translateBy(x: size.width / 2, y: size.height / 2)
+                context.rotate(by: angle)
+                
+                let rect = CGRect(x: -25, y: -25, width: 50, height: 50)
+                context.fill(Path(rect), with: .color(.blue))
+            }
+        }
+        .frame(width: 200, height: 200)
+    }
+}
+```
+
+## Common Mistakes and Edge Cases
+
+### 1. Forgetting to Account for Canvas Size
+
+Always use the `size` parameter instead of hardcoding dimensions:
+
+```swift
+// ❌ Bad - ignores actual canvas size
+Canvas { context, size in
+    let circle = Path(ellipseIn: CGRect(x: 50, y: 50, width: 100, height: 100))
+    context.fill(circle, with: .color(.blue))
+}
+
+// ✅ Good - adapts to canvas size
+Canvas { context, size in
+    let diameter = min(size.width, size.height) * 0.8
+    let origin = CGPoint(
+        x: (size.width - diameter) / 2,
+        y: (size.height - diameter) / 2
+    )
+    let circle = Path(ellipseIn: CGRect(origin: origin, size: CGSize(width: diameter, height: diameter)))
+    context.fill(circle, with: .color(.blue))
+}
+```
+
+### 2. Not Closing Paths When Needed
+
+If you want a filled shape, close your path:
+
+```swift
+// ❌ Bad - won't fill correctly
+var path = Path()
+path.move(to: CGPoint(x: 0, y: 0))
+path.addLine(to: CGPoint(x: 100, y: 0))
+path.addLine(to: CGPoint(x: 50, y: 100))
+// Missing closeSubpath()
+
+// ✅ Good
+var path = Path()
+path.move(to: CGPoint(x: 0, y: 0))
+path.addLine(to: CGPoint(x: 100, y: 0))
+path.addLine(to: CGPoint(x: 50, y: 100))
+path.closeSubpath()
+```
+
+### 3. Coordinate System Confusion
+
+Canvas uses a coordinate system where (0,0) is the top-left corner, with Y increasing downward. This trips up developers coming from other graphics systems:
+
+```swift
+struct CoordinateExampleView: View {
+    var body: some View {
+        Canvas { context, size in
+            // Top-left corner
+            context.fill(
+                Path(ellipseIn: CGRect(x: 0, y: 0, width: 20, height: 20)),
+                with: .color(.red)
+            )
+            
+            // Bottom-right corner
+            context.fill(
+                Path(ellipseIn: CGRect(x: size.width - 20, y: size.height - 20, width: 20, height: 20)),
+                with: .color(.blue)
+            )
+        }
+        .frame(width: 200, height: 200)
+        .border(Color.gray)
+    }
+}
+```
+
+### 4. Misunderstanding Text Anchors
+
+By default, text is drawn centered at the specified point:
+
+```swift
+Canvas { context, size in
+    let text = Text("Centered")
+    
+    // Draws with center at this point (default)
+    context.draw(text, at: CGPoint(x: 100, y: 50))
+    
+    // Draws with top-leading corner at this point
+    context.draw(text, at: CGPoint(x: 100, y: 100), anchor: .topLeading)
+}
+```
+
+### 5. Not Saving/Restoring Context State
+
+When applying transforms, always save and restore state:
+
+```swift
+// ❌ Bad - transform affects everything after
+Canvas { context, size in
+    context.rotate(by: .degrees(45))
+    // Draw something...
+    // Everything else drawn will also be rotated!
+}
+
+// ✅ Good - isolated transform
+Canvas { context, size in
+    context.saveGState()
+    context.rotate(by: .degrees(45))
+    // Draw something...
+    context.restoreGState()
+    // Subsequent drawing unaffected
+}
+```
+
+## Practical Example: Custom Chart
+
+Here's a complete example drawing a simple bar chart:
+
+```swift
+struct BarChartView: View {
+    let data: [Double] = [0.3, 0.7, 0.5, 0.9, 0.4]
+    let barColor: Color = .blue
+    
+    var body: some View {
+        Canvas { context, size in
+            let barCount = data.count
+            let spacing: CGFloat = 10
+            let totalSpacing = spacing * CGFloat(barCount + 1)
+            let barWidth = (size.width - totalSpacing) / CGFloat(barCount)
+            
+            for (index, value) in data.enumerated() {
+                let barHeight = value * size.height
+                let x = spacing + (barWidth + spacing) * CGFloat(index)
+                let y = size.height - barHeight
+                
+                let barRect = CGRect(
+                    x: x,
+                    y: y,
+                    width: barWidth,
+                    height: barHeight
+                )
+                
+                let roundedRect = RoundedRectangle(cornerRadius: 4)
+                    .path(in: barRect)
+                
+                context.fill(roundedRect, with: .color(barColor))
+                
+                // Draw value label
+                let valueText = Text(String(format: "%.0f%%", value * 100))
+                    .font(.caption)
+                    .foregroundColor(.white)
+                
+                context.draw(
+                    valueText,
+                    at: CGPoint(x: x + barWidth / 2, y: y + barHeight / 2)
+                )
+            }
+        }
+        .frame(height: 200)
+        .padding()
+    }
+}
+```
+
+This chart adapts to its container width, calculates bar positions dynamically, and renders text labels centered on each bar.
+
+## Summary Table
+
+| Concept | Syntax | Purpose |
+|---------|--------|---------|
+| **Canvas** | `Canvas { context, size in }` | Immediate mode 2D drawing |
+| **Path** | `var path = Path()` | Define custom shapes with lines and curves |
+| **Shape protocol** | `struct MyShape: Shape` | Reusable shapes with SwiftUI modifier support |
+| **fill** | `context.fill(path, with: .color(.blue))` | Fill a path with color or gradient |
+| **stroke** | `context.stroke(path, with:, lineWidth:)` | Draw path outline |
+| **draw text** | `context.draw(text, at: point)` | Render text on canvas |
+| **resolveSymbol** | `context.resolveSymbol(id:)` | Use SwiftUI views inside Canvas |
+| **Transforms** | `context.translateBy`, `rotate`, `scaleBy` | Transform the drawing context |
+| **saveGState/restoreGState** | `context.saveGState()` | Isolate transform operations |
+| **Blend modes** | `context.blendMode = .multiply` | Control how drawings combine |
+| **TimelineView** | `TimelineView(.animation) { }` | Animate Canvas content |
+
+## Official Resources
+
+- [Apple Documentation: Canvas](https://developer.apple.com/documentation/swiftui/canvas)
+- [Apple Documentation: GraphicsContext](https://developer.apple.com/documentation/swiftui/graphicscontext)
+- [Apple Documentation: Path](https://developer.apple.com/documentation/swiftui/path)
+- [Apple Documentation: Shape](https://developer.apple.com/documentation/swiftui/shape)
+- [WWDC 2021: Add Rich Graphics to Your SwiftUI App](https://developer.apple.com/videos/play/wwdc2021/10021/)

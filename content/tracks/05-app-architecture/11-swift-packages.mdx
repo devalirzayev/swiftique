@@ -1,0 +1,524 @@
+---
+title: "Swift Packages"
+description: "Creating and consuming Swift packages with SPM"
+sectionId: "5.4-project-organization"
+sectionTitle: "Project Organization"
+order: 11
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Swift Packages
+
+Swift Package Manager (SPM) is Apple's official tool for distributing and managing Swift code. It automates the process of downloading, compiling, and linking dependencies in your projects. Unlike older solutions like CocoaPods or Carthage, SPM is built directly into Swift and Xcode, making it the most integrated and future-proof option for dependency management.
+
+## Why Swift Packages Matter
+
+Before package managers, developers copied code between projects, leading to versioning nightmares and maintenance headaches. Swift packages solve this by:
+
+- **Standardizing distribution**: One consistent way to share code across projects
+- **Managing dependencies**: Automatically resolving and updating third-party libraries
+- **Ensuring reproducibility**: Lock files guarantee builds work the same way across machines
+- **Simplifying project structure**: No need for workspace files or manual framework linking
+
+## Understanding Package Structure
+
+Every Swift package follows a standard directory structure:
+
+```
+MyPackage/
+├── Package.swift          # Package manifest
+├── Sources/
+│   └── MyPackage/        # Main module code
+│       └── MyPackage.swift
+├── Tests/
+│   └── MyPackageTests/   # Test code
+│       └── MyPackageTests.swift
+└── README.md
+```
+
+The `Package.swift` file is the manifest that describes your package's configuration, dependencies, and targets.
+
+## Creating Your First Swift Package
+
+### Using Command Line
+
+The fastest way to create a package is using the Swift command-line tool:
+
+```bash
+# Create a library package
+swift package init --type library
+
+# Or create an executable package
+swift package init --type executable
+```
+
+### Using Xcode
+
+Alternatively, in Xcode:
+1. File → New → Package
+2. Choose a template (Library or Executable)
+3. Name your package
+
+Let's examine the generated `Package.swift`:
+
+```swift
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "MyPackage",
+    products: [
+        .library(
+            name: "MyPackage",
+            targets: ["MyPackage"]
+        ),
+    ],
+    targets: [
+        .target(
+            name: "MyPackage"
+        ),
+        .testTarget(
+            name: "MyPackageTests",
+            dependencies: ["MyPackage"]
+        ),
+    ]
+)
+```
+
+**Key components:**
+
+- `swift-tools-version`: Minimum Swift version required
+- `name`: Package identifier
+- `products`: What consumers can import (libraries or executables)
+- `targets`: Build units containing source code
+- `dependencies`: External packages your package needs
+
+## Building a Real Package
+
+Let's create a package that provides string utilities:
+
+```swift
+// Sources/StringKit/StringKit.swift
+public struct StringKit {
+    public init() {}
+    
+    /// Reverses a string efficiently
+    public func reverse(_ text: String) -> String {
+        return String(text.reversed())
+    }
+    
+    /// Checks if a string is a palindrome
+    public func isPalindrome(_ text: String) -> Bool {
+        let cleaned = text.lowercased().filter { $0.isLetter }
+        return cleaned == String(cleaned.reversed())
+    }
+    
+    /// Truncates a string to a maximum length
+    public func truncate(_ text: String, to length: Int, suffix: String = "...") -> String {
+        guard text.count > length else { return text }
+        let endIndex = text.index(text.startIndex, offsetBy: length)
+        return String(text[..<endIndex]) + suffix
+    }
+}
+```
+
+**Common mistake:** Forgetting the `public` keyword. By default, Swift uses internal access control, making types and methods invisible to package consumers.
+
+```swift
+// ❌ Wrong - not visible outside the module
+func reverse(_ text: String) -> String {
+    return String(text.reversed())
+}
+
+// ✅ Correct - accessible to consumers
+public func reverse(_ text: String) -> String {
+    return String(text.reversed())
+}
+```
+
+## Adding Tests
+
+Good packages include comprehensive tests:
+
+```swift
+// Tests/StringKitTests/StringKitTests.swift
+import XCTest
+@testable import StringKit
+
+final class StringKitTests: XCTestCase {
+    var stringKit: StringKit!
+    
+    override func setUp() {
+        super.setUp()
+        stringKit = StringKit()
+    }
+    
+    func testReverse() {
+        XCTAssertEqual(stringKit.reverse("hello"), "olleh")
+        XCTAssertEqual(stringKit.reverse(""), "")
+        XCTAssertEqual(stringKit.reverse("a"), "a")
+    }
+    
+    func testIsPalindrome() {
+        XCTAssertTrue(stringKit.isPalindrome("racecar"))
+        XCTAssertTrue(stringKit.isPalindrome("A man a plan a canal Panama"))
+        XCTAssertFalse(stringKit.isPalindrome("hello"))
+    }
+    
+    func testTruncate() {
+        let text = "The quick brown fox"
+        XCTAssertEqual(stringKit.truncate(text, to: 9), "The quick...")
+        XCTAssertEqual(stringKit.truncate(text, to: 100), text)
+        XCTAssertEqual(stringKit.truncate(text, to: 9, suffix: "…"), "The quick…")
+    }
+}
+```
+
+Run tests with:
+
+```bash
+swift test
+```
+
+## Adding Dependencies
+
+Most packages depend on other packages. Here's how to add them:
+
+```swift
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "MyNetworkingKit",
+    platforms: [
+        .iOS(.v15),
+        .macOS(.v12)
+    ],
+    products: [
+        .library(
+            name: "MyNetworkingKit",
+            targets: ["MyNetworkingKit"]
+        ),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.8.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+    ],
+    targets: [
+        .target(
+            name: "MyNetworkingKit",
+            dependencies: [
+                "Alamofire",
+                .product(name: "Logging", package: "swift-log")
+            ]
+        ),
+        .testTarget(
+            name: "MyNetworkingKitTests",
+            dependencies: ["MyNetworkingKit"]
+        ),
+    ]
+)
+```
+
+**Dependency version specifications:**
+
+```swift
+// Exact version
+.package(url: "...", exact: "1.2.3")
+
+// Minimum version (allows all 1.x.x versions >= 1.2.3)
+.package(url: "...", from: "1.2.3")
+
+// Version range
+.package(url: "...", "1.2.3"..<"2.0.0")
+
+// Specific branch
+.package(url: "...", branch: "main")
+
+// Specific commit
+.package(url: "...", revision: "abc123")
+```
+
+**Common mistake:** Using `branch` or `revision` in production code. These don't provide version stability and can break unexpectedly. Use semantic versioning instead.
+
+## Platform Constraints
+
+Specify which platforms your package supports:
+
+```swift
+let package = Package(
+    name: "MyPackage",
+    platforms: [
+        .iOS(.v15),
+        .macOS(.v12),
+        .watchOS(.v8),
+        .tvOS(.v15)
+    ],
+    // ...
+)
+```
+
+Without platform specifications, SPM defaults to older minimum versions, which might prevent you from using newer APIs.
+
+## Consuming Packages in Your App
+
+### Adding a Package to Xcode
+
+1. File → Add Package Dependencies
+2. Enter the repository URL or search
+3. Choose version requirements
+4. Select which products to add to which targets
+
+### Using the Package
+
+```swift
+import StringKit
+
+class ViewController: UIViewController {
+    let stringKit = StringKit()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        let text = "A very long string that needs truncation"
+        let short = stringKit.truncate(text, to: 20)
+        print(short) // "A very long string..."
+    }
+}
+```
+
+## Advanced Package Features
+
+### Multiple Products
+
+A package can expose multiple products:
+
+```swift
+let package = Package(
+    name: "MyToolkit",
+    products: [
+        .library(name: "Core", targets: ["Core"]),
+        .library(name: "Networking", targets: ["Networking"]),
+        .library(name: "UI", targets: ["UI"]),
+        .executable(name: "ToolkitCLI", targets: ["CLI"])
+    ],
+    targets: [
+        .target(name: "Core"),
+        .target(name: "Networking", dependencies: ["Core"]),
+        .target(name: "UI", dependencies: ["Core"]),
+        .executableTarget(name: "CLI", dependencies: ["Core", "Networking"])
+    ]
+)
+```
+
+Consumers can choose which products to import:
+
+```swift
+import Core
+import Networking
+// Don't import UI if not needed
+```
+
+### Resources and Assets
+
+Include non-code files in your package:
+
+```swift
+.target(
+    name: "MyPackage",
+    resources: [
+        .process("Resources"),           // Process resources (images, xibs)
+        .copy("Data/config.json"),       // Copy as-is
+    ]
+)
+```
+
+Access resources in code:
+
+```swift
+public class ResourceLoader {
+    public static func loadConfig() -> Data? {
+        guard let url = Bundle.module.url(forResource: "config", withExtension: "json") else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
+    }
+}
+```
+
+**Important:** Use `Bundle.module`, not `Bundle.main`. The `Bundle.module` property is automatically generated for packages with resources.
+
+### Binary Targets
+
+Distribute pre-compiled frameworks (useful for closed-source SDKs):
+
+```swift
+.binaryTarget(
+    name: "MySDK",
+    url: "https://example.com/MySDK-1.0.0.xcframework.zip",
+    checksum: "abc123..."  // SHA256 checksum for security
+)
+```
+
+### Conditional Dependencies
+
+Use platform-specific dependencies:
+
+```swift
+.target(
+    name: "MyPackage",
+    dependencies: [
+        .product(name: "UIKit", package: "UIKit", condition: .when(platforms: [.iOS])),
+        .product(name: "AppKit", package: "AppKit", condition: .when(platforms: [.macOS]))
+    ]
+)
+```
+
+## Local Package Development
+
+During development, you can reference local packages:
+
+In Xcode:
+1. File → Add Package Dependencies
+2. Click "Add Local..."
+3. Choose the package folder
+
+Or drag the package folder into your project's navigator.
+
+**Edge case:** Local packages don't require Git commits for Xcode to recognize changes, but remote packages do. When developing, use local references, then switch to remote URLs before releasing.
+
+## Version Tagging and Releases
+
+When ready to release:
+
+```bash
+# Create and push a semantic version tag
+git tag 1.0.0
+git push origin 1.0.0
+```
+
+SPM uses Git tags to resolve versions. Follow [semantic versioning](https://semver.org):
+
+- **MAJOR** (1.0.0): Breaking changes
+- **MINOR** (0.1.0): New features, backward-compatible
+- **PATCH** (0.0.1): Bug fixes
+
+**Common mistake:** Pushing commits after creating a tag without updating the tag. If you need to modify a release, delete and recreate the tag:
+
+```bash
+git tag -d 1.0.0
+git push origin :refs/tags/1.0.0
+# Make changes
+git tag 1.0.0
+git push origin 1.0.0
+```
+
+## Common Pitfalls and Solutions
+
+### Module Name Conflicts
+
+If your package name conflicts with a system framework:
+
+```swift
+// ❌ Conflicts with Foundation's FileManager
+import FileManager
+
+// ✅ Use a unique name
+import MyFileManager
+```
+
+### Dependency Resolution Failures
+
+When you see "dependency graph could not be resolved":
+
+1. Check for version conflicts between dependencies
+2. Update to compatible versions
+3. Use `swift package resolve` to regenerate Package.resolved
+4. Clear derived data and package cache
+
+```bash
+rm -rf ~/Library/Caches/org.swift.swiftpm
+rm -rf .build
+swift package resolve
+```
+
+### Import vs @testable import
+
+```swift
+// In your app or another package
+import MyPackage  // Only accesses public APIs
+
+// In tests
+@testable import MyPackage  // Accesses internal APIs for testing
+```
+
+### Package.resolved
+
+This file locks exact dependency versions. Commit it for:
+- **Apps**: Ensures reproducible builds
+- **Packages**: Generally don't commit it; let consumers resolve their own versions
+
+**Exception:** If developing an executable, commit Package.resolved.
+
+## Documentation
+
+Swift packages support DocC for documentation:
+
+```swift
+/// A utility for manipulating strings.
+///
+/// Use `StringKit` to perform common string operations:
+///
+/// ```swift
+/// let kit = StringKit()
+/// let reversed = kit.reverse("hello")
+/// print(reversed) // "olleh"
+/// ```
+///
+/// ## Topics
+///
+/// ### String Manipulation
+/// - ``reverse(_:)``
+/// - ``truncate(_:to:suffix:)``
+///
+/// ### String Analysis
+/// - ``isPalindrome(_:)``
+public struct StringKit {
+    // ...
+}
+```
+
+Build documentation:
+
+```bash
+swift package generate-documentation
+```
+
+Or in Xcode: Product → Build Documentation
+
+## Official References
+
+- [Swift Package Manager Documentation](https://www.swift.org/package-manager/)
+- [Package.swift Manifest API](https://developer.apple.com/documentation/packagedescription)
+- [Creating a Standalone Swift Package](https://developer.apple.com/documentation/xcode/creating-a-standalone-swift-package-with-xcode)
+
+## Summary
+
+| Aspect | Key Points |
+|--------|-----------|
+| **Creation** | Use `swift package init` or Xcode's File → New → Package |
+| **Structure** | Package.swift manifest, Sources/, Tests/ directories |
+| **Access Control** | Must use `public` for types/methods consumers should access |
+| **Dependencies** | Added in Package.swift with URL and version requirements |
+| **Versioning** | Use semantic versioning with Git tags (1.0.0, 1.1.0, etc.) |
+| **Platform Support** | Specify minimum versions in `platforms` array |
+| **Testing** | Built-in support with XCTest, run via `swift test` |
+| **Resources** | Include with `.process()` or `.copy()`, access via `Bundle.module` |
+| **Distribution** | Push to Git repository, tag versions, no registration required |
+| **Local Development** | Add local packages via drag-and-drop or Add Local option |
+| **Common Mistakes** | Forgetting `public`, using unstable version specifiers, module name conflicts |
+| **Documentation** | Use DocC-style comments, build with `swift package generate-documentation` |
+
+Swift Package Manager has become the standard for Swift dependency management. While it may seem complex initially, its tight integration with Swift and Xcode makes it more maintainable than alternative solutions. Start with simple packages to learn the basics, then gradually explore advanced features as your needs grow.

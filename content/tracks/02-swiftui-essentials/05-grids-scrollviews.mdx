@@ -1,0 +1,557 @@
+---
+title: "Grids & ScrollViews"
+description: "LazyVGrid, LazyHGrid, ScrollView for scrollable layouts"
+sectionId: "2.2-layout"
+sectionTitle: "Layout & Composition"
+order: 5
+tags: []
+videoResources: []
+prerequisites: []
+---
+
+# Grids & ScrollViews in SwiftUI
+
+Grids and ScrollViews are essential SwiftUI components for displaying collections of content that may exceed screen boundaries. While `List` works well for simple vertical lists, grids give you multi-column layouts, and ScrollViews offer complete control over scrollable content in any direction.
+
+## Why Grids and ScrollViews Matter
+
+In modern iOS apps, you'll frequently need to display:
+- Photo galleries (Instagram-like grids)
+- Product catalogs (multi-column layouts)
+- Horizontally scrolling carousels
+- Content that's taller or wider than the screen
+
+SwiftUI provides `LazyVGrid` and `LazyHGrid` for efficient grid layouts, and `ScrollView` for general scrollable content. The "lazy" aspect means views are only created when they're about to appear on screen—critical for performance with large datasets.
+
+## ScrollView Basics
+
+`ScrollView` wraps content and makes it scrollable. By default, it scrolls vertically.
+
+```swift
+import SwiftUI
+
+struct BasicScrollViewExample: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                ForEach(0..<50) { index in
+                    Text("Row \(index)")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue.opacity(0.3))
+                        .cornerRadius(8)
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+### Horizontal ScrollView
+
+Change the axis to create horizontal scrolling:
+
+```swift
+struct HorizontalScrollExample: View {
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            HStack(spacing: 15) {
+                ForEach(0..<20) { index in
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.purple)
+                        .frame(width: 150, height: 150)
+                        .overlay(Text("\(index)").foregroundColor(.white))
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+**Note:** `showsIndicators` controls whether scroll bars are visible. Default is `true`.
+
+### Both Axes
+
+```swift
+ScrollView([.horizontal, .vertical]) {
+    // Large content that scrolls in both directions
+    Rectangle()
+        .fill(Color.green.opacity(0.3))
+        .frame(width: 2000, height: 2000)
+        .overlay(Text("2000x2000 canvas"))
+}
+```
+
+## LazyVGrid: Vertical Grids
+
+`LazyVGrid` arranges items in columns, flowing vertically. You define columns using `GridItem`.
+
+### Basic Grid
+
+```swift
+struct BasicGridExample: View {
+    let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
+    
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(0..<50) { index in
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.orange)
+                        .frame(height: 100)
+                        .overlay(Text("\(index)"))
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+### GridItem Types
+
+`GridItem` has three sizing options:
+
+```swift
+struct GridItemTypesExample: View {
+    // Fixed: exact width
+    let fixedColumns = [
+        GridItem(.fixed(100)),
+        GridItem(.fixed(100)),
+        GridItem(.fixed(100))
+    ]
+    
+    // Flexible: shares available space
+    let flexibleColumns = [
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
+    
+    // Adaptive: fits as many items as possible
+    let adaptiveColumns = [
+        GridItem(.adaptive(minimum: 100))
+    ]
+    
+    var body: some View {
+        ScrollView {
+            // Using adaptive - automatically adjusts column count
+            LazyVGrid(columns: adaptiveColumns, spacing: 15) {
+                ForEach(0..<30) { index in
+                    Color.blue
+                        .frame(height: 100)
+                        .cornerRadius(8)
+                        .overlay(Text("\(index)").foregroundColor(.white))
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+**Key difference:** `.adaptive(minimum:)` automatically calculates how many columns fit based on available width, while `.flexible()` requires you to specify the exact number of columns.
+
+### Spacing and Alignment
+
+```swift
+struct GridSpacingExample: View {
+    let columns = [
+        GridItem(.flexible(), spacing: 20), // Space after this column
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible())
+    ]
+    
+    var body: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: columns,
+                alignment: .leading,  // Horizontal alignment
+                spacing: 30,          // Vertical spacing between rows
+                pinnedViews: [.sectionHeaders]  // Sticky headers
+            ) {
+                Section(header: headerView) {
+                    ForEach(0..<20) { index in
+                        Text("Item \(index)")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.gray.opacity(0.2))
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+    
+    var headerView: some View {
+        Text("Section Header")
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.white)
+    }
+}
+```
+
+## LazyHGrid: Horizontal Grids
+
+`LazyHGrid` works identically to `LazyVGrid` but flows horizontally. Instead of columns, you define rows.
+
+```swift
+struct HorizontalGridExample: View {
+    let rows = [
+        GridItem(.fixed(100)),
+        GridItem(.fixed(100))
+    ]
+    
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHGrid(rows: rows, spacing: 20) {
+                ForEach(0..<50) { index in
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.teal)
+                        .frame(width: 150)
+                        .overlay(Text("\(index)"))
+                }
+            }
+            .padding()
+        }
+    }
+}
+```
+
+## Real-World Example: Photo Grid
+
+```swift
+struct PhotoGridView: View {
+    let photos = Array(0..<100) // Simulate photo IDs
+    
+    let columns = [
+        GridItem(.adaptive(minimum: 100, maximum: 200), spacing: 2)
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 2) {
+                    ForEach(photos, id: \.self) { photoID in
+                        PhotoThumbnail(id: photoID)
+                    }
+                }
+            }
+            .navigationTitle("Photos")
+        }
+    }
+}
+
+struct PhotoThumbnail: View {
+    let id: Int
+    
+    var body: some View {
+        GeometryReader { geometry in
+            Color.random
+                .overlay(
+                    Image(systemName: "photo")
+                        .foregroundColor(.white)
+                )
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+extension Color {
+    static var random: Color {
+        Color(
+            red: .random(in: 0...1),
+            green: .random(in: 0...1),
+            blue: .random(in: 0...1)
+        )
+    }
+}
+```
+
+## Nested ScrollViews
+
+You can nest ScrollViews, but be careful with the axes.
+
+```swift
+struct NestedScrollExample: View {
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 20) {
+                ForEach(0..<5) { section in
+                    VStack(alignment: .leading) {
+                        Text("Section \(section)")
+                            .font(.headline)
+                            .padding(.horizontal)
+                        
+                        // Horizontal scroll inside vertical scroll
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 15) {
+                                ForEach(0..<10) { item in
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.blue)
+                                        .frame(width: 120, height: 120)
+                                        .overlay(Text("\(item)"))
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+**Warning:** Never nest ScrollViews with the same axis. SwiftUI won't know which one should handle the scroll gesture.
+
+## Common Mistakes and Edge Cases
+
+### Mistake 1: Forgetting ScrollView
+
+Grids don't scroll by themselves:
+
+```swift
+// ❌ Won't scroll - content gets clipped
+LazyVGrid(columns: columns) {
+    ForEach(0..<100) { Text("\($0)") }
+}
+
+// ✅ Scrolls properly
+ScrollView {
+    LazyVGrid(columns: columns) {
+        ForEach(0..<100) { Text("\($0)") }
+    }
+}
+```
+
+### Mistake 2: Not Using Lazy Grids
+
+For large datasets, regular `VStack`/`HStack` creates all views immediately:
+
+```swift
+// ❌ Creates 10,000 views instantly - app freezes
+ScrollView {
+    VStack {
+        ForEach(0..<10000) { index in
+            ExpensiveView(data: index)
+        }
+    }
+}
+
+// ✅ Creates views only as needed
+ScrollView {
+    LazyVStack {
+        ForEach(0..<10000) { index in
+            ExpensiveView(data: index)
+        }
+    }
+}
+```
+
+### Mistake 3: Adaptive Grid Confusion
+
+`.adaptive(minimum:)` doesn't guarantee the specified size:
+
+```swift
+// Columns will be AT LEAST 100pt wide, but may be larger
+// to evenly fill available space
+let columns = [GridItem(.adaptive(minimum: 100))]
+```
+
+If you need exact sizes, use `.fixed()` instead.
+
+### Edge Case: Dynamic Column Counts
+
+Calculate columns based on device orientation or screen size:
+
+```swift
+struct DynamicGridExample: View {
+    @Environment(\.horizontalSizeClass) var sizeClass
+    
+    var columns: [GridItem] {
+        let columnCount = sizeClass == .compact ? 2 : 4
+        return Array(repeating: GridItem(.flexible()), count: columnCount)
+    }
+    
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns) {
+                ForEach(0..<100) { index in
+                    Text("\(index)")
+                        .frame(height: 100)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.blue)
+                }
+            }
+        }
+    }
+}
+```
+
+### Edge Case: ScrollView Content Offset
+
+ScrollView doesn't provide direct offset access. Use `ScrollViewReader` for programmatic scrolling:
+
+```swift
+struct ScrollToExample: View {
+    var body: some View {
+        ScrollViewReader { proxy in
+            VStack {
+                Button("Jump to #50") {
+                    withAnimation {
+                        proxy.scrollTo(50, anchor: .center)
+                    }
+                }
+                
+                ScrollView {
+                    LazyVStack {
+                        ForEach(0..<100) { index in
+                            Text("Row \(index)")
+                                .id(index)  // Required for scrollTo
+                                .frame(height: 50)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## Performance Considerations
+
+### Use Lazy Containers
+
+Always prefer `LazyVGrid`, `LazyHGrid`, and `LazyVStack` for large datasets. They only create views as needed.
+
+### Avoid Heavy Computations
+
+Don't perform expensive operations in grid item views:
+
+```swift
+// ❌ Bad - processes image every time view updates
+LazyVGrid(columns: columns) {
+    ForEach(images) { image in
+        ProcessedImage(image: processImage(image))
+    }
+}
+
+// ✅ Better - process once and store result
+LazyVGrid(columns: columns) {
+    ForEach(processedImages) { image in
+        Image(uiImage: image)
+    }
+}
+```
+
+### Limit Pinned Views
+
+Pinned headers/footers aren't lazy and remain in memory:
+
+```swift
+LazyVGrid(
+    columns: columns,
+    pinnedViews: [.sectionHeaders]  // Use sparingly
+) {
+    // Content
+}
+```
+
+## Integration with SwiftUI Data
+
+Grids work seamlessly with modern SwiftUI data patterns:
+
+```swift
+struct ContentGridView: View {
+    @State private var items: [Item] = []
+    
+    let columns = [
+        GridItem(.adaptive(minimum: 150))
+    ]
+    
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(items) { item in
+                    ItemCard(item: item)
+                }
+            }
+            .padding()
+        }
+        .task {
+            items = await fetchItems()
+        }
+    }
+    
+    func fetchItems() async -> [Item] {
+        // Simulate async data fetch
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        return (0..<50).map { Item(id: $0, name: "Item \($0)") }
+    }
+}
+
+struct Item: Identifiable {
+    let id: Int
+    let name: String
+}
+
+struct ItemCard: View {
+    let item: Item
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.blue.opacity(0.3))
+                .frame(height: 120)
+            Text(item.name)
+        }
+    }
+}
+```
+
+## Summary Table
+
+| Component | Direction | Lazy | Best Use Case |
+|-----------|-----------|------|---------------|
+| `ScrollView` | Vertical (default), Horizontal, Both | No* | Wrapping any scrollable content |
+| `LazyVStack` | Vertical | Yes | Simple vertical lists with many items |
+| `LazyHStack` | Horizontal | Yes | Simple horizontal lists with many items |
+| `LazyVGrid` | Vertical (flows down) | Yes | Multi-column grids (photo galleries, product catalogs) |
+| `LazyHGrid` | Horizontal (flows right) | Yes | Multi-row horizontal layouts (carousels) |
+
+*ScrollView itself doesn't load content lazily—wrap Lazy containers inside it for lazy loading.
+
+### GridItem Sizing Options
+
+| Type | Behavior | Example |
+|------|----------|---------|
+| `.fixed(width)` | Exact column width | `.fixed(100)` - always 100pt wide |
+| `.flexible(minimum:, maximum:)` | Shares available space equally | `.flexible()` - divides space among columns |
+| `.adaptive(minimum:, maximum:)` | Fits as many columns as possible | `.adaptive(minimum: 100)` - creates as many 100pt+ columns as fit |
+
+### Key Parameters
+
+| Parameter | Applies To | Purpose |
+|-----------|------------|---------|
+| `columns` | LazyVGrid | Array of GridItem defining column structure |
+| `rows` | LazyHGrid | Array of GridItem defining row structure |
+| `spacing` | All grids | Space between rows (VGrid) or columns (HGrid) |
+| `alignment` | All grids | How items align within their cells |
+| `pinnedViews` | All grids | Which views stay visible while scrolling |
+| `showsIndicators` | ScrollView | Whether to show scroll bars |
+
+## Official Resources
+
+- [Apple Documentation: LazyVGrid](https://developer.apple.com/documentation/swiftui/lazyvgrid)
+- [Apple Documentation: LazyHGrid](https://developer.apple.com/documentation/swiftui/lazyhgrid)
+- [Apple Documentation: GridItem](https://developer.apple.com/documentation/swiftui/griditem)
+- [Apple Documentation: ScrollView](https://developer.apple.com/documentation/swiftui/scrollview)
+- [WWDC22: Compose Custom Layouts with SwiftUI](https://developer.apple.com/videos/play/wwdc2022/10056/)
