@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 
 export function ChatMarkdown({ content }: { content: string }) {
@@ -32,11 +33,21 @@ export function ChatMarkdown({ content }: { content: string }) {
           h1: ({ children }) => <p className="font-bold text-base mb-1">{children}</p>,
           h2: ({ children }) => <p className="font-bold text-sm mb-1">{children}</p>,
           h3: ({ children }) => <p className="font-semibold text-sm mb-1">{children}</p>,
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            const isInternal = href?.startsWith("/");
+            if (isInternal && href) {
+              return (
+                <Link href={href} className="text-[var(--accent)] hover:underline">
+                  {children}
+                </Link>
+              );
+            }
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">
+                {children}
+              </a>
+            );
+          },
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-[var(--accent)] pl-3 my-2 text-[var(--muted-foreground)]">
               {children}

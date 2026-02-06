@@ -1,0 +1,58 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: ANTHROPIC_API_KEY,OPENAI_API_KEY
+          script: |
+            set -e
+
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            APP_DIR="$HOME/swiftique"
+
+            # Clone or pull
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
+            cd "$APP_DIR"
+
+            # Write env file
+            echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" > .env.local
+            echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> .env.local
+
+            # Install dependencies
+            npm ci
+
+            # Build
+            npm run build
+
+            # Ensure data directory exists for SQLite
+            mkdir -p data
+
+            # Start or restart with PM2
+            if pm2 describe swiftique > /dev/null 2>&1; then
+              pm2 restart swiftique
+            else
+              pm2 start npm --name swiftique -- start
+            fi
+
+            pm2 save
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
