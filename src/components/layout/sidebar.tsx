@@ -62,17 +62,20 @@ export function Sidebar({ sections, currentTrackId }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Project state — initialize from localStorage/sessionStorage to avoid flicker on remount
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(PROJECT_KEY);
-  });
-  const [projectDetail, setProjectDetail] = useState<ProjectDetail | null>(() => {
-    if (typeof window === "undefined") return null;
-    const pid = localStorage.getItem(PROJECT_KEY);
-    return getCachedProject(pid);
-  });
+  // Project state — initialized as null to match server render, then hydrated from storage
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [projectDetail, setProjectDetail] = useState<ProjectDetail | null>(null);
   const [completedSlugs, setCompletedSlugs] = useState<Set<string>>(new Set());
+
+  // Hydrate project state from localStorage/sessionStorage after mount
+  useEffect(() => {
+    const pid = localStorage.getItem(PROJECT_KEY);
+    if (pid) {
+      setCurrentProjectId(pid);
+      const cached = getCachedProject(pid);
+      if (cached) setProjectDetail(cached);
+    }
+  }, []);
 
   // Fetch all completed article slugs (used for project mode progress)
   const fetchProgress = useCallback(async () => {

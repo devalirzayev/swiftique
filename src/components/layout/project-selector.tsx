@@ -39,9 +39,15 @@ export function ProjectSelector({
   const userId = useUserId();
   const [open, setOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [projectsList, setProjectsList] = useState<Project[]>(getCachedProjectsList);
+  const [projectsList, setProjectsList] = useState<Project[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate from sessionStorage cache first, then fetch fresh data
+  useEffect(() => {
+    const cached = getCachedProjectsList();
+    if (cached.length > 0) setProjectsList(cached);
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
