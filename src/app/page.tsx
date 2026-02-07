@@ -2,12 +2,14 @@ import Link from "next/link";
 import { TRACKS } from "@/lib/config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ContentLayout } from "@/components/layout/content-layout";
+import { ProjectContentGuard } from "@/components/layout/project-content-guard";
 
 export default function Home() {
   return (
     <>
       <Sidebar />
       <ContentLayout>
+        <ProjectContentGuard>
         <h1 className="text-4xl font-bold tracking-tight mb-4">
           Learn iOS Development
         </h1>
@@ -40,6 +42,7 @@ export default function Home() {
             </Link>
           ))}
         </div>
+        </ProjectContentGuard>
       </ContentLayout>
     </>
   );

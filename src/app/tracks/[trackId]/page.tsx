@@ -3,6 +3,7 @@ import { TRACKS } from "@/lib/config";
 import { getTrackSections } from "@/lib/content";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ContentLayout } from "@/components/layout/content-layout";
+import { ProjectContentGuard } from "@/components/layout/project-content-guard";
 import Link from "next/link";
 
 interface Props {
@@ -29,6 +30,7 @@ export default async function TrackPage({ params }: Props) {
     <>
       <Sidebar sections={sidebarSections} currentTrackId={trackId} />
       <ContentLayout>
+        <ProjectContentGuard>
         <div className="mb-8">
           <div
             className="inline-flex items-center justify-center w-12 h-12 rounded-lg text-white text-xl font-bold mb-4"
@@ -68,6 +70,7 @@ export default async function TrackPage({ params }: Props) {
             </div>
           ))}
         </div>
+        </ProjectContentGuard>
       </ContentLayout>
     </>
   );

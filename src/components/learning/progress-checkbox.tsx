@@ -38,6 +38,8 @@ export function ProgressCheckbox({
     });
 
     setLoading(false);
+    // Notify sidebar to refresh completion checkmarks
+    window.dispatchEvent(new Event("swiftique:progress-changed"));
     // Re-fetch server data so the sidebar updates immediately
     router.refresh();
   };

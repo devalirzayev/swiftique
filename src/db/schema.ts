@@ -49,3 +49,24 @@ export const chatHistory = sqliteTable("chat_history", {
   content: text("content").notNull(),
   createdAt: text("created_at").default("CURRENT_TIMESTAMP"),
 });
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").default("CURRENT_TIMESTAMP"),
+  updatedAt: text("updated_at").default("CURRENT_TIMESTAMP"),
+});
+
+export const projectArticles = sqliteTable("project_articles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: text("project_id").notNull(),
+  trackId: text("track_id").notNull(),
+  articleSlug: text("article_slug").notNull(),
+  sectionTitle: text("section_title").notNull(),
+  sectionOrder: integer("section_order").notNull(),
+  articleOrder: integer("article_order").notNull(),
+  reason: text("reason"),
+});

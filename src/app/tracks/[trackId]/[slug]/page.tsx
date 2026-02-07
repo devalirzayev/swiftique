@@ -6,6 +6,7 @@ import { getQuiz } from "@/lib/quiz";
 import { getFlashcardSet } from "@/lib/flashcards";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ContentLayout } from "@/components/layout/content-layout";
+import { ProjectContentGuard } from "@/components/layout/project-content-guard";
 import { ArticleHeader } from "@/components/layout/header";
 import { VideoResources } from "@/components/learning/video-resources";
 import { ArticleFooter } from "@/components/learning/article-footer";
@@ -72,6 +73,7 @@ export default async function ArticlePage({ params }: Props) {
     <>
       <Sidebar sections={sidebarSections} currentTrackId={trackId} />
       <ContentLayout>
+        <ProjectContentGuard>
         <ArticleHeader
           title={article.title}
           description={article.description}
@@ -104,6 +106,7 @@ export default async function ArticlePage({ params }: Props) {
             prevArticle={prevArticle}
           />
         </ArticleWithAI>
+        </ProjectContentGuard>
       </ContentLayout>
     </>
   );
